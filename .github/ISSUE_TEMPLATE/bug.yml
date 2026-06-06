@@ -1,0 +1,18 @@
+name: Bug
+description: Something is broken
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Observed vs expected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Steps, command, and any error output (verbatim).
+    validations:
+      required: true
