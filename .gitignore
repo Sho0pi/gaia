@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# godpy
+.env
+# agent_registry/ holds learned AgentCards. Commit to share across the team,
+# or uncomment the next line to keep them per-user.
+# agent_registry/

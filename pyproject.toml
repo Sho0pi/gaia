@@ -1,0 +1,55 @@
+[project]
+name = "godpy"
+version = "0.1.0"
+description = "God — an AI agent that spawns, stores, and fine-tunes task-specific subagents."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "sho0pi" }]
+dependencies = [
+    "google-adk>=1.0",
+    "a2a-sdk>=0.3",
+    "mem0ai>=0.1",
+    "python-telegram-bot>=22.0",
+    "pywa>=2.0",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "ruff>=0.9",
+    "mypy>=1.14",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/godpy"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "ASYNC", "RUF"]
+
+[tool.mypy]
+strict = true
+python_version = "3.11"
+files = ["src"]
+
+# These libraries ship no type stubs / py.typed marker yet.
+[[tool.mypy.overrides]]
+module = ["mem0.*", "pywa.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-ra --cov=src/godpy"
