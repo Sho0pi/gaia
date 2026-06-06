@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from godpy.connectors.base import Handler
+from godpy.connectors.base import Handler, Send
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from godpy.god.agent import God
@@ -51,21 +51,22 @@ class GodHandler:
             )
         return self._runner
 
-    async def __call__(self, text: str) -> str:
+    async def __call__(self, text: str, send: Send) -> None:
         from google.genai import types
 
         runner = await self._ensure_runner()
         content = types.Content(role="user", parts=[types.Part(text=text)])
 
-        reply = ""
         async for event in runner.run_async(
             user_id=self._user_id, session_id=self._session_id, new_message=content
         ):
             # A model turn can carry several parts (text, function calls, inline
-            # data); we want the text ones from the final answer, joined in order.
+            # data). Stream each text part of the final answer as its own reply
+            # instead of joining them, so one inbound message can fan out to many.
             if event.is_final_response() and event.content and event.content.parts:
-                reply = "".join(part.text for part in event.content.parts if part.text)
-        return reply
+                for part in event.content.parts:
+                    if part.text:
+                        await send(part.text)
 
 
 def build_handler(

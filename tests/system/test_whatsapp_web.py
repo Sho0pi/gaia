@@ -13,14 +13,15 @@ from pathlib import Path
 import pytest
 
 from godpy.connectors import WhatsAppWebConnector
+from godpy.connectors.base import Send
 from godpy.connectors.whatsapp_web import patch_protobuf_version_guard
 
 patch_protobuf_version_guard()  # same protobuf<7 guard the connector applies
 neonize = pytest.importorskip("neonize.aioze.client", reason="needs the neonize native lib")
 
 
-async def _handler(text: str) -> str:  # pragma: no cover - not exercised offline
-    return text
+async def _handler(text: str, send: Send) -> None:  # pragma: no cover - not exercised offline
+    await send(text)
 
 
 def test_build_client_with_real_neonize(tmp_path: Path) -> None:

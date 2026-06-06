@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 
+from godpy.connectors.base import Send
 from godpy.connectors.whatsapp_web import WhatsAppWebConnector, _message_text
 
 
@@ -93,9 +94,11 @@ async def test_inbound_message_routed_to_handler(
 ) -> None:
     seen: list[str] = []
 
-    async def handler(text: str) -> str:
+    async def handler(text: str, send: Send) -> None:
         seen.append(text)
-        return f"echo:{text}"
+        # Stream two replies to prove the sink can fan out one inbound to many.
+        await send(f"echo:{text}")
+        await send("again")
 
     client = WhatsAppWebConnector(tmp_path / "wa.db", handler).build_client()
     message = _msg(conversation="ping")
@@ -103,11 +106,11 @@ async def test_inbound_message_routed_to_handler(
     await client.handlers[fake_neonize["MessageEv"]](client, message)
 
     assert seen == ["ping"]
-    assert client.replies == [("echo:ping", message)]
+    assert client.replies == [("echo:ping", message), ("again", message)]
 
 
 async def test_empty_message_is_ignored(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
-    async def handler(_text: str) -> str:  # pragma: no cover - must not run
+    async def handler(_text: str, _send: Send) -> None:  # pragma: no cover - must not run
         raise AssertionError("handler called on empty message")
 
     client = WhatsAppWebConnector(tmp_path / "wa.db", handler).build_client()

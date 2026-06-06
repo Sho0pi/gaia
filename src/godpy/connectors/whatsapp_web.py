@@ -76,8 +76,11 @@ class WhatsAppWebConnector:
         async def _on_message(client: NewAClient, message: MessageEv) -> None:
             text = _message_text(message)
             if text:
-                reply = await self._handler(text)
-                await client.reply_message(reply, message)
+
+                async def send(reply: str) -> None:
+                    await client.reply_message(reply, message)
+
+                await self._handler(text, send)
 
         return client
 

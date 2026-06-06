@@ -7,10 +7,11 @@ from pathlib import Path
 from godpy.app import select_connector
 from godpy.config import Settings
 from godpy.connectors import WhatsAppConnector, WhatsAppWebConnector
+from godpy.connectors.base import Send
 
 
-async def _handler(_text: str) -> str:  # pragma: no cover - never invoked here
-    return ""
+async def _handler(_text: str, _send: Send) -> None:  # pragma: no cover - never invoked here
+    return None
 
 
 def test_business_creds_select_pywa_connector() -> None:
