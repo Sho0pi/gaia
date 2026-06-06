@@ -41,6 +41,10 @@ class WhatsAppWebConnector:
         prints a QR code to the terminal; ``PairStatusEv``/``ConnectedEv`` log the
         outcome so the operator knows when the scan succeeded.
         """
+        from godpy.connectors._neonize_compat import patch_protobuf_version_guard
+
+        patch_protobuf_version_guard()  # let neonize import under a protobuf<7 runtime
+
         from neonize.aioze.client import NewAClient
         from neonize.aioze.events import ConnectedEv, MessageEv, PairStatusEv
 
@@ -69,4 +73,4 @@ class WhatsAppWebConnector:
         client = self.build_client()
         print(f"[whatsapp] starting — scan the QR if prompted (session: {self._session_db})")
         await client.connect()
-        await client.idle()
+        await client.idle()  # blocks, keeps receiving events

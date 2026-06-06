@@ -11,7 +11,10 @@ dependencies = [
     "mem0ai>=0.1",
     "python-telegram-bot>=22.0",
     "pywa>=2.0",
-    "neonize>=0.3",
+    # 0.3.18 ships protobuf-7.34 gencode but only needs baseline wire features, so
+    # it runs on the protobuf<7 runtime adk/mem0/a2a pin once the gencode version
+    # guard is neutralised (see connectors/whatsapp_web.py).
+    "neonize>=0.3.18",
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
 ]
@@ -47,7 +50,7 @@ files = ["src"]
 
 # These libraries ship no type stubs / py.typed marker yet.
 [[tool.mypy.overrides]]
-module = ["mem0.*", "pywa.*", "neonize.*"]
+module = ["mem0.*", "pywa.*", "neonize.*", "google.protobuf.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

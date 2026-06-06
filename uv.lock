@@ -586,7 +586,7 @@ requires-dist = [
     { name = "a2a-sdk", specifier = ">=0.3" },
     { name = "google-adk", specifier = ">=1.0" },
     { name = "mem0ai", specifier = ">=0.1" },
-    { name = "neonize", specifier = ">=0.3" },
+    { name = "neonize", specifier = ">=0.3.18" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pydantic-settings", specifier = ">=2.0" },
     { name = "python-telegram-bot", specifier = ">=22.0" },

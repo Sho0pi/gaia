@@ -13,7 +13,9 @@ from pathlib import Path
 import pytest
 
 from godpy.connectors import WhatsAppWebConnector
+from godpy.connectors._neonize_compat import patch_protobuf_version_guard
 
+patch_protobuf_version_guard()  # same protobuf<7 guard the connector applies
 neonize = pytest.importorskip("neonize.aioze.client", reason="needs the neonize native lib")
 
 
