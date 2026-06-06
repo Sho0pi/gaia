@@ -10,11 +10,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from godpy.agents import AgentFactory, AgentRegistry, AgentSpec
-from godpy.config import Settings, configure_adk_env, get_settings
+from godpy.config import ConfigStore, Settings, configure_adk_env, get_settings
 from godpy.memory import LongTermMemory, ShortTermMemory
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from google.adk.agents import LlmAgent
+
+    from godpy.config import GodConfig
 
 
 class God:
@@ -23,10 +25,16 @@ class God:
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
         configure_adk_env(self.settings)
+        self.config_store = ConfigStore(self.settings.config_path, self.settings)
         self.registry = AgentRegistry(self.settings.agent_registry_dir)
         self.factory = AgentFactory(self.registry, default_model=self.settings.model)
         self.short_term = ShortTermMemory()
         self.long_term = LongTermMemory()
+
+    @property
+    def config(self) -> GodConfig:
+        """The live, hot-reloaded ``god.yaml`` config (re-read on file change)."""
+        return self.config_store.current
 
     def ensure_agent(self, spec: AgentSpec) -> LlmAgent:
         """Get a subagent for ``spec`` — reused if known, created+stored if new."""
@@ -49,7 +57,7 @@ class God:
         ]
         return LlmAgent(
             name="god",
-            model=self.settings.model,
+            model=self.config.llm.model or self.settings.model,
             description="Root orchestrator that routes tasks to specialized subagents.",
             instruction=(
                 "You are God. Pick the subagent best suited to the user's task. "

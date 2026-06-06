@@ -1,18 +1,27 @@
-"""Application launcher: build God, pick a WhatsApp backend, run it.
+"""Application launcher: build God, read god.yaml, launch the enabled connectors.
 
-Backend selection is automatic and pure (:func:`select_connector`) so it can be
-unit-tested without any network or native deps:
+Which connectors run is driven by ``god.yaml`` (:class:`~godpy.config.GodConfig`),
+not by which credentials happen to be present. The WhatsApp *backend* (business vs
+regular/QR) is still auto-picked from creds by :func:`select_connector`.
 
-* Cloud-API (pywa) creds present  -> :class:`WhatsAppConnector` (business).
-* otherwise                        -> :class:`WhatsAppWebConnector` (regular, QR).
+Launch rules (:func:`plan_launch`, pure + unit-testable):
+
+* The CLI/Textual TUI is a **foreground** app — it cannot share the event loop with
+  background connectors, so enabling it alongside another connector is rejected.
+* The remaining connectors are async and co-run via :func:`asyncio.gather`.
 """
 
 from __future__ import annotations
 
 import asyncio
 
-from godpy.config import Settings, get_settings
-from godpy.connectors import CLIConnector, WhatsAppConnector, WhatsAppWebConnector
+from godpy.config import GodConfig, Settings, get_settings, write_default_config
+from godpy.connectors import (
+    CLIConnector,
+    TelegramConnector,
+    WhatsAppConnector,
+    WhatsAppWebConnector,
+)
 from godpy.connectors.base import Handler
 from godpy.god import God
 from godpy.god.handler import build_handler
@@ -28,6 +37,28 @@ def select_connector(
     return WhatsAppWebConnector(settings.whatsapp_session_db, handler)
 
 
+def plan_launch(config: GodConfig) -> list[str]:
+    """Return the names of connectors to launch, or raise on an invalid combo.
+
+    Pure: no I/O, so the policy (CLI-exclusivity, enabled set) is unit-testable.
+    """
+    connectors = config.connectors
+    background = [
+        name
+        for name, conf in (("whatsapp", connectors.whatsapp), ("telegram", connectors.telegram))
+        if conf.enabled
+    ]
+    if connectors.cli.enabled:
+        if background:
+            raise ValueError(
+                "The CLI connector is foreground-exclusive and cannot run alongside "
+                f"other connectors (also enabled: {', '.join(background)}). "
+                "Disable the others or disable cli in god.yaml."
+            )
+        return ["cli"]
+    return background
+
+
 def run_cli(settings: Settings | None = None) -> None:
     """Launch the local CLI/TUI frontend and chat with God in the terminal."""
     settings = settings or get_settings()
@@ -36,21 +67,47 @@ def run_cli(settings: Settings | None = None) -> None:
 
 
 def run(settings: Settings | None = None) -> None:
-    """Launch the bot and connect it to the selected WhatsApp backend."""
+    """Build God and launch the connectors enabled in god.yaml."""
     settings = settings or get_settings()
+    write_default_config(settings.config_path)
     god = God(settings)
-    handler = build_handler(god)
-    connector = select_connector(settings, handler)
+    selected = plan_launch(god.config)
 
-    if isinstance(connector, WhatsAppWebConnector):
-        asyncio.run(connector.start())
+    if not selected:
+        print("[godpy] no connectors enabled in god.yaml — nothing to run.")
         return
 
-    # Business backend: pywa delivers inbound messages over an HTTP webhook, which
-    # needs a public server that isn't wired yet (tracked in issue #3). Build the
-    # client so config is validated, but make the gap loud rather than silent.
-    connector.build_client()
-    print(
-        "[whatsapp] business backend selected, but the inbound webhook server is "
-        "not wired yet (see issue #3) — no messages will be received."
-    )
+    if selected == ["cli"]:
+        CLIConnector(build_handler(god)).run()
+        return
+
+    asyncio.run(_run_background(settings, god, selected))
+
+
+async def _run_background(settings: Settings, god: God, selected: list[str]) -> None:
+    """Run the enabled async connectors concurrently until interrupted."""
+    handler = build_handler(god)
+    tasks: list[asyncio.Task[None]] = []
+
+    if "whatsapp" in selected:
+        connector = select_connector(settings, handler)
+        if isinstance(connector, WhatsAppWebConnector):
+            tasks.append(asyncio.create_task(connector.start()))
+        else:
+            # Business backend delivers inbound over an HTTP webhook that isn't wired
+            # yet (issue #3). Build the client so config is validated, but say so loudly.
+            connector.build_client()
+            print(
+                "[whatsapp] business backend selected, but the inbound webhook server "
+                "is not wired yet (see issue #3) — no messages will be received."
+            )
+
+    if "telegram" in selected:
+        token = god.config.connectors.telegram.token
+        if not token:
+            print("[telegram] enabled but no token (set GODPY_TELEGRAM_BOT_TOKEN) — skipping.")
+        else:
+            tasks.append(asyncio.create_task(TelegramConnector(token, handler).start()))
+
+    if tasks:
+        await asyncio.gather(*tasks)
