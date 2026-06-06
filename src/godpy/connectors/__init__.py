@@ -6,5 +6,6 @@ and sends the reply back. All reasoning lives in :mod:`godpy.god`.
 
 from godpy.connectors.telegram import TelegramConnector
 from godpy.connectors.whatsapp import WhatsAppConnector
+from godpy.connectors.whatsapp_web import WhatsAppWebConnector
 
-__all__ = ["TelegramConnector", "WhatsAppConnector"]
+__all__ = ["TelegramConnector", "WhatsAppConnector", "WhatsAppWebConnector"]

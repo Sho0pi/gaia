@@ -6,9 +6,7 @@ installed, so unit tests can exercise wiring without a live bot.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-
-Handler = Callable[[str], Awaitable[str]]
+from godpy.connectors.base import Handler
 
 
 class TelegramConnector:
@@ -27,8 +25,12 @@ class TelegramConnector:
 
         async def _on_message(update: Update, _context: object) -> None:
             if update.message and update.message.text:
-                reply = await self._handler(update.message.text)
-                await update.message.reply_text(reply)
+                message = update.message
+
+                async def send(reply: str) -> None:
+                    await message.reply_text(reply)
+
+                await self._handler(update.message.text, send)
 
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _on_message))
         return app
