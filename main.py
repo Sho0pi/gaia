@@ -1,11 +1,19 @@
-"""Entry point: launch godpy and connect it to WhatsApp.
+"""Entry point: launch godpy.
 
-Run with ``uv run python main.py``. With no WhatsApp Business creds configured the
-launcher starts the regular-account backend and prints a QR code to scan on first
-run; the paired session is persisted so later runs reconnect automatically.
+Run with ``uv run python main.py``:
+
+* ``python main.py``            -> local CLI/TUI chat (default).
+* ``python main.py whatsapp``   -> WhatsApp backend (QR on first run, see app.run).
+
+The CLI needs ``GEMINI_API_KEY`` in ``.env`` to get real answers from God.
 """
 
-from godpy.app import run
+import sys
+
+from godpy.app import run, run_cli
 
 if __name__ == "__main__":
-    run()
+    if len(sys.argv) > 1 and sys.argv[1] == "whatsapp":
+        run()
+    else:
+        run_cli()
