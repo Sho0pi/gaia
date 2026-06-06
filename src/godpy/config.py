@@ -29,9 +29,20 @@ class Settings(BaseSettings):
     )
     whatsapp_phone_id: str | None = Field(default=None, validation_alias="GODPY_WHATSAPP_PHONE_ID")
     whatsapp_token: str | None = Field(default=None, validation_alias="GODPY_WHATSAPP_TOKEN")
+    # Session db for the regular-account (neonize) backend. First run writes a QR
+    # to the terminal; the paired session is persisted here so later runs skip it.
+    whatsapp_session_db: Path = Field(
+        default=Path.home() / ".godpy" / "whatsapp.db",
+        validation_alias="GODPY_WHATSAPP_SESSION_DB",
+    )
 
     # mem0 long-term memory.
     mem0_collection: str = Field(default="godpy", validation_alias="GODPY_MEM0_COLLECTION")
+
+    @property
+    def has_whatsapp_business(self) -> bool:
+        """True when Cloud-API (pywa) creds are present; selects the business backend."""
+        return bool(self.whatsapp_phone_id and self.whatsapp_token)
 
 
 def get_settings() -> Settings:

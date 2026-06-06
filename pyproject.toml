@@ -11,6 +11,7 @@ dependencies = [
     "mem0ai>=0.1",
     "python-telegram-bot>=22.0",
     "pywa>=2.0",
+    "neonize>=0.3",
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
 ]
@@ -46,7 +47,7 @@ files = ["src"]
 
 # These libraries ship no type stubs / py.typed marker yet.
 [[tool.mypy.overrides]]
-module = ["mem0.*", "pywa.*"]
+module = ["mem0.*", "pywa.*", "neonize.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
