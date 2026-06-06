@@ -6,9 +6,7 @@ installed, so unit tests can exercise wiring without a live bot.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-
-Handler = Callable[[str], Awaitable[str]]
+from godpy.connectors.base import Handler
 
 
 class TelegramConnector:

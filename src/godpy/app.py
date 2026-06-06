@@ -13,7 +13,7 @@ import asyncio
 
 from godpy.config import Settings, get_settings
 from godpy.connectors import WhatsAppConnector, WhatsAppWebConnector
-from godpy.connectors.whatsapp_web import Handler
+from godpy.connectors.base import Handler
 from godpy.god import God
 from godpy.god.handler import build_handler
 
