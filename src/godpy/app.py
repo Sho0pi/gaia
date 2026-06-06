@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 
 from godpy.config import Settings, get_settings
-from godpy.connectors import WhatsAppConnector, WhatsAppWebConnector
+from godpy.connectors import CLIConnector, WhatsAppConnector, WhatsAppWebConnector
 from godpy.connectors.base import Handler
 from godpy.god import God
 from godpy.god.handler import build_handler
@@ -26,6 +26,13 @@ def select_connector(
         assert settings.whatsapp_phone_id and settings.whatsapp_token  # narrowed by property
         return WhatsAppConnector(settings.whatsapp_phone_id, settings.whatsapp_token, handler)
     return WhatsAppWebConnector(settings.whatsapp_session_db, handler)
+
+
+def run_cli(settings: Settings | None = None) -> None:
+    """Launch the local CLI/TUI frontend and chat with God in the terminal."""
+    settings = settings or get_settings()
+    god = God(settings)
+    CLIConnector(build_handler(god)).run()
 
 
 def run(settings: Settings | None = None) -> None:

@@ -4,8 +4,9 @@ A connector receives an inbound message, hands it to a ``handler`` coroutine,
 and sends the reply back. All reasoning lives in :mod:`godpy.god`.
 """
 
+from godpy.connectors.cli import CLIConnector
 from godpy.connectors.telegram import TelegramConnector
 from godpy.connectors.whatsapp import WhatsAppConnector
 from godpy.connectors.whatsapp_web import WhatsAppWebConnector
 
-__all__ = ["TelegramConnector", "WhatsAppConnector", "WhatsAppWebConnector"]
+__all__ = ["CLIConnector", "TelegramConnector", "WhatsAppConnector", "WhatsAppWebConnector"]
