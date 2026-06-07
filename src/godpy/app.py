@@ -14,6 +14,7 @@ Launch rules (:func:`plan_launch`, pure + unit-testable):
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from godpy.config import GodConfig, Settings, get_settings, write_default_config
 from godpy.connectors import (
@@ -25,6 +26,9 @@ from godpy.connectors import (
 from godpy.connectors.base import Handler
 from godpy.god import God
 from godpy.god.handler import build_handler
+from godpy.logs import setup_logging
+
+logger = logging.getLogger(__name__)
 
 
 def select_connector(
@@ -63,6 +67,7 @@ def run_cli(settings: Settings | None = None) -> None:
     """Launch the local CLI/TUI frontend and chat with God in the terminal."""
     settings = settings or get_settings()
     god = God(settings)
+    setup_logging(settings, god.config.logging)
     CLIConnector(build_handler(god)).run()
 
 
@@ -71,10 +76,11 @@ def run(settings: Settings | None = None) -> None:
     settings = settings or get_settings()
     write_default_config(settings.config_path)
     god = God(settings)
+    setup_logging(settings, god.config.logging)
     selected = plan_launch(god.config)
 
     if not selected:
-        print("[godpy] no connectors enabled in god.yaml — nothing to run.")
+        logger.warning("no connectors enabled in god.yaml — nothing to run")
         return
 
     if selected == ["cli"]:
@@ -97,15 +103,17 @@ async def _run_background(settings: Settings, god: God, selected: list[str]) -> 
             # Business backend delivers inbound over an HTTP webhook that isn't wired
             # yet (issue #3). Build the client so config is validated, but say so loudly.
             connector.build_client()
-            print(
-                "[whatsapp] business backend selected, but the inbound webhook server "
-                "is not wired yet (see issue #3) — no messages will be received."
+            logger.warning(
+                "whatsapp business backend selected, but the inbound webhook server is "
+                "not wired yet (see issue #3) — no messages will be received"
             )
 
     if "telegram" in selected:
         token = god.config.connectors.telegram.token
         if not token:
-            print("[telegram] enabled but no token (set GODPY_TELEGRAM_BOT_TOKEN) — skipping.")
+            logger.warning(
+                "telegram enabled but no token (set GODPY_TELEGRAM_BOT_TOKEN) — skipping"
+            )
         else:
             tasks.append(asyncio.create_task(TelegramConnector(token, handler).start()))
 

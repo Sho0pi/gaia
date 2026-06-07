@@ -17,6 +17,7 @@ _POC = {
         "cli": {"enabled": True, "default_role": "admin"},
         "telegram": {"enabled": True},
     },
+    "logging": {"level": "DEBUG", "max_size_mb": 10},
     "default_communication_style": "human",
     "skills_dir": "/custom/skills",
     "agents": {"god": {"communication_style": "caveman", "skills": ["caveman"]}},
@@ -35,6 +36,9 @@ def test_parses_poc_sample() -> None:
     assert config.connectors.whatsapp.allow == ["123456789", "987654321"]
     assert config.connectors.whatsapp.group_trigger.mention_only is True
     assert config.connectors.cli.default_role == "admin"
+    assert config.logging.level == "DEBUG"
+    assert config.logging.max_size_mb == 10
+    assert config.logging.backup_count == 5  # default kept
     assert config.default_communication_style == "human"
     assert str(config.skills_dir) == "/custom/skills"
     assert config.agents["god"].communication_style == "caveman"

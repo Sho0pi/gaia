@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from godpy.logs import log_event
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from mem0 import Memory
 
@@ -30,7 +32,9 @@ class LongTermMemory:
 
     def remember(self, messages: list[dict[str, str]], *, user_id: str) -> Any:
         """Let mem0 extract and persist facts from a conversation slice."""
-        return self.backend.add(messages, user_id=user_id)
+        result = self.backend.add(messages, user_id=user_id)
+        log_event("memory_updated", user=user_id, messages=len(messages))
+        return result
 
     def recall(self, query: str, *, user_id: str, limit: int = 5) -> Any:
         """Retrieve the most relevant stored facts for ``query``."""

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from godpy.communication import (
@@ -29,6 +31,7 @@ def test_ai_injects_nothing() -> None:
     assert apply_communication_style("BASE", "ai") == "BASE"
 
 
-def test_unknown_style_warns_and_passes_through() -> None:
-    with pytest.warns(UserWarning, match="unknown communication style"):
+def test_unknown_style_warns_and_passes_through(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.WARNING):
         assert apply_communication_style("BASE", "klingon") == "BASE"
+    assert "unknown communication style" in caplog.text
