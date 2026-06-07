@@ -17,6 +17,8 @@ _POC = {
         "cli": {"enabled": True, "default_role": "admin"},
         "telegram": {"enabled": True},
     },
+    "skills_dir": "/custom/skills",
+    "agents": {"god": {"skills": ["caveman"]}},
     "roles": {"guest": {"tools": ["web_search"]}},
     "tools": {"web_extract": {"enabled": True, "max_chars": 8000}},
     "souls": {"god": None},
@@ -32,6 +34,8 @@ def test_parses_poc_sample() -> None:
     assert config.connectors.whatsapp.allow == ["123456789", "987654321"]
     assert config.connectors.whatsapp.group_trigger.mention_only is True
     assert config.connectors.cli.default_role == "admin"
+    assert str(config.skills_dir) == "/custom/skills"
+    assert config.agents["god"].skills == ["caveman"]
     assert config.roles["guest"].tools == ["web_search"]
     # ToolConfig keeps unknown tool-specific keys verbatim (extra="allow").
     assert config.tools["web_extract"].model_extra == {"max_chars": 8000}

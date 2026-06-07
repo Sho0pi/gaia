@@ -11,7 +11,9 @@ from typing import TYPE_CHECKING
 
 from godpy.agents import AgentFactory, AgentRegistry, AgentSpec
 from godpy.config import ConfigSupplier, Settings, configure_adk_env, get_settings
+from godpy.config.schema import AgentBinding
 from godpy.memory import LongTermMemory, ShortTermMemory
+from godpy.skills import attach_skills, resolve_skills_dir
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from google.adk.agents import LlmAgent
@@ -26,8 +28,11 @@ class God:
         self.settings = settings or get_settings()
         configure_adk_env(self.settings)
         self.config_supplier = ConfigSupplier(self.settings.config_path)
+        self.skills_dir = resolve_skills_dir(self.config)
         self.registry = AgentRegistry(self.settings.agent_registry_dir)
-        self.factory = AgentFactory(self.registry, default_model=self.settings.model)
+        self.factory = AgentFactory(
+            self.registry, default_model=self.settings.model, skills_dir=self.skills_dir
+        )
         self.short_term = ShortTermMemory()
         self.long_term = LongTermMemory()
 
@@ -55,13 +60,17 @@ class God:
             self.factory.create_or_reuse(self.registry.get(key))  # type: ignore[arg-type]
             for key in self.known_agents()
         ]
+        base_instruction = (
+            "You are God. Pick the subagent best suited to the user's task. "
+            "If none fits, describe the new specialist needed so it can be created."
+        )
+        bound = self.config.agents.get("god", AgentBinding())
+        instruction = attach_skills(base_instruction, bound.skills, self.skills_dir)
+
         return LlmAgent(
             name="god",
             model=self.config.llm.model or self.settings.model,
             description="Root orchestrator that routes tasks to specialized subagents.",
-            instruction=(
-                "You are God. Pick the subagent best suited to the user's task. "
-                "If none fits, describe the new specialist needed so it can be created."
-            ),
+            instruction=instruction,
             sub_agents=sub_agents,
         )
