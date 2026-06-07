@@ -36,6 +36,9 @@ class Settings(BaseSettings):
         default=Path.home() / ".godpy" / "god.yaml", validation_alias="GODPY_CONFIG"
     )
 
+    # Directory for rotating log files (system.log / events.jsonl / errors.log).
+    log_dir: Path = Field(default=Path.home() / ".godpy" / "logs", validation_alias="GODPY_LOG_DIR")
+
     # Connector credentials.
     telegram_bot_token: str | None = Field(
         default=None, validation_alias="GODPY_TELEGRAM_BOT_TOKEN"

@@ -14,7 +14,7 @@ A style is selected per agent in ``god.yaml`` (with a global default), and appli
 
 from __future__ import annotations
 
-import warnings
+import logging
 
 # Natural human voice (verbatim from the agreed spec).
 HUMAN_PROMPT = """\
@@ -82,6 +82,8 @@ COMMUNICATION_STYLES: dict[str, str | None] = {
 # Fallback voice when an agent / the config does not specify one.
 DEFAULT_COMMUNICATION_STYLE = "human"
 
+logger = logging.getLogger(__name__)
+
 
 def apply_communication_style(base_instruction: str, style: str) -> str:
     """Return ``base_instruction`` prefixed with ``style``'s voice prompt.
@@ -90,7 +92,7 @@ def apply_communication_style(base_instruction: str, style: str) -> str:
     is a no-op too, but warns — it likely means a typo in the config.
     """
     if style not in COMMUNICATION_STYLES:
-        warnings.warn(f"unknown communication style {style!r}; using raw model voice", stacklevel=2)
+        logger.warning("unknown communication style %r; using raw model voice", style)
         return base_instruction
     prompt = COMMUNICATION_STYLES[style]
     if prompt is None:

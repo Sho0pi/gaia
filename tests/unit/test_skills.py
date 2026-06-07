@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -29,9 +30,12 @@ def test_load_skill_returns_body_and_frontmatter(tmp_path: Path) -> None:
     assert "Talk like caveman" in skill.instructions
 
 
-def test_load_missing_skill_warns_and_returns_none(tmp_path: Path) -> None:
-    with pytest.warns(UserWarning, match="nope"):
+def test_load_missing_skill_warns_and_returns_none(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.WARNING):
         assert load_skill(tmp_path, "nope") is None
+    assert "nope" in caplog.text
 
 
 def test_attach_skills_appends_in_order(tmp_path: Path) -> None:
@@ -45,14 +49,15 @@ def test_attach_skills_appends_in_order(tmp_path: Path) -> None:
     assert "# Skill: one" in result
 
 
-def test_attach_skills_skips_unknown(tmp_path: Path) -> None:
+def test_attach_skills_skips_unknown(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     _make_skill(tmp_path, "known", "KNOWN BODY")
 
-    with pytest.warns(UserWarning):
+    with caplog.at_level(logging.WARNING):
         result = attach_skills("BASE", ["known", "ghost"], tmp_path)
 
     assert "KNOWN BODY" in result
     assert "ghost" not in result
+    assert "ghost" in caplog.text
 
 
 def test_attach_skills_no_ids_returns_base(tmp_path: Path) -> None:

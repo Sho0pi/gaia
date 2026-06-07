@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from godpy.connectors.base import Handler, Send
+from godpy.logs import log_event
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from godpy.god.agent import God
@@ -54,6 +55,7 @@ class GodHandler:
     async def __call__(self, text: str, send: Send) -> None:
         from google.genai import types
 
+        log_event("message_in", user=self._user_id, session=self._session_id, chars=len(text))
         runner = await self._ensure_runner()
         content = types.Content(role="user", parts=[types.Part(text=text)])
 
@@ -66,6 +68,7 @@ class GodHandler:
             if event.is_final_response() and event.content and event.content.parts:
                 for part in event.content.parts:
                     if part.text:
+                        log_event("message_out", user=self._user_id, chars=len(part.text))
                         await send(part.text)
 
 

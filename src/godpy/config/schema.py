@@ -94,6 +94,14 @@ class ToolConfig(BaseModel):
     enabled: bool = Field(default=True, description="Whether the tool is available.")
 
 
+class LoggingConfig(BaseModel):
+    """Log level + rotation. Applied once at startup (changes need a restart)."""
+
+    level: str = Field(default="INFO", description="Root log level (DEBUG/INFO/WARNING/ERROR).")
+    max_size_mb: int = Field(default=5, description="Rotate a log file once it exceeds this size.")
+    backup_count: int = Field(default=5, description="How many rotated files to keep.")
+
+
 class AgentBinding(BaseModel):
     """What is attached to a named agent: a voice + always-on folder skills."""
 
@@ -115,6 +123,7 @@ class GodConfig(BaseModel):
         default_factory=list, description="Sender ids with admin privileges (reserved)."
     )
     connectors: ConnectorsConfig = Field(default_factory=ConnectorsConfig)
+    logging: LoggingConfig = Field(default_factory=LoggingConfig)
     default_communication_style: str = Field(
         default="human", description="Fallback voice for agents (human/caveman/ai)."
     )

@@ -11,6 +11,7 @@ unit tests can exercise the wiring without the native whatsmeow binary.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -18,6 +19,8 @@ from godpy.connectors.base import Handler
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from neonize.aioze.client import NewAClient
+
+logger = logging.getLogger(__name__)
 
 
 def patch_protobuf_version_guard() -> None:
@@ -66,11 +69,11 @@ class WhatsAppWebConnector:
 
         @client.event(ConnectedEv)  # type: ignore[untyped-decorator]
         async def _on_connected(_client: NewAClient, _event: ConnectedEv) -> None:
-            print("[whatsapp] connected")
+            logger.info("whatsapp connected")
 
         @client.event(PairStatusEv)  # type: ignore[untyped-decorator]
         async def _on_pair(_client: NewAClient, event: PairStatusEv) -> None:
-            print(f"[whatsapp] paired as {event.ID.User}")
+            logger.info("whatsapp paired as %s", event.ID.User)
 
         @client.event(MessageEv)  # type: ignore[untyped-decorator]
         async def _on_message(client: NewAClient, message: MessageEv) -> None:
@@ -87,6 +90,6 @@ class WhatsAppWebConnector:
     async def start(self) -> None:
         """Connect (prompting a QR scan on first run) and block receiving events."""
         client = self.build_client()
-        print(f"[whatsapp] starting — scan the QR if prompted (session: {self._session_db})")
+        logger.info("whatsapp starting — scan the QR if prompted (session: %s)", self._session_db)
         await client.connect()
         await client.idle()  # blocks, keeps receiving events

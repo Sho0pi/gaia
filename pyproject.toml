@@ -19,6 +19,7 @@ dependencies = [
     "pydantic-settings>=2.0",
     "pyyaml>=6.0",
     "textual>=8.2.7",
+    "python-json-logger>=4.1.0",
 ]
 
 [dependency-groups]

@@ -18,7 +18,7 @@ model backend (the loader itself is pure file parsing).
 
 from __future__ import annotations
 
-import warnings
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -26,6 +26,8 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from google.adk.skills import Skill
 
     from godpy.config import GodConfig
+
+logger = logging.getLogger(__name__)
 
 # Default home for manually-placed skills (clawhub auto-download is a follow-up).
 DEFAULT_SKILLS_DIR = Path.home() / ".godpy" / "skills"
@@ -50,7 +52,7 @@ def load_skill(skills_dir: Path, skill_id: str) -> Skill | None:
     try:
         return load_skill_from_dir(Path(skills_dir) / skill_id)
     except (FileNotFoundError, ValueError) as exc:
-        warnings.warn(f"skill {skill_id!r} not loaded from {skills_dir}: {exc}", stacklevel=2)
+        logger.warning("skill %r not loaded from %s: %s", skill_id, skills_dir, exc)
         return None
 
 
