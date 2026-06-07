@@ -24,6 +24,8 @@ class AgentSpec(BaseModel):
     instruction: str
     model: str
     skills: list[str] = Field(default_factory=list)
+    # Voice for this subagent; None = the factory's configured default style.
+    communication_style: str | None = None
 
     @property
     def key(self) -> str:

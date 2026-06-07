@@ -94,6 +94,19 @@ class ToolConfig(BaseModel):
     enabled: bool = Field(default=True, description="Whether the tool is available.")
 
 
+class AgentBinding(BaseModel):
+    """What is attached to a named agent: a voice + always-on folder skills."""
+
+    communication_style: str | None = Field(
+        default=None,
+        description="Voice for this agent (human/caveman/ai); empty = default_communication_style.",
+    )
+    skills: list[str] = Field(
+        default_factory=list,
+        description="Skill ids (folder names under skills_dir) always loaded onto this agent.",
+    )
+
+
 class GodConfig(BaseModel):
     """Root of ``god.yaml``."""
 
@@ -102,6 +115,16 @@ class GodConfig(BaseModel):
         default_factory=list, description="Sender ids with admin privileges (reserved)."
     )
     connectors: ConnectorsConfig = Field(default_factory=ConnectorsConfig)
+    default_communication_style: str = Field(
+        default="human", description="Fallback voice for agents (human/caveman/ai)."
+    )
+    skills_dir: Path | None = Field(
+        default=None, description="Skills folder; empty = ~/.godpy/skills default."
+    )
+    agents: dict[str, AgentBinding] = Field(
+        default_factory=dict,
+        description="Per-agent bindings; the root orchestrator uses key 'god'.",
+    )
     # Forward-looking, validated-but-unwired sections.
     roles: dict[str, RoleConfig] = Field(
         default_factory=dict, description="Per-role overrides (not yet wired)."

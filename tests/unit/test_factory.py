@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
+
 from godpy.agents import AgentFactory, AgentRegistry, AgentSpec
 from godpy.agents.factory import to_agent_card
+from godpy.communication import CAVEMAN_PROMPT
 
 
 class _RecordingFactory(AgentFactory):
@@ -16,6 +21,14 @@ class _RecordingFactory(AgentFactory):
     def _build_llm_agent(self, spec: AgentSpec) -> object:  # type: ignore[override]
         self.built = spec
         return object()
+
+
+def _make_skill(skills_dir: Path, name: str, body: str) -> None:
+    skill_dir = skills_dir / name
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        f"---\nname: {name}\ndescription: A test skill.\n---\n\n{body}\n"
+    )
 
 
 def test_new_spec_is_persisted(registry: AgentRegistry, sample_spec: AgentSpec) -> None:
@@ -47,3 +60,91 @@ def test_to_agent_card_shape(sample_spec: AgentSpec) -> None:
     assert card["name"] == "Email Summarizer"
     assert card["url"] == "http://localhost:8000"
     assert {s["id"] for s in card["skills"]} == {"summarization", "email"}
+
+
+def test_skills_dir_injects_instruction(registry: AgentRegistry, tmp_path: Path) -> None:
+    _make_skill(tmp_path, "caveman", "CAVEMAN RULES")
+    spec = AgentSpec(
+        name="Talker",
+        description="Talks.",
+        instruction="Base instruction.",
+        model="test-model",
+        skills=["caveman"],
+    )
+    # Subclass to capture the composed instruction without building a real LlmAgent.
+    captured: dict[str, str] = {}
+
+    class _Factory(AgentFactory):
+        def _build_llm_agent(self, s: AgentSpec) -> object:  # type: ignore[override]
+            from godpy.skills import attach_skills
+
+            captured["instruction"] = attach_skills(s.instruction, s.skills, tmp_path)
+            return object()
+
+    _Factory(registry, default_model="test-model", skills_dir=tmp_path).create_or_reuse(spec)
+
+    assert "Base instruction." in captured["instruction"]
+    assert "CAVEMAN RULES" in captured["instruction"]
+
+
+def test_to_agent_card_resolves_ids(tmp_path: Path) -> None:
+    _make_skill(tmp_path, "caveman", "body")
+    spec = AgentSpec(name="Talker", description="d", instruction="i", model="m", skills=["caveman"])
+
+    card = to_agent_card(spec, skills_dir=tmp_path)
+
+    skill = card["skills"][0]
+    assert skill["name"] == "caveman"
+    assert skill["description"] == "A test skill."
+
+
+def _capture_instruction(
+    factory: AgentFactory, spec: AgentSpec, monkeypatch: pytest.MonkeyPatch
+) -> str:
+    """Build the agent with a recording LlmAgent to capture the composed instruction."""
+    import google.adk.agents as adk
+
+    captured: dict[str, object] = {}
+
+    class _Recorder:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr(adk, "LlmAgent", _Recorder)
+    factory.create_or_reuse(spec)
+    return str(captured["instruction"])
+
+
+def test_factory_composes_default_style_and_skill(
+    registry: AgentRegistry, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _make_skill(tmp_path, "caveman", "CAVEMAN RULES")
+    spec = AgentSpec(
+        name="Talker", description="d", instruction="Base.", model="m", skills=["caveman"]
+    )
+    factory = AgentFactory(
+        registry, default_model="m", skills_dir=tmp_path, default_communication_style="caveman"
+    )
+
+    instruction = _capture_instruction(factory, spec, monkeypatch)
+
+    assert instruction.startswith(CAVEMAN_PROMPT)  # style prepended as intro
+    assert "Base." in instruction
+    assert "CAVEMAN RULES" in instruction  # folder skill appended
+
+
+def test_spec_style_overrides_default(
+    registry: AgentRegistry, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    spec = AgentSpec(
+        name="Talker",
+        description="d",
+        instruction="Base.",
+        model="m",
+        communication_style="ai",  # explicit raw voice, overrides default
+    )
+    factory = AgentFactory(registry, default_model="m", default_communication_style="caveman")
+
+    instruction = _capture_instruction(factory, spec, monkeypatch)
+
+    assert instruction == "Base."  # 'ai' injects nothing, default 'caveman' ignored
