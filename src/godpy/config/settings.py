@@ -1,4 +1,11 @@
-"""Runtime configuration. Secrets come from env / .env, never hardcoded."""
+"""Secret-bearing runtime settings. Secrets come from env / .env, never hardcoded.
+
+This is the *secrets* half of godpy's configuration. Non-secret runtime toggles
+(which connectors are on, allow lists, model choice) live in the hot-swappable
+``god.yaml`` modelled by :mod:`godpy.config.schema` and served by
+:class:`godpy.config.store.ConfigSupplier`. Keeping the two apart means a token never
+has to be written to a file that is meant to be hand-edited and watched.
+"""
 
 from __future__ import annotations
 
@@ -21,6 +28,12 @@ class Settings(BaseSettings):
     # Where reusable AgentCards are persisted.
     agent_registry_dir: Path = Field(
         default=Path("agent_registry"), validation_alias="GODPY_AGENT_REGISTRY_DIR"
+    )
+
+    # The hot-swappable god.yaml (non-secret runtime config). Lives next to the
+    # WhatsApp session db so all of godpy's home state is under ~/.godpy.
+    config_path: Path = Field(
+        default=Path.home() / ".godpy" / "god.yaml", validation_alias="GODPY_CONFIG"
     )
 
     # Connector credentials.

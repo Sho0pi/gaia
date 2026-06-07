@@ -15,8 +15,12 @@ hermes-agent, and picoclaw.
   for a new task and persists it as an A2A `AgentCard` so it is reused next time.
 - **Two-tier memory** ([`src/godpy/memory`](src/godpy/memory)): short-term = ADK session
   state; long-term = [mem0](https://github.com/mem0ai/mem0).
-- **Connectors** ([`src/godpy/connectors`](src/godpy/connectors)): Telegram, WhatsApp —
+- **Connectors** ([`src/godpy/connectors`](src/godpy/connectors)): Telegram, WhatsApp, CLI —
   thin I/O adapters only.
+- **Config** ([`src/godpy/config`](src/godpy/config)): secrets come from env/`.env`
+  ([`Settings`](src/godpy/config/settings.py)); everything else lives in a hot-reloaded
+  `~/.godpy/god.yaml` ([`ConfigSupplier`](src/godpy/config/store.py)) — toggle connectors and
+  edit settings without restarting. A commented default is scaffolded on first run.
 
 ## Stack
 

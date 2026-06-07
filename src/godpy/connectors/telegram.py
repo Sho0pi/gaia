@@ -6,6 +6,8 @@ installed, so unit tests can exercise wiring without a live bot.
 
 from __future__ import annotations
 
+from typing import Any
+
 from godpy.connectors.base import Handler
 
 
@@ -36,5 +38,25 @@ class TelegramConnector:
         return app
 
     def run(self) -> None:
-        """Start long-polling. Blocks."""
+        """Start long-polling on its own event loop. Blocks. Use standalone."""
         self.build_application().run_polling()  # type: ignore[attr-defined]
+
+    async def start(self) -> None:
+        """Start long-polling inside the *caller's* event loop and block on it.
+
+        Unlike :meth:`run` (which owns the loop via ``run_polling``), this drives the
+        python-telegram-bot lifecycle by hand so it can be ``asyncio.gather``-ed with
+        other async connectors. Cancelling the task tears the application down.
+        """
+        import asyncio
+
+        app: Any = self.build_application()
+        await app.initialize()
+        await app.start()
+        await app.updater.start_polling()
+        try:
+            await asyncio.Event().wait()  # block until cancelled
+        finally:
+            await app.updater.stop()
+            await app.stop()
+            await app.shutdown()
