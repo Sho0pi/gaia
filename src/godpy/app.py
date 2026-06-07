@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 
 from godpy.config import GodConfig, Settings, get_settings, write_default_config
 from godpy.connectors import (
@@ -63,17 +64,17 @@ def plan_launch(config: GodConfig) -> list[str]:
     return background
 
 
-def run_cli(settings: Settings | None = None) -> None:
+def run_cli(settings: Settings | None = None, *, env_file: Path | None = None) -> None:
     """Launch the local CLI/TUI frontend and chat with God in the terminal."""
-    settings = settings or get_settings()
+    settings = settings or get_settings(env_file)
     god = God(settings)
     setup_logging(settings, god.config.logging)
     CLIConnector(build_handler(god)).run()
 
 
-def run(settings: Settings | None = None) -> None:
+def run(settings: Settings | None = None, *, env_file: Path | None = None) -> None:
     """Build God and launch the connectors enabled in god.yaml."""
-    settings = settings or get_settings()
+    settings = settings or get_settings(env_file)
     write_default_config(settings.config_path)
     god = God(settings)
     setup_logging(settings, god.config.logging)

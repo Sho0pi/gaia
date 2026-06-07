@@ -15,11 +15,18 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from godpy import constants
+
+# App-owned env var names, derived from the central prefix (GODPY_…).
+_P = constants.ENV_PREFIX
+
 
 class Settings(BaseSettings):
     """Central settings, populated from environment variables or a .env file."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore", populate_by_name=True)
+    model_config = SettingsConfigDict(
+        env_file=str(constants.ENV_FILE), extra="ignore", populate_by_name=True
+    )
 
     # LLM backing the ADK agents (matches the .env: GEMINI_MODEL / GEMINI_API_KEY).
     model: str = Field(default="gemini-2.0-flash", validation_alias="GEMINI_MODEL")
@@ -27,33 +34,30 @@ class Settings(BaseSettings):
 
     # Where reusable AgentCards are persisted.
     agent_registry_dir: Path = Field(
-        default=Path("agent_registry"), validation_alias="GODPY_AGENT_REGISTRY_DIR"
+        default=constants.AGENT_REGISTRY_DIR, validation_alias=f"{_P}AGENT_REGISTRY_DIR"
     )
 
     # The hot-swappable god.yaml (non-secret runtime config). Lives next to the
-    # WhatsApp session db so all of godpy's home state is under ~/.godpy.
-    config_path: Path = Field(
-        default=Path.home() / ".godpy" / "god.yaml", validation_alias="GODPY_CONFIG"
-    )
+    # WhatsApp session db so all of the app's home state is under HOME_DIR.
+    config_path: Path = Field(default=constants.CONFIG_PATH, validation_alias=f"{_P}CONFIG")
 
     # Directory for rotating log files (system.log / events.jsonl / errors.log).
-    log_dir: Path = Field(default=Path.home() / ".godpy" / "logs", validation_alias="GODPY_LOG_DIR")
+    log_dir: Path = Field(default=constants.LOG_DIR, validation_alias=f"{_P}LOG_DIR")
 
     # Connector credentials.
-    telegram_bot_token: str | None = Field(
-        default=None, validation_alias="GODPY_TELEGRAM_BOT_TOKEN"
-    )
-    whatsapp_phone_id: str | None = Field(default=None, validation_alias="GODPY_WHATSAPP_PHONE_ID")
-    whatsapp_token: str | None = Field(default=None, validation_alias="GODPY_WHATSAPP_TOKEN")
+    telegram_bot_token: str | None = Field(default=None, validation_alias=f"{_P}TELEGRAM_BOT_TOKEN")
+    whatsapp_phone_id: str | None = Field(default=None, validation_alias=f"{_P}WHATSAPP_PHONE_ID")
+    whatsapp_token: str | None = Field(default=None, validation_alias=f"{_P}WHATSAPP_TOKEN")
     # Session db for the regular-account (neonize) backend. First run writes a QR
     # to the terminal; the paired session is persisted here so later runs skip it.
     whatsapp_session_db: Path = Field(
-        default=Path.home() / ".godpy" / "whatsapp.db",
-        validation_alias="GODPY_WHATSAPP_SESSION_DB",
+        default=constants.SESSION_DB, validation_alias=f"{_P}WHATSAPP_SESSION_DB"
     )
 
     # mem0 long-term memory.
-    mem0_collection: str = Field(default="godpy", validation_alias="GODPY_MEM0_COLLECTION")
+    mem0_collection: str = Field(
+        default=constants.APP_NAME, validation_alias=f"{_P}MEM0_COLLECTION"
+    )
 
     @property
     def has_whatsapp_business(self) -> bool:
@@ -61,8 +65,13 @@ class Settings(BaseSettings):
         return bool(self.whatsapp_phone_id and self.whatsapp_token)
 
 
-def get_settings() -> Settings:
-    """Return a fresh Settings instance (env is re-read each call)."""
+def get_settings(env_file: Path | None = None) -> Settings:
+    """Return a fresh Settings instance (env is re-read each call).
+
+    ``env_file`` overrides the default home ``.env`` (``--env-file`` on the command).
+    """
+    if env_file is not None:
+        return Settings(_env_file=str(env_file))  # type: ignore[call-arg]
     return Settings()
 
 

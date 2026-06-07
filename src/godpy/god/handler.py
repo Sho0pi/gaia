@@ -10,13 +10,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from godpy import constants
 from godpy.connectors.base import Handler, Send
 from godpy.logs import log_event
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from godpy.god.agent import God
 
-_APP_NAME = "godpy"
+_APP_NAME = constants.APP_NAME
 
 
 class GodHandler:

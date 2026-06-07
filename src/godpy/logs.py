@@ -26,14 +26,16 @@ from typing import TYPE_CHECKING, Any
 
 from pythonjsonlogger.json import JsonFormatter
 
+from godpy import constants
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from godpy.config.schema import LoggingConfig
     from godpy.config.settings import Settings
 
 Redactor = Callable[[str], str]
 
-_SYSTEM_LOGGER = "godpy"
-_EVENTS_LOGGER = "godpy.events"
+_SYSTEM_LOGGER = constants.LOGGER_NAME
+_EVENTS_LOGGER = constants.EVENTS_LOGGER_NAME
 _REDACTED = "***REDACTED***"
 
 # Transport/library loggers that are noisy at INFO; pinned to WARNING. (google_adk /

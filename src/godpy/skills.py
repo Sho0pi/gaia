@@ -22,6 +22,8 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from godpy import constants
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from google.adk.skills import Skill
 
@@ -30,7 +32,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 logger = logging.getLogger(__name__)
 
 # Default home for manually-placed skills (clawhub auto-download is a follow-up).
-DEFAULT_SKILLS_DIR = Path.home() / ".godpy" / "skills"
+DEFAULT_SKILLS_DIR = constants.SKILLS_DIR
 
 
 def resolve_skills_dir(config: GodConfig, *, default: Path = DEFAULT_SKILLS_DIR) -> Path:

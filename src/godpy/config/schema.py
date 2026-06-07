@@ -39,7 +39,7 @@ class WhatsAppConnectorConfig(BaseModel):
 
     enabled: bool = Field(default=False, description="Run the WhatsApp connector.")
     store_path: Path | None = Field(
-        default=None, description="Session db path; empty = ~/.godpy/whatsapp.db default."
+        default=None, description="Session db path; empty = the default under the home dir."
     )
     allow: list[str] = Field(
         default_factory=list,
@@ -128,7 +128,7 @@ class GodConfig(BaseModel):
         default="human", description="Fallback voice for agents (human/caveman/ai)."
     )
     skills_dir: Path | None = Field(
-        default=None, description="Skills folder; empty = ~/.godpy/skills default."
+        default=None, description="Skills folder; empty = the default under the home dir."
     )
     agents: dict[str, AgentBinding] = Field(
         default_factory=dict,

@@ -7,10 +7,11 @@ from pathlib import Path
 import pytest
 from dotenv import load_dotenv
 
+from godpy import constants
 from godpy.agents import AgentRegistry, AgentSpec
 
-# Make .env (GEMINI_API_KEY / GEMINI_MODEL) visible to tests and the skip-guards.
-load_dotenv()
+# Make the home .env (GEMINI_API_KEY / GEMINI_MODEL) visible to tests and skip-guards.
+load_dotenv(constants.ENV_FILE)
 
 
 @pytest.fixture
