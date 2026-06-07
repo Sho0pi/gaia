@@ -19,6 +19,11 @@ from godpy.logs import log_event, setup_logging
 def _reset_logging() -> Iterator[None]:
     """Undo the global logger mutations setup_logging makes, so tests stay isolated."""
     yield
+    root = logging.getLogger()
+    for handler in list(root.handlers):
+        handler.close()
+        root.removeHandler(handler)
+    root.setLevel(logging.WARNING)
     for name in ("godpy", "godpy.events"):
         log = logging.getLogger(name)
         for handler in list(log.handlers):
@@ -78,12 +83,33 @@ def test_secrets_are_redacted_before_disk(tmp_path: Path) -> None:
     assert "***REDACTED***" in content
 
 
+def test_third_party_logs_are_captured_to_file(tmp_path: Path) -> None:
+    _setup(tmp_path)
+
+    # google_adk / google_genai etc. log under their own tree -> must still reach our
+    # files via the root handlers (not just ADK's screen-only basicConfig handler).
+    logging.getLogger("google_adk.models.google_llm").info("Sending out request")
+
+    assert "Sending out request" in (tmp_path / "system.log").read_text()
+
+
+def test_adk_basicconfig_after_setup_is_noop(tmp_path: Path) -> None:
+    _setup(tmp_path)
+    root = logging.getLogger()
+    count = len(root.handlers)
+
+    # Once root has handlers, ADK's later basicConfig must not add another (no dup line).
+    logging.basicConfig(level=logging.INFO, format="[%(name)s %(levelname)s]")
+
+    assert len(root.handlers) == count
+
+
 def test_setup_is_idempotent(tmp_path: Path) -> None:
     _setup(tmp_path)
-    system = logging.getLogger("godpy")
-    count = len(system.handlers)
+    root = logging.getLogger()
+    count = len(root.handlers)
 
     # Without force, a second call is a no-op (no duplicated handlers).
     setup_logging(Settings(log_dir=tmp_path), LoggingConfig())
 
-    assert len(system.handlers) == count
+    assert len(root.handlers) == count

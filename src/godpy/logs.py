@@ -36,8 +36,9 @@ _SYSTEM_LOGGER = "godpy"
 _EVENTS_LOGGER = "godpy.events"
 _REDACTED = "***REDACTED***"
 
-# Third-party loggers that are noisy at INFO; pinned to WARNING.
-_NOISY = ("httpx", "httpcore", "google", "grpc", "urllib3", "telegram", "neonize", "asyncio")
+# Transport/library loggers that are noisy at INFO; pinned to WARNING. (google_adk /
+# google_genai are deliberately left at INFO so model request/response stay visible.)
+_NOISY = ("httpx", "httpcore", "urllib3", "grpc", "asyncio", "neonize", "telegram")
 
 # Standard LogRecord attributes — anything else on a record is a user-supplied field.
 _STD_ATTRS = frozenset(
@@ -145,18 +146,29 @@ def setup_logging(settings: Settings, cfg: LoggingConfig, *, force: bool = False
         "%(asctime)s %(levelname)s %(name)s: %(message)s", redactor=redactor
     )
 
-    # System logger: console + system.log (INFO+) + errors.log (WARNING+).
-    system = logging.getLogger(_SYSTEM_LOGGER)
-    system.setLevel(level)
-    system.handlers.clear()
-    system.propagate = False
+    # Own the ROOT logger so third-party libraries (google_adk, google_genai, …) flow
+    # into our files + console with our format + redaction, instead of only hitting the
+    # handler ADK installs via logging.basicConfig (screen-only). Once root has handlers,
+    # that later basicConfig becomes a no-op. system.log is the catch-all; errors.log is
+    # the WARNING+ subset.
+    root = logging.getLogger()
+    root.setLevel(level)
+    for handler in list(root.handlers):
+        root.removeHandler(handler)
+        handler.close()
 
     console = logging.StreamHandler(sys.stdout)
     console.setLevel(level)
     console.setFormatter(text_fmt)
-    system.addHandler(console)
-    system.addHandler(_rotating(log_dir / "system.log", level, text_fmt, cfg))
-    system.addHandler(_rotating(log_dir / "errors.log", logging.WARNING, text_fmt, cfg))
+    root.addHandler(console)
+    root.addHandler(_rotating(log_dir / "system.log", level, text_fmt, cfg))
+    root.addHandler(_rotating(log_dir / "errors.log", logging.WARNING, text_fmt, cfg))
+
+    # godpy logs inherit the root handlers (no dedicated handlers of their own).
+    system = logging.getLogger(_SYSTEM_LOGGER)
+    system.handlers.clear()
+    system.propagate = True
+    system.setLevel(logging.NOTSET)
 
     # Events logger: console (human) + events.jsonl (machine). No propagation.
     events = logging.getLogger(_EVENTS_LOGGER)
