@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from godpy.agents import AgentFactory, AgentRegistry, AgentSpec
-from godpy.config import ConfigStore, Settings, configure_adk_env, get_settings
+from godpy.config import ConfigSupplier, Settings, configure_adk_env, get_settings
 from godpy.memory import LongTermMemory, ShortTermMemory
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -25,7 +25,7 @@ class God:
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
         configure_adk_env(self.settings)
-        self.config_store = ConfigStore(self.settings.config_path, self.settings)
+        self.config_supplier = ConfigSupplier(self.settings.config_path)
         self.registry = AgentRegistry(self.settings.agent_registry_dir)
         self.factory = AgentFactory(self.registry, default_model=self.settings.model)
         self.short_term = ShortTermMemory()
@@ -34,7 +34,7 @@ class God:
     @property
     def config(self) -> GodConfig:
         """The live, hot-reloaded ``god.yaml`` config (re-read on file change)."""
-        return self.config_store.current
+        return self.config_supplier.current
 
     def ensure_agent(self, spec: AgentSpec) -> LlmAgent:
         """Get a subagent for ``spec`` — reused if known, created+stored if new."""

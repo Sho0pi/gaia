@@ -1,14 +1,14 @@
 """Declarative schema for ``god.yaml`` — the non-secret, hot-swappable config.
 
-Every field carries a default so a missing file or section degrades to today's
-behaviour rather than erroring. Secrets (tokens, api keys) are *not* modelled here;
-they stay in :class:`godpy.config.settings.Settings` (env). The lone exception is
-``TelegramConnectorConfig.token``, which the store fills in *from env* after parsing
-so the rest of the code has one place to read it — the YAML itself should leave it
-blank.
+Every field carries a default *and* a ``description`` so a missing file or section
+degrades to today's behaviour, and the commented default file can be generated
+straight from this schema (:mod:`godpy.config.scaffold`) — add a field here and the
+scaffold updates itself, no second copy to maintain.
 
-``roles`` / ``tools`` / ``souls`` are typed but **not yet wired** into the runtime;
-they are validated and carried forward so future work has a stable shape to build on.
+Secrets (tokens, api keys) are *not* modelled here; they stay in
+:class:`godpy.config.settings.Settings` (env). ``roles`` / ``tools`` / ``souls`` are
+typed but **not yet wired** into the runtime; they are validated and carried forward
+so future work has a stable shape to build on.
 """
 
 from __future__ import annotations
@@ -22,42 +22,51 @@ from pydantic import BaseModel, ConfigDict, Field
 class LLMConfig(BaseModel):
     """Which model/provider backs an agent."""
 
-    provider: str = "gemini"
-    model: str = "gemini-2.0-flash"
+    provider: str = Field(default="gemini", description="LLM provider id.")
+    model: str = Field(default="gemini-2.0-flash", description="Model id to call.")
 
 
 class GroupTrigger(BaseModel):
     """When God should respond inside a group chat."""
 
-    mention_only: bool = True
+    mention_only: bool = Field(
+        default=True, description="Only respond in groups when God is mentioned."
+    )
 
 
 class WhatsAppConnectorConfig(BaseModel):
     """WhatsApp connector toggle + access policy."""
 
-    enabled: bool = False
-    # Override the session db path; empty/None = Settings.whatsapp_session_db default.
-    store_path: Path | None = None
-    # Allowed sender ids. Empty = allow everyone (enforcement is a follow-up; see #10).
-    allow: list[str] = Field(default_factory=list)
+    enabled: bool = Field(default=False, description="Run the WhatsApp connector.")
+    store_path: Path | None = Field(
+        default=None, description="Session db path; empty = ~/.godpy/whatsapp.db default."
+    )
+    allow: list[str] = Field(
+        default_factory=list,
+        description="Allowed sender ids; empty = everyone (enforcement is a follow-up).",
+    )
     group_trigger: GroupTrigger = Field(default_factory=GroupTrigger)
-    default_soul: str = "god"
-    default_role: str = "user"
+    default_soul: str = Field(default="god", description="Soul used for new chats.")
+    default_role: str = Field(default="user", description="Role assigned to senders.")
 
 
 class CLIConnectorConfig(BaseModel):
     """Local Textual TUI connector. Foreground-exclusive (cannot co-run)."""
 
-    enabled: bool = False
-    default_soul: str = "god"
-    default_role: str = "admin"
+    enabled: bool = Field(
+        default=False, description="Run the local terminal chat; foreground-exclusive."
+    )
+    default_soul: str = Field(default="god", description="Soul used in the CLI session.")
+    default_role: str = Field(default="admin", description="Role for the local operator.")
 
 
 class TelegramConnectorConfig(BaseModel):
-    """Telegram connector toggle. ``token`` is injected from env by the store."""
+    """Telegram connector toggle. Token comes from env, never this file."""
 
-    enabled: bool = False
-    token: str | None = None
+    enabled: bool = Field(default=False, description="Run the Telegram connector.")
+    token: str | None = Field(
+        default=None, description="Bot token; set via env GODPY_TELEGRAM_BOT_TOKEN, not here."
+    )
 
 
 class ConnectorsConfig(BaseModel):
@@ -72,8 +81,9 @@ class RoleConfig(BaseModel):
     """Per-role overrides. Typed but not yet wired (see issue #10 follow-ups)."""
 
     llm: LLMConfig = Field(default_factory=LLMConfig)
-    # Allowed tool ids. Empty = all tools.
-    tools: list[str] = Field(default_factory=list)
+    tools: list[str] = Field(
+        default_factory=list, description="Allowed tool ids; empty = all tools."
+    )
 
 
 class ToolConfig(BaseModel):
@@ -81,16 +91,24 @@ class ToolConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    enabled: bool = True
+    enabled: bool = Field(default=True, description="Whether the tool is available.")
 
 
 class GodConfig(BaseModel):
     """Root of ``god.yaml``."""
 
     llm: LLMConfig = Field(default_factory=LLMConfig)
-    admin: list[str] = Field(default_factory=list)
+    admin: list[str] = Field(
+        default_factory=list, description="Sender ids with admin privileges (reserved)."
+    )
     connectors: ConnectorsConfig = Field(default_factory=ConnectorsConfig)
     # Forward-looking, validated-but-unwired sections.
-    roles: dict[str, RoleConfig] = Field(default_factory=dict)
-    tools: dict[str, ToolConfig] = Field(default_factory=dict)
-    souls: dict[str, Any] = Field(default_factory=dict)
+    roles: dict[str, RoleConfig] = Field(
+        default_factory=dict, description="Per-role overrides (not yet wired)."
+    )
+    tools: dict[str, ToolConfig] = Field(
+        default_factory=dict, description="Per-tool settings (not yet wired)."
+    )
+    souls: dict[str, Any] = Field(
+        default_factory=dict, description="Agent personas (not yet wired)."
+    )

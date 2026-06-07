@@ -1,13 +1,15 @@
 """Hot-swappable supplier of :class:`~godpy.config.schema.GodConfig`.
 
-``ConfigStore.current`` is the supplier: each access stats ``god.yaml`` and, only
-when its mtime changed (or the file appeared/disappeared since last read), reparses
-it. Edit the file and the next read sees the new value — no process restart. Readers
-that pull config per use (e.g. per message) get hot reload for free.
+``ConfigSupplier.current`` is the supplier: each access checks ``god.yaml``'s
+modification time (``mtime``) and reparses the file *only* when it changed since the
+last read — "mtime-gated". The file is otherwise not touched, so reads are cheap. Net
+effect: edit ``god.yaml`` and the next ``.current`` sees the new value, no process
+restart. Callers that pull config per use (e.g. once per message) get hot reload for
+free.
 
 A ``subscribe(cb)`` hook is provided for the few consumers that must *react* to a
-change rather than poll (e.g. restarting a connector when it is toggled). It is not
-wired to any reactive consumer yet — that lifecycle work is a follow-up (issue #10).
+change rather than poll. It is not wired to any reactive consumer yet — that
+lifecycle work is a follow-up (issue #10).
 """
 
 from __future__ import annotations
@@ -18,18 +20,16 @@ from pathlib import Path
 import yaml
 
 from godpy.config.schema import GodConfig
-from godpy.config.settings import Settings
 
 # Called with the freshly-loaded config whenever the file is (re)read.
 Subscriber = Callable[[GodConfig], None]
 
 
-class ConfigStore:
+class ConfigSupplier:
     """File-backed, mtime-gated supplier of the live :class:`GodConfig`."""
 
-    def __init__(self, path: Path, settings: Settings) -> None:
+    def __init__(self, path: Path) -> None:
         self._path = Path(path)
-        self._settings = settings
         self._subs: list[Subscriber] = []
         self._mtime: float | None = None
         self._config: GodConfig = self._reload()
@@ -56,7 +56,7 @@ class ConfigStore:
             return None
 
     def _reload(self) -> GodConfig:
-        """Parse the YAML (missing file -> defaults) and merge env-held secrets.
+        """Parse the YAML (missing file -> defaults).
 
         The new config is built fully before being returned/assigned, so a reader
         racing with a reload never observes a half-applied config.
@@ -64,12 +64,11 @@ class ConfigStore:
         self._mtime = self._stat_mtime()
         raw: dict[str, object] = {}
         if self._mtime is not None:
-            loaded = yaml.safe_load(self._path.read_text()) or {}
+            loaded = yaml.safe_load(self._path.read_text())
+            # safe_load returns whatever the document's top level is — None for an
+            # empty file, or a str/list if someone writes a bare scalar/sequence.
+            # GodConfig.model_validate needs a mapping, so anything else -> defaults.
             if isinstance(loaded, dict):
                 raw = loaded
 
-        config = GodConfig.model_validate(raw)
-        # Env always wins over file for secrets: the YAML should leave token blank.
-        if self._settings.telegram_bot_token:
-            config.connectors.telegram.token = self._settings.telegram_bot_token
-        return config
+        return GodConfig.model_validate(raw)

@@ -19,7 +19,7 @@ hermes-agent, and picoclaw.
   thin I/O adapters only.
 - **Config** ([`src/godpy/config`](src/godpy/config)): secrets come from env/`.env`
   ([`Settings`](src/godpy/config/settings.py)); everything else lives in a hot-reloaded
-  `~/.godpy/god.yaml` ([`ConfigStore`](src/godpy/config/store.py)) — toggle connectors and
+  `~/.godpy/god.yaml` ([`ConfigSupplier`](src/godpy/config/store.py)) — toggle connectors and
   edit settings without restarting. A commented default is scaffolded on first run.
 
 ## Stack

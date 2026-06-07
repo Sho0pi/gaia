@@ -3,7 +3,7 @@
 This is the *secrets* half of godpy's configuration. Non-secret runtime toggles
 (which connectors are on, allow lists, model choice) live in the hot-swappable
 ``god.yaml`` modelled by :mod:`godpy.config.schema` and served by
-:class:`godpy.config.store.ConfigStore`. Keeping the two apart means a token never
+:class:`godpy.config.store.ConfigSupplier`. Keeping the two apart means a token never
 has to be written to a file that is meant to be hand-edited and watched.
 """
 
