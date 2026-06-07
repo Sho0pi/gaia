@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from godpy.agents import AgentFactory, AgentRegistry, AgentSpec
+from godpy.communication import apply_communication_style
 from godpy.config import ConfigSupplier, Settings, configure_adk_env, get_settings
 from godpy.config.schema import AgentBinding
 from godpy.memory import LongTermMemory, ShortTermMemory
@@ -31,7 +32,10 @@ class God:
         self.skills_dir = resolve_skills_dir(self.config)
         self.registry = AgentRegistry(self.settings.agent_registry_dir)
         self.factory = AgentFactory(
-            self.registry, default_model=self.settings.model, skills_dir=self.skills_dir
+            self.registry,
+            default_model=self.settings.model,
+            skills_dir=self.skills_dir,
+            default_communication_style=self.config.default_communication_style,
         )
         self.short_term = ShortTermMemory()
         self.long_term = LongTermMemory()
@@ -66,6 +70,8 @@ class God:
         )
         bound = self.config.agents.get("god", AgentBinding())
         instruction = attach_skills(base_instruction, bound.skills, self.skills_dir)
+        style = bound.communication_style or self.config.default_communication_style
+        instruction = apply_communication_style(instruction, style)
 
         return LlmAgent(
             name="god",

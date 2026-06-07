@@ -17,8 +17,9 @@ _POC = {
         "cli": {"enabled": True, "default_role": "admin"},
         "telegram": {"enabled": True},
     },
+    "default_communication_style": "human",
     "skills_dir": "/custom/skills",
-    "agents": {"god": {"skills": ["caveman"]}},
+    "agents": {"god": {"communication_style": "caveman", "skills": ["caveman"]}},
     "roles": {"guest": {"tools": ["web_search"]}},
     "tools": {"web_extract": {"enabled": True, "max_chars": 8000}},
     "souls": {"god": None},
@@ -34,7 +35,9 @@ def test_parses_poc_sample() -> None:
     assert config.connectors.whatsapp.allow == ["123456789", "987654321"]
     assert config.connectors.whatsapp.group_trigger.mention_only is True
     assert config.connectors.cli.default_role == "admin"
+    assert config.default_communication_style == "human"
     assert str(config.skills_dir) == "/custom/skills"
+    assert config.agents["god"].communication_style == "caveman"
     assert config.agents["god"].skills == ["caveman"]
     assert config.roles["guest"].tools == ["web_search"]
     # ToolConfig keeps unknown tool-specific keys verbatim (extra="allow").
@@ -51,3 +54,4 @@ def test_empty_config_is_all_defaults() -> None:
     assert config.connectors.cli.enabled is False
     assert config.connectors.telegram.enabled is False
     assert config.connectors.whatsapp.group_trigger.mention_only is True
+    assert config.default_communication_style == "human"

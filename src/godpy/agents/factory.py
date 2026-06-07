@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from godpy.agents.registry import AgentRegistry
 from godpy.agents.spec import AgentSpec, slugify
+from godpy.communication import DEFAULT_COMMUNICATION_STYLE, apply_communication_style
 from godpy.skills import attach_skills, load_skill
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -26,10 +27,12 @@ class AgentFactory:
         *,
         default_model: str,
         skills_dir: Path | None = None,
+        default_communication_style: str = DEFAULT_COMMUNICATION_STYLE,
     ) -> None:
         self._registry = registry
         self._default_model = default_model
         self._skills_dir = skills_dir
+        self._default_communication_style = default_communication_style
 
     def create_or_reuse(self, spec: AgentSpec) -> LlmAgent:
         """Return an ADK agent for ``spec``, loading from the registry if present.
@@ -50,6 +53,8 @@ class AgentFactory:
         instruction = spec.instruction
         if self._skills_dir is not None:
             instruction = attach_skills(instruction, spec.skills, self._skills_dir)
+        style = spec.communication_style or self._default_communication_style
+        instruction = apply_communication_style(instruction, style)
 
         return LlmAgent(
             name=spec.key,
