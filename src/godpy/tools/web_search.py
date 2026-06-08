@@ -56,6 +56,7 @@ def make_web_search(provider: SearchProvider) -> Callable[[str, int], str]:
         Returns:
             A numbered list of results (title, URL, snippet), or a not-found message.
         """
+        print("Seraching....", query, max_results)
         cleaned = query.strip()
         if not cleaned:
             raise ValueError("query must not be empty")

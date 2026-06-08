@@ -68,8 +68,10 @@ class God:
             for key in self.known_agents()
         ]
         base_instruction = (
-            "You are God. Pick the subagent best suited to the user's task. "
-            "If none fits, describe the new specialist needed so it can be created."
+            "You are God. When one of your own tools can satisfy the request, call it "
+            "directly rather than answering from memory. For a task better handled by a "
+            "specialist, pick the subagent best suited to it; if none fits, describe the "
+            "new specialist needed so it can be created."
         )
         bound = self.config.agents.get("god", AgentBinding())
         instruction = attach_skills(base_instruction, bound.skills, self.skills_dir)
