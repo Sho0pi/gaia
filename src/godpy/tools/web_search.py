@@ -12,6 +12,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Protocol
 
+from godpy.logs import log_event
+
 #: Tool id, used by the registry and as the ADK tool name (matches the closure name).
 NAME = "web_search"
 
@@ -84,21 +86,34 @@ def make_web_search(provider: SearchProvider) -> Callable[..., dict[str, Any]]:
             'snippet'}, ...]}. On failure, {'status': 'error', 'error_message': str}.
         """
         cleaned = query.strip()
+
+        def done(result: dict[str, Any]) -> dict[str, Any]:
+            log_event(
+                "tool_used",
+                tool=NAME,
+                query=cleaned,
+                status=result["status"],
+                results=len(result.get("results", [])),
+            )
+            return result
+
         if not cleaned:
-            return {"status": "error", "error_message": "query must not be empty"}
+            return done({"status": "error", "error_message": "query must not be empty"})
 
         timelimit: str | None = None
         if time_range:
             timelimit = TIME_RANGES.get(time_range.strip().lower())
             if timelimit is None:
                 allowed = ", ".join(TIME_RANGES)
-                return {
-                    "status": "error",
-                    "error_message": f"time_range must be empty or one of: {allowed}",
-                }
+                return done(
+                    {
+                        "status": "error",
+                        "error_message": f"time_range must be empty or one of: {allowed}",
+                    }
+                )
 
         capped = max(1, min(max_results, MAX_RESULTS_CAP))
         results = provider(cleaned, capped, timelimit)
-        return {"status": "success", "results": results}
+        return done({"status": "success", "results": results})
 
     return web_search

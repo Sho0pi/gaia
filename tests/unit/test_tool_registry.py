@@ -44,6 +44,19 @@ def test_register_replaces_earlier() -> None:
     assert registry.get("t") is other
 
 
+def test_web_fetch_installed_by_default() -> None:
+    # On with no config at all, and when present without enabled: false.
+    assert "web_fetch" in default_registry().names()
+    config = GodConfig(tools={"web_fetch": ToolConfig()})
+    assert "web_fetch" in default_registry(config).names()
+
+
+def test_web_fetch_removed_when_disabled() -> None:
+    config = GodConfig(tools={"web_fetch": ToolConfig(enabled=False)})
+
+    assert "web_fetch" not in default_registry(config).names()
+
+
 def test_web_search_not_installed_without_engine() -> None:
     # No config at all: engine is unconfigured, so the tool is not installed.
     assert "web_search" not in default_registry().names()

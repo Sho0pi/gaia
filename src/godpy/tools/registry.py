@@ -13,6 +13,8 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Any, Union
 
+from godpy.tools.web_fetch import NAME as WEB_FETCH
+from godpy.tools.web_fetch import httpx_fetcher, make_web_fetch
 from godpy.tools.web_search import NAME as WEB_SEARCH
 from godpy.tools.web_search import get_search_provider, make_web_search
 
@@ -82,13 +84,17 @@ def _is_enabled(config: GodConfig | None, name: str) -> bool:
 def default_registry(config: GodConfig | None = None) -> ToolRegistry:
     """Build the registry with godpy's built-in tools, configured from ``config.tools``.
 
-    A tool is installed only when its required config is present: ``web_search`` needs
-    ``tools.web_search.engine`` (e.g. ``duckduckgo``) — without it the tool is not
-    registered. ``enabled: false`` removes a tool even when otherwise configured.
+    Most tools are on by default and only ``enabled: false`` removes them — e.g.
+    ``web_fetch``. A few need required config: ``web_search`` needs
+    ``tools.web_search.engine`` (e.g. ``duckduckgo``) and is absent without it.
     """
     registry = ToolRegistry()
-    name = WEB_SEARCH
-    engine = _tool_setting(config, name, "engine")
-    if engine and _is_enabled(config, name):
-        registry.register(name, make_web_search(get_search_provider(engine)))
+
+    if _is_enabled(config, WEB_FETCH):
+        registry.register(WEB_FETCH, make_web_fetch(httpx_fetcher))
+
+    engine = _tool_setting(config, WEB_SEARCH, "engine")
+    if engine and _is_enabled(config, WEB_SEARCH):
+        registry.register(WEB_SEARCH, make_web_search(get_search_provider(engine)))
+
     return registry

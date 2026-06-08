@@ -6,6 +6,12 @@ attach exactly the tools an :class:`~godpy.agents.spec.AgentSpec` asks for.
 """
 
 from godpy.tools.registry import Tool, ToolRegistry, default_registry
+from godpy.tools.web_fetch import (
+    Fetcher,
+    httpx_fetcher,
+    make_web_fetch,
+    validate_url,
+)
 from godpy.tools.web_search import (
     SearchProvider,
     ddg_provider,
@@ -13,10 +19,14 @@ from godpy.tools.web_search import (
 )
 
 __all__ = [
+    "Fetcher",
     "SearchProvider",
     "Tool",
     "ToolRegistry",
     "ddg_provider",
     "default_registry",
+    "httpx_fetcher",
+    "make_web_fetch",
     "make_web_search",
+    "validate_url",
 ]

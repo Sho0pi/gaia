@@ -23,6 +23,12 @@ markdown). godpy follows ADK's function-tool best practices
 - **Return a dict, never raise to the model, never return a bare string.** Use
   `{"status": "success", ...}` or `{"status": "error", "error_message": "<human text>"}`.
   Validate inputs and return an error dict instead of raising.
+- **Log every call.** A tool call is user activity, so emit one structured event per
+  invocation with `log_event("tool_used", tool=NAME, status=result["status"], …)` from
+  `godpy.logs` (see `web_search.py` / `web_fetch.py`). Funnel every `return` through a
+  small `done(result)` closure so success *and* every error path log exactly once. Add a
+  couple of cheap context fields (e.g. `query`, `url`, result count) — **never secrets**
+  (redaction is best-effort).
 
 ## Pluggable backend (when the tool wraps an external service)
 - Define a `SearchProvider`-style `Protocol` for the backend and a

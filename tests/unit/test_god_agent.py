@@ -40,4 +40,8 @@ def test_root_agent_attaches_all_registered_tools(
     kwargs = _capture_root_kwargs(god, monkeypatch)
 
     assert kwargs["tools"] == god.tools.all()
-    assert {getattr(t, "__name__", t) for t in kwargs["tools"]} == {"web_search"}  # type: ignore[union-attr]
+    # web_fetch is on by default; web_search is added by the configured engine.
+    assert {getattr(t, "__name__", t) for t in kwargs["tools"]} == {  # type: ignore[union-attr]
+        "web_fetch",
+        "web_search",
+    }
