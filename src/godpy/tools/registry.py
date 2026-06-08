@@ -11,15 +11,23 @@ factory.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Union
 
+from godpy.tools.web_search import NAME as WEB_SEARCH
 from godpy.tools.web_search import get_search_provider, make_web_search
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
+    from google.adk.tools.base_tool import BaseTool
+    from google.adk.tools.base_toolset import BaseToolset
+
     from godpy.config import GodConfig
 
-# An ADK tool is just a callable; ADK derives name/description/schema from it.
-Tool = Callable[..., Any]
+# Exactly what ADK's ``LlmAgent(tools=...)`` accepts: a plain callable (ADK derives
+# name/description/schema from it) or an ADK tool/toolset object. Typed against the
+# framework so the registry can also hold built-in BaseTools, and resolved lists drop
+# straight into the (invariant) ADK tools list. ADK is imported only under
+# TYPE_CHECKING to keep this module importable without a model backend.
+Tool = Union[Callable[..., Any], "BaseTool", "BaseToolset"]
 
 
 class ToolRegistry:
@@ -40,16 +48,12 @@ class ToolRegistry:
             known = ", ".join(self.names()) or "<none>"
             raise KeyError(f"unknown tool {name!r}; registered: {known}") from None
 
-    def resolve(self, ids: Iterable[str]) -> list[Any]:
-        """Map each id to its callable (order preserved), raising on any unknown id.
-
-        Returns ``list[Any]`` so the result drops straight into ADK's invariant
-        ``LlmAgent(tools=...)`` (a ``Callable | BaseTool | BaseToolset`` list).
-        """
+    def resolve(self, ids: Iterable[str]) -> list[Tool]:
+        """Map each id to its tool (order preserved), raising on any unknown id."""
         return [self.get(name) for name in ids]
 
-    def all(self) -> list[Any]:
-        """Every registered tool, in name order (``list[Any]`` for ADK's tools list)."""
+    def all(self) -> list[Tool]:
+        """Every registered tool, in name order."""
         return [self._tools[name] for name in self.names()]
 
     def names(self) -> list[str]:
@@ -83,7 +87,8 @@ def default_registry(config: GodConfig | None = None) -> ToolRegistry:
     one with ``enabled: false``.
     """
     registry = ToolRegistry()
-    if _is_enabled(config, "web_search"):
-        provider = get_search_provider(_tool_setting(config, "web_search", "engine"))
-        registry.register("web_search", make_web_search(provider))
+    name = WEB_SEARCH
+    if _is_enabled(config, name):
+        provider = get_search_provider(_tool_setting(config, name, "engine"))
+        registry.register(name, make_web_search(provider))
     return registry

@@ -12,6 +12,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Protocol
 
+#: Tool id, used by the registry and as the ADK tool name (matches the closure name).
+NAME = "web_search"
+
 #: Default and hard cap for ``max_results``.
 DEFAULT_MAX_RESULTS = 5
 MAX_RESULTS_CAP = 10
@@ -55,10 +58,10 @@ def get_search_provider(engine: str | None = None) -> SearchProvider:
 
 
 def make_web_search(provider: SearchProvider) -> Callable[..., dict[str, Any]]:
-    """Return the ADK ``web_search`` tool bound to ``provider``.
+    """Return the ADK web_search tool bound to ``provider``.
 
     ADK reads the returned function's name, signature and docstring to build the tool
-    schema, so the closure is named ``web_search`` and documents its args and return.
+    schema, so the closure's name matches :data:`NAME` and documents its args + return.
     """
 
     def web_search(
