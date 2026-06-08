@@ -31,11 +31,8 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 logger = logging.getLogger(__name__)
 
-# Default home for manually-placed skills (clawhub auto-download is a follow-up).
-DEFAULT_SKILLS_DIR = constants.SKILLS_DIR
 
-
-def resolve_skills_dir(config: GodConfig, *, default: Path = DEFAULT_SKILLS_DIR) -> Path:
+def resolve_skills_dir(config: GodConfig, *, default: Path = constants.SKILLS_DIR) -> Path:
     """Where skills are loaded from: ``config.skills_dir`` if set, else the default."""
     configured = config.skills_dir
     if configured is not None and str(configured) not in ("", "."):

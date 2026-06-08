@@ -17,9 +17,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from godpy import constants
 
-# App-owned env var names, derived from the central prefix (GODPY_…).
-_P = constants.ENV_PREFIX
-
 
 class Settings(BaseSettings):
     """Central settings, populated from environment variables or a .env file."""
@@ -34,29 +31,40 @@ class Settings(BaseSettings):
 
     # Where reusable AgentCards are persisted.
     agent_registry_dir: Path = Field(
-        default=constants.AGENT_REGISTRY_DIR, validation_alias=f"{_P}AGENT_REGISTRY_DIR"
+        default=constants.AGENT_REGISTRY_DIR,
+        validation_alias=f"{constants.ENV_PREFIX}AGENT_REGISTRY_DIR",
     )
 
     # The hot-swappable god.yaml (non-secret runtime config). Lives next to the
     # WhatsApp session db so all of the app's home state is under HOME_DIR.
-    config_path: Path = Field(default=constants.CONFIG_PATH, validation_alias=f"{_P}CONFIG")
+    config_path: Path = Field(
+        default=constants.CONFIG_PATH, validation_alias=f"{constants.ENV_PREFIX}CONFIG"
+    )
 
     # Directory for rotating log files (system.log / events.jsonl / errors.log).
-    log_dir: Path = Field(default=constants.LOG_DIR, validation_alias=f"{_P}LOG_DIR")
+    log_dir: Path = Field(
+        default=constants.LOG_DIR, validation_alias=f"{constants.ENV_PREFIX}LOG_DIR"
+    )
 
     # Connector credentials.
-    telegram_bot_token: str | None = Field(default=None, validation_alias=f"{_P}TELEGRAM_BOT_TOKEN")
-    whatsapp_phone_id: str | None = Field(default=None, validation_alias=f"{_P}WHATSAPP_PHONE_ID")
-    whatsapp_token: str | None = Field(default=None, validation_alias=f"{_P}WHATSAPP_TOKEN")
+    telegram_bot_token: str | None = Field(
+        default=None, validation_alias=f"{constants.ENV_PREFIX}TELEGRAM_BOT_TOKEN"
+    )
+    whatsapp_phone_id: str | None = Field(
+        default=None, validation_alias=f"{constants.ENV_PREFIX}WHATSAPP_PHONE_ID"
+    )
+    whatsapp_token: str | None = Field(
+        default=None, validation_alias=f"{constants.ENV_PREFIX}WHATSAPP_TOKEN"
+    )
     # Session db for the regular-account (neonize) backend. First run writes a QR
     # to the terminal; the paired session is persisted here so later runs skip it.
     whatsapp_session_db: Path = Field(
-        default=constants.SESSION_DB, validation_alias=f"{_P}WHATSAPP_SESSION_DB"
+        default=constants.SESSION_DB, validation_alias=f"{constants.ENV_PREFIX}WHATSAPP_SESSION_DB"
     )
 
     # mem0 long-term memory.
     mem0_collection: str = Field(
-        default=constants.APP_NAME, validation_alias=f"{_P}MEM0_COLLECTION"
+        default=constants.APP_NAME, validation_alias=f"{constants.ENV_PREFIX}MEM0_COLLECTION"
     )
 
     @property
