@@ -6,7 +6,8 @@ straight from this schema (:mod:`godpy.config.scaffold`) — add a field here an
 scaffold updates itself, no second copy to maintain.
 
 Secrets (tokens, api keys) are *not* modelled here; they stay in
-:class:`godpy.config.settings.Settings` (env). ``roles`` / ``tools`` / ``souls`` are
+:class:`godpy.config.settings.Settings` (env). ``tools`` is wired: it toggles which
+registered tools are available (see :mod:`godpy.tools`). ``roles`` / ``souls`` are
 typed but **not yet wired** into the runtime; they are validated and carried forward
 so future work has a stable shape to build on.
 """
@@ -139,7 +140,10 @@ class GodConfig(BaseModel):
         default_factory=dict, description="Per-role overrides (not yet wired)."
     )
     tools: dict[str, ToolConfig] = Field(
-        default_factory=dict, description="Per-tool settings (not yet wired)."
+        default_factory=dict,
+        description="Per-tool settings keyed by tool id (e.g. web_search.engine: "
+        "duckduckgo). Every tool is attached to agents by default; disable one with "
+        "enabled: false.",
     )
     souls: dict[str, Any] = Field(
         default_factory=dict, description="Agent personas (not yet wired)."

@@ -133,6 +133,70 @@ def test_factory_composes_default_style_and_skill(
     assert "CAVEMAN RULES" in instruction  # folder skill appended
 
 
+def _capture_kwargs(
+    factory: AgentFactory, spec: AgentSpec, monkeypatch: pytest.MonkeyPatch
+) -> dict[str, object]:
+    """Build the agent with a recording LlmAgent and return all kwargs it received."""
+    import google.adk.agents as adk
+
+    captured: dict[str, object] = {}
+
+    class _Recorder:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr(adk, "LlmAgent", _Recorder)
+    factory.create_or_reuse(spec)
+    return captured
+
+
+def test_factory_resolves_and_passes_tools(
+    registry: AgentRegistry, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from godpy.tools import ToolRegistry
+
+    def _search() -> str:
+        return "x"
+
+    tool_registry = ToolRegistry()
+    tool_registry.register("web_search", _search)
+    spec = AgentSpec(
+        name="Searcher", description="d", instruction="i", model="m", tools=["web_search"]
+    )
+    factory = AgentFactory(registry, default_model="m", tool_registry=tool_registry)
+
+    kwargs = _capture_kwargs(factory, spec, monkeypatch)
+
+    assert kwargs["tools"] == [_search]
+
+
+def test_factory_defaults_to_all_tools(
+    registry: AgentRegistry, sample_spec: AgentSpec, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from godpy.tools import ToolRegistry
+
+    a, b = (lambda: "a"), (lambda: "b")
+    tool_registry = ToolRegistry()
+    tool_registry.register("a", a)
+    tool_registry.register("b", b)
+    factory = AgentFactory(registry, default_model="m", tool_registry=tool_registry)
+
+    # sample_spec pins no tools, so the agent gets every registered tool.
+    kwargs = _capture_kwargs(factory, sample_spec, monkeypatch)
+
+    assert kwargs["tools"] == [a, b]
+
+
+def test_factory_no_registry_passes_empty(
+    registry: AgentRegistry, sample_spec: AgentSpec, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    factory = AgentFactory(registry, default_model="m")  # no tool_registry
+
+    kwargs = _capture_kwargs(factory, sample_spec, monkeypatch)
+
+    assert kwargs["tools"] == []
+
+
 def test_spec_style_overrides_default(
     registry: AgentRegistry, monkeypatch: pytest.MonkeyPatch
 ) -> None:
