@@ -26,14 +26,14 @@ from typing import TYPE_CHECKING, Any
 
 from pythonjsonlogger.json import JsonFormatter
 
+from godpy import constants
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from godpy.config.schema import LoggingConfig
     from godpy.config.settings import Settings
 
 Redactor = Callable[[str], str]
 
-_SYSTEM_LOGGER = "godpy"
-_EVENTS_LOGGER = "godpy.events"
 _REDACTED = "***REDACTED***"
 
 # Transport/library loggers that are noisy at INFO; pinned to WARNING. (google_adk /
@@ -165,13 +165,13 @@ def setup_logging(settings: Settings, cfg: LoggingConfig, *, force: bool = False
     root.addHandler(_rotating(log_dir / "errors.log", logging.WARNING, text_fmt, cfg))
 
     # godpy logs inherit the root handlers (no dedicated handlers of their own).
-    system = logging.getLogger(_SYSTEM_LOGGER)
+    system = logging.getLogger(constants.LOGGER_NAME)
     system.handlers.clear()
     system.propagate = True
     system.setLevel(logging.NOTSET)
 
     # Events logger: console (human) + events.jsonl (machine). No propagation.
-    events = logging.getLogger(_EVENTS_LOGGER)
+    events = logging.getLogger(constants.EVENTS_LOGGER_NAME)
     events.setLevel(logging.INFO)
     events.handlers.clear()
     events.propagate = False
@@ -207,4 +207,4 @@ def log_event(action: str, **fields: Any) -> None:
     to ``events.jsonl`` and mirrored to the console. Keep secrets out of ``fields`` —
     redaction is best-effort, not a guarantee.
     """
-    logging.getLogger(_EVENTS_LOGGER).info(action, extra=fields)
+    logging.getLogger(constants.EVENTS_LOGGER_NAME).info(action, extra=fields)

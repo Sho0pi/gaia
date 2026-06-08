@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, ClassVar
 
+from godpy import constants
 from godpy.connectors.base import Handler
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -42,7 +43,7 @@ class CLIConnector:
         handler = self._handler
 
         class ChatApp(App):  # type: ignore[type-arg]
-            TITLE = "godpy"
+            TITLE = constants.APP_NAME
             CSS = """
             #log { padding: 1 2; }
             .bubble { width: auto; max-width: 80%; padding: 0 1; margin-top: 1; }

@@ -10,13 +10,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from godpy import constants
 from godpy.connectors.base import Handler, Send
 from godpy.logs import log_event
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from godpy.god.agent import God
-
-_APP_NAME = "godpy"
 
 
 class GodHandler:
@@ -43,10 +42,10 @@ class GodHandler:
         if self._runner is None:
             session_service = InMemorySessionService()  # type: ignore[no-untyped-call]
             await session_service.create_session(
-                app_name=_APP_NAME, user_id=self._user_id, session_id=self._session_id
+                app_name=constants.APP_NAME, user_id=self._user_id, session_id=self._session_id
             )
             self._runner = Runner(
-                app_name=_APP_NAME,
+                app_name=constants.APP_NAME,
                 agent=self._god.build_root_agent(),
                 session_service=session_service,
             )
