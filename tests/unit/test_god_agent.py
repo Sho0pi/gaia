@@ -11,7 +11,10 @@ from godpy.god import God
 
 
 def _god(tmp_path: Path) -> God:
-    settings = Settings(agent_registry_dir=tmp_path / "registry", config_path=tmp_path / "god.yaml")
+    # web_search is installed only when an engine is configured.
+    config_path = tmp_path / "god.yaml"
+    config_path.write_text("tools:\n  web_search:\n    engine: duckduckgo\n")
+    settings = Settings(agent_registry_dir=tmp_path / "registry", config_path=config_path)
     return God(settings)
 
 

@@ -44,30 +44,26 @@ def test_register_replaces_earlier() -> None:
     assert registry.get("t") is other
 
 
-def test_default_registry_includes_web_search() -> None:
-    registry = default_registry()
-
-    assert "web_search" in registry.names()
-
-
-def test_default_registry_honors_disabled_flag() -> None:
-    config = GodConfig(tools={"web_search": ToolConfig(enabled=False)})
-
-    registry = default_registry(config)
-
-    assert "web_search" not in registry.names()
+def test_web_search_not_installed_without_engine() -> None:
+    # No config at all: engine is unconfigured, so the tool is not installed.
+    assert "web_search" not in default_registry().names()
+    # Present but engine-less is also not installed.
+    config = GodConfig(tools={"web_search": ToolConfig()})
+    assert "web_search" not in default_registry(config).names()
 
 
-def test_default_registry_enabled_true_is_kept() -> None:
-    config = GodConfig(tools={"web_search": ToolConfig(enabled=True)})
-
-    assert "web_search" in default_registry(config).names()
-
-
-def test_default_registry_accepts_configured_engine() -> None:
+def test_default_registry_installs_configured_engine() -> None:
     config = GodConfig(tools={"web_search": ToolConfig(engine="duckduckgo")})  # type: ignore[call-arg]
 
     assert "web_search" in default_registry(config).names()
+
+
+def test_disabled_flag_removes_configured_tool() -> None:
+    config = GodConfig(
+        tools={"web_search": ToolConfig(engine="duckduckgo", enabled=False)}  # type: ignore[call-arg]
+    )
+
+    assert "web_search" not in default_registry(config).names()
 
 
 def test_default_registry_rejects_unknown_engine() -> None:

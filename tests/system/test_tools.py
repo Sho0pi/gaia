@@ -21,7 +21,9 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_subagent_with_web_search_builds(tmp_path: Path) -> None:
-    settings = Settings(agent_registry_dir=tmp_path)
+    config_path = tmp_path / "god.yaml"
+    config_path.write_text("tools:\n  web_search:\n    engine: duckduckgo\n")
+    settings = Settings(agent_registry_dir=tmp_path, config_path=config_path)
     god = God(settings)
     spec = AgentSpec(
         name="Researcher",

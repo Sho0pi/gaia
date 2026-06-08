@@ -1,10 +1,10 @@
 """The ``web_search`` tool: query the web and return result titles, URLs, snippets.
 
 The search backend is pluggable: each engine is a :class:`SearchProvider`, looked up
-by name in :data:`SEARCH_ENGINES`. Which one is used is chosen from per-tool config
-(``tools.web_search.engine`` in ``god.yaml``); only ``duckduckgo`` exists today. The
-provider SDK is imported lazily (heavy-deps convention) so importing this module
-never pulls in a search SDK.
+by name in :data:`SEARCH_ENGINES`. The engine is **required config** — it must be set
+via ``tools.web_search.engine`` in ``god.yaml`` (only ``duckduckgo`` exists today);
+without it the tool is not installed. The provider SDK is imported lazily (heavy-deps
+convention) so importing this module never pulls in a search SDK.
 """
 
 from __future__ import annotations
@@ -42,19 +42,20 @@ def ddg_provider(query: str, max_results: int, timelimit: str | None) -> list[di
     ]
 
 
-#: Registered search engines by id; the config picks one by name.
+#: Registered search engines by id; the config picks one by name (no default).
 SEARCH_ENGINES: dict[str, SearchProvider] = {"duckduckgo": ddg_provider}
-DEFAULT_ENGINE = "duckduckgo"
 
 
-def get_search_provider(engine: str | None = None) -> SearchProvider:
-    """Return the :class:`SearchProvider` for ``engine`` (default: duckduckgo)."""
-    name = (engine or DEFAULT_ENGINE).lower()
+def get_search_provider(engine: str) -> SearchProvider:
+    """Return the :class:`SearchProvider` for ``engine``; raise if unknown.
+
+    There is no default engine — it must be named explicitly (from config).
+    """
     try:
-        return SEARCH_ENGINES[name]
+        return SEARCH_ENGINES[engine.lower()]
     except KeyError:
         known = ", ".join(sorted(SEARCH_ENGINES))
-        raise ValueError(f"unknown web_search engine {name!r}; available: {known}") from None
+        raise ValueError(f"unknown web_search engine {engine!r}; available: {known}") from None
 
 
 def make_web_search(provider: SearchProvider) -> Callable[..., dict[str, Any]]:

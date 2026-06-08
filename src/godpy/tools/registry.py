@@ -82,13 +82,13 @@ def _is_enabled(config: GodConfig | None, name: str) -> bool:
 def default_registry(config: GodConfig | None = None) -> ToolRegistry:
     """Build the registry with godpy's built-in tools, configured from ``config.tools``.
 
-    Each tool's behaviour is driven by its own config section: ``web_search`` picks
-    its engine via ``tools.web_search.engine``. Tools are enabled by default; disable
-    one with ``enabled: false``.
+    A tool is installed only when its required config is present: ``web_search`` needs
+    ``tools.web_search.engine`` (e.g. ``duckduckgo``) — without it the tool is not
+    registered. ``enabled: false`` removes a tool even when otherwise configured.
     """
     registry = ToolRegistry()
     name = WEB_SEARCH
-    if _is_enabled(config, name):
-        provider = get_search_provider(_tool_setting(config, name, "engine"))
-        registry.register(name, make_web_search(provider))
+    engine = _tool_setting(config, name, "engine")
+    if engine and _is_enabled(config, name):
+        registry.register(name, make_web_search(get_search_provider(engine)))
     return registry

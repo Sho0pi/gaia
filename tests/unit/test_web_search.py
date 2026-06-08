@@ -68,8 +68,7 @@ def test_max_results_capped_and_floored() -> None:
     assert [c[1] for c in provider.calls] == [MAX_RESULTS_CAP, 1]
 
 
-def test_get_search_provider_default_and_unknown() -> None:
-    assert get_search_provider() is ddg_provider
+def test_get_search_provider_by_name_and_unknown() -> None:
     assert get_search_provider("duckduckgo") is ddg_provider
     with pytest.raises(ValueError, match="unknown web_search engine 'bing'"):
         get_search_provider("bing")
