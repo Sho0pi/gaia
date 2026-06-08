@@ -55,3 +55,21 @@ def test_subagent_with_web_fetch_builds(tmp_path: Path) -> None:
 
     assert agent.name == "reader"
     assert len(agent.tools) == 1
+
+
+def test_subagent_with_fs_read_builds(tmp_path: Path) -> None:
+    # fs_read needs no config; it is on by default.
+    settings = Settings(agent_registry_dir=tmp_path, config_path=tmp_path / "god.yaml")
+    god = God(settings)
+    spec = AgentSpec(
+        name="Filer",
+        description="Reads files.",
+        instruction="Read files from the workspace using fs_read.",
+        model=settings.model,
+        tools=["fs_read"],
+    )
+
+    agent = god.ensure_agent(spec)
+
+    assert agent.name == "filer"
+    assert len(agent.tools) == 1

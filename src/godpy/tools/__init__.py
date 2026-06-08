@@ -5,6 +5,15 @@ its schema. :class:`ToolRegistry` maps tool ids to those callables so the factor
 attach exactly the tools an :class:`~godpy.agents.spec.AgentSpec` asks for.
 """
 
+from godpy.tools.filesystem import (
+    Sandbox,
+    SandboxError,
+    make_fs_edit,
+    make_fs_glob,
+    make_fs_grep,
+    make_fs_read,
+    make_fs_write,
+)
 from godpy.tools.registry import Tool, ToolRegistry, default_registry
 from godpy.tools.web_fetch import (
     Fetcher,
@@ -20,12 +29,19 @@ from godpy.tools.web_search import (
 
 __all__ = [
     "Fetcher",
+    "Sandbox",
+    "SandboxError",
     "SearchProvider",
     "Tool",
     "ToolRegistry",
     "ddg_provider",
     "default_registry",
     "httpx_fetcher",
+    "make_fs_edit",
+    "make_fs_glob",
+    "make_fs_grep",
+    "make_fs_read",
+    "make_fs_write",
     "make_web_fetch",
     "make_web_search",
     "validate_url",

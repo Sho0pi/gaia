@@ -40,8 +40,8 @@ def test_root_agent_attaches_all_registered_tools(
     kwargs = _capture_root_kwargs(god, monkeypatch)
 
     assert kwargs["tools"] == god.tools.all()
-    # web_fetch is on by default; web_search is added by the configured engine.
-    assert {getattr(t, "__name__", t) for t in kwargs["tools"]} == {  # type: ignore[union-attr]
-        "web_fetch",
-        "web_search",
-    }
+    # The root agent gets every registered tool: web_fetch + the fs_* bundle are on by
+    # default, web_search is added by the configured engine. (fs_glob/fs_grep depend on
+    # the fd/rg binaries, so assert the always-present core as a subset.)
+    names = {getattr(t, "__name__", t) for t in kwargs["tools"]}  # type: ignore[union-attr]
+    assert {"web_fetch", "web_search", "fs_read", "fs_write", "fs_edit"} <= names
