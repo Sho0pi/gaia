@@ -40,8 +40,12 @@ class ToolRegistry:
             known = ", ".join(self.names()) or "<none>"
             raise KeyError(f"unknown tool {name!r}; registered: {known}") from None
 
-    def resolve(self, ids: Iterable[str]) -> list[Tool]:
-        """Map each id to its callable (order preserved), raising on any unknown id."""
+    def resolve(self, ids: Iterable[str]) -> list[Any]:
+        """Map each id to its callable (order preserved), raising on any unknown id.
+
+        Returns ``list[Any]`` so the result drops straight into ADK's invariant
+        ``LlmAgent(tools=...)`` (a ``Callable | BaseTool | BaseToolset`` list).
+        """
         return [self.get(name) for name in ids]
 
     def all(self) -> list[Tool]:
