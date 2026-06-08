@@ -13,7 +13,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Any
 
-from godpy.tools.web_search import ddg_provider, make_web_search
+from godpy.tools.web_search import get_search_provider, make_web_search
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from godpy.config import GodConfig
@@ -48,13 +48,23 @@ class ToolRegistry:
         """
         return [self.get(name) for name in ids]
 
-    def all(self) -> list[Tool]:
-        """Every registered tool, in name order."""
+    def all(self) -> list[Any]:
+        """Every registered tool, in name order (``list[Any]`` for ADK's tools list)."""
         return [self._tools[name] for name in self.names()]
 
     def names(self) -> list[str]:
         """Every registered tool id, sorted."""
         return sorted(self._tools)
+
+
+def _tool_setting(config: GodConfig | None, name: str, key: str) -> Any | None:
+    """Read a per-tool config value (``tools.<name>.<key>``), or None if unset."""
+    if config is None:
+        return None
+    entry = config.tools.get(name)
+    if entry is None:
+        return None
+    return (entry.model_extra or {}).get(key)
 
 
 def _is_enabled(config: GodConfig | None, name: str) -> bool:
@@ -66,13 +76,14 @@ def _is_enabled(config: GodConfig | None, name: str) -> bool:
 
 
 def default_registry(config: GodConfig | None = None) -> ToolRegistry:
-    """Build the registry with godpy's built-in tools, honoring ``config.tools`` flags.
+    """Build the registry with godpy's built-in tools, configured from ``config.tools``.
 
-    The provider for each tool is injected here, so swapping ``web_search`` from
-    DuckDuckGo to another backend later is a one-line change with no effect on the
-    tool's call site.
+    Each tool's behaviour is driven by its own config section: ``web_search`` picks
+    its engine via ``tools.web_search.engine``. Tools are enabled by default; disable
+    one with ``enabled: false``.
     """
     registry = ToolRegistry()
     if _is_enabled(config, "web_search"):
-        registry.register("web_search", make_web_search(ddg_provider))
+        provider = get_search_provider(_tool_setting(config, "web_search", "engine"))
+        registry.register("web_search", make_web_search(provider))
     return registry

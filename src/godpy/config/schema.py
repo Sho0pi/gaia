@@ -114,10 +114,6 @@ class AgentBinding(BaseModel):
         default_factory=list,
         description="Skill ids (folder names under skills_dir) always loaded onto this agent.",
     )
-    tools: list[str] = Field(
-        default_factory=list,
-        description="Tool ids (see godpy.tools) attached to this agent; empty = no tools.",
-    )
 
 
 class GodConfig(BaseModel):
@@ -145,8 +141,9 @@ class GodConfig(BaseModel):
     )
     tools: dict[str, ToolConfig] = Field(
         default_factory=dict,
-        description="Per-tool settings keyed by tool id (e.g. web_search); a tool is on "
-        "unless listed here with enabled: false.",
+        description="Per-tool settings keyed by tool id (e.g. web_search.engine: "
+        "duckduckgo). Every tool is attached to agents by default; disable one with "
+        "enabled: false.",
     )
     souls: dict[str, Any] = Field(
         default_factory=dict, description="Agent personas (not yet wired)."

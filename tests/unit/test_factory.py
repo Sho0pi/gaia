@@ -170,7 +170,24 @@ def test_factory_resolves_and_passes_tools(
     assert kwargs["tools"] == [_search]
 
 
-def test_factory_no_tools_passes_empty(
+def test_factory_defaults_to_all_tools(
+    registry: AgentRegistry, sample_spec: AgentSpec, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from godpy.tools import ToolRegistry
+
+    a, b = (lambda: "a"), (lambda: "b")
+    tool_registry = ToolRegistry()
+    tool_registry.register("a", a)
+    tool_registry.register("b", b)
+    factory = AgentFactory(registry, default_model="m", tool_registry=tool_registry)
+
+    # sample_spec pins no tools, so the agent gets every registered tool.
+    kwargs = _capture_kwargs(factory, sample_spec, monkeypatch)
+
+    assert kwargs["tools"] == [a, b]
+
+
+def test_factory_no_registry_passes_empty(
     registry: AgentRegistry, sample_spec: AgentSpec, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     factory = AgentFactory(registry, default_model="m")  # no tool_registry

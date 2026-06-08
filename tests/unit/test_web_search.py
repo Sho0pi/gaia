@@ -1,36 +1,61 @@
-"""web_search tool: provider injection, arg validation, result capping."""
+"""web_search tool: engine selection, arg validation, capping, dict return shape."""
 
 from __future__ import annotations
 
 import pytest
 
-from godpy.tools.web_search import MAX_RESULTS_CAP, ddg_provider, make_web_search
+from godpy.tools.web_search import (
+    MAX_RESULTS_CAP,
+    ddg_provider,
+    get_search_provider,
+    make_web_search,
+)
 
 
 class _FakeProvider:
-    """Records the args the tool forwards; returns a marker string."""
+    """Records the args the tool forwards; returns one canned result."""
 
     def __init__(self) -> None:
-        self.calls: list[tuple[str, int]] = []
+        self.calls: list[tuple[str, int, str | None]] = []
 
-    def __call__(self, query: str, max_results: int) -> str:
-        self.calls.append((query, max_results))
-        return "RESULTS"
+    def __call__(self, query: str, max_results: int, timelimit: str | None) -> list[dict[str, str]]:
+        self.calls.append((query, max_results, timelimit))
+        return [{"title": "T", "url": "http://u", "snippet": "s"}]
 
 
-def test_forwards_cleaned_query_and_default_count() -> None:
+def test_success_shape_and_forwarded_args() -> None:
     provider = _FakeProvider()
     web_search = make_web_search(provider)
 
-    assert web_search("  python adk  ") == "RESULTS"
-    assert provider.calls == [("python adk", 5)]  # stripped, default max_results
+    out = web_search("  python adk  ")
+
+    assert out == {
+        "status": "success",
+        "results": [{"title": "T", "url": "http://u", "snippet": "s"}],
+    }
+    assert provider.calls == [("python adk", 5, None)]  # stripped, default count, no time limit
 
 
-def test_empty_query_raises() -> None:
-    web_search = make_web_search(_FakeProvider())
+def test_empty_query_returns_error_dict() -> None:
+    out = make_web_search(_FakeProvider())("   ")
 
-    with pytest.raises(ValueError, match="query must not be empty"):
-        web_search("   ")
+    assert out["status"] == "error"
+    assert "empty" in out["error_message"]
+
+
+def test_time_range_mapped_to_timelimit() -> None:
+    provider = _FakeProvider()
+
+    make_web_search(provider)("q", time_range="Week")
+
+    assert provider.calls[0][2] == "w"  # case-insensitive map
+
+
+def test_invalid_time_range_returns_error_dict() -> None:
+    out = make_web_search(_FakeProvider())("q", time_range="decade")
+
+    assert out["status"] == "error"
+    assert "time_range" in out["error_message"]
 
 
 def test_max_results_capped_and_floored() -> None:
@@ -40,32 +65,25 @@ def test_max_results_capped_and_floored() -> None:
     web_search("q", max_results=999)
     web_search("q", max_results=0)
 
-    assert provider.calls == [("q", MAX_RESULTS_CAP), ("q", 1)]
+    assert [c[1] for c in provider.calls] == [MAX_RESULTS_CAP, 1]
 
 
-def test_ddg_provider_formats_results(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_search_provider_default_and_unknown() -> None:
+    assert get_search_provider() is ddg_provider
+    assert get_search_provider("duckduckgo") is ddg_provider
+    with pytest.raises(ValueError, match="unknown web_search engine 'bing'"):
+        get_search_provider("bing")
+
+
+def test_ddg_provider_maps_fields(monkeypatch: pytest.MonkeyPatch) -> None:
     import ddgs
 
     class _FakeDDGS:
-        def text(self, query: str, max_results: int) -> list[dict[str, str]]:
+        def text(self, query: str, max_results: int, timelimit: str | None) -> list[dict[str, str]]:
             return [{"title": "T", "href": "http://u", "body": "snippet"}]
 
     monkeypatch.setattr(ddgs, "DDGS", _FakeDDGS)
 
-    out = ddg_provider("q", 5)
+    out = ddg_provider("q", 5, None)
 
-    assert "1. T" in out
-    assert "http://u" in out
-    assert "snippet" in out
-
-
-def test_ddg_provider_empty(monkeypatch: pytest.MonkeyPatch) -> None:
-    import ddgs
-
-    class _EmptyDDGS:
-        def text(self, query: str, max_results: int) -> list[dict[str, str]]:
-            return []
-
-    monkeypatch.setattr(ddgs, "DDGS", _EmptyDDGS)
-
-    assert ddg_provider("q", 5) == "No results found."
+    assert out == [{"title": "T", "url": "http://u", "snippet": "snippet"}]

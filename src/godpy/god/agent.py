@@ -83,6 +83,6 @@ class God:
             model=self.config.llm.model or self.settings.model,
             description="Root orchestrator that routes tasks to specialized subagents.",
             instruction=instruction,
-            tools=self.tools.resolve(bound.tools),
+            tools=self.tools.all(),
             sub_agents=sub_agents,
         )

@@ -1,66 +1,100 @@
 """The ``web_search`` tool: query the web and return result titles, URLs, snippets.
 
-The search backend is injected as a :class:`SearchProvider` so the tool stays
-provider-neutral — :func:`ddg_provider` (DuckDuckGo, no API key) is the default, but
-a Tavily/Serper/etc. provider can be dropped in at registry-build time without
-touching the tool the model sees. The provider is imported lazily (heavy-deps
-convention) so importing this module never pulls in the search SDK.
+The search backend is pluggable: each engine is a :class:`SearchProvider`, looked up
+by name in :data:`SEARCH_ENGINES`. Which one is used is chosen from per-tool config
+(``tools.web_search.engine`` in ``god.yaml``); only ``duckduckgo`` exists today. The
+provider SDK is imported lazily (heavy-deps convention) so importing this module
+never pulls in a search SDK.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Protocol
+from typing import Any, Protocol
 
-#: Default and hard cap for ``max_results`` (mirrors the agenttools web_search tool).
+#: Default and hard cap for ``max_results``.
 DEFAULT_MAX_RESULTS = 5
 MAX_RESULTS_CAP = 10
 
+#: Accepted ``time_range`` values mapped to the ddgs ``timelimit`` codes.
+TIME_RANGES = {"day": "d", "week": "w", "month": "m", "year": "y"}
+
 
 class SearchProvider(Protocol):
-    """A web-search backend: a query + result count in, formatted text out."""
+    """A web-search engine: query + count + optional recency filter, results out."""
 
-    def __call__(self, query: str, max_results: int) -> str: ...
+    def __call__(
+        self, query: str, max_results: int, timelimit: str | None
+    ) -> list[dict[str, str]]: ...
 
 
-def ddg_provider(query: str, max_results: int) -> str:
-    """DuckDuckGo backend via the ``ddgs`` library. No API key required."""
+def ddg_provider(query: str, max_results: int, timelimit: str | None) -> list[dict[str, str]]:
+    """DuckDuckGo engine via the ``ddgs`` library. No API key required."""
     from ddgs import DDGS
 
-    results = DDGS().text(query, max_results=max_results)
-    if not results:
-        return "No results found."
-    lines = [
-        f"{i}. {r.get('title', '')}\n   {r.get('href', '')}\n   {r.get('body', '')}"
-        for i, r in enumerate(results, start=1)
+    raw = DDGS().text(query, max_results=max_results, timelimit=timelimit)
+    return [
+        {"title": r.get("title", ""), "url": r.get("href", ""), "snippet": r.get("body", "")}
+        for r in raw
     ]
-    return "\n\n".join(lines)
 
 
-def make_web_search(provider: SearchProvider) -> Callable[[str, int], str]:
+#: Registered search engines by id; the config picks one by name.
+SEARCH_ENGINES: dict[str, SearchProvider] = {"duckduckgo": ddg_provider}
+DEFAULT_ENGINE = "duckduckgo"
+
+
+def get_search_provider(engine: str | None = None) -> SearchProvider:
+    """Return the :class:`SearchProvider` for ``engine`` (default: duckduckgo)."""
+    name = (engine or DEFAULT_ENGINE).lower()
+    try:
+        return SEARCH_ENGINES[name]
+    except KeyError:
+        known = ", ".join(sorted(SEARCH_ENGINES))
+        raise ValueError(f"unknown web_search engine {name!r}; available: {known}") from None
+
+
+def make_web_search(provider: SearchProvider) -> Callable[..., dict[str, Any]]:
     """Return the ADK ``web_search`` tool bound to ``provider``.
 
-    ADK reads the returned function's name, signature and docstring to build the
-    tool schema, so the closure is named ``web_search`` and documents its args.
+    ADK reads the returned function's name, signature and docstring to build the tool
+    schema, so the closure is named ``web_search`` and documents its args and return.
     """
 
-    def web_search(query: str, max_results: int = DEFAULT_MAX_RESULTS) -> str:
-        """Search the web and return matching titles, URLs and snippets.
+    def web_search(
+        query: str, max_results: int = DEFAULT_MAX_RESULTS, time_range: str | None = None
+    ) -> dict[str, Any]:
+        """Search the web for current information.
 
-        Use this to look up current information that is not in the conversation.
+        Supports a query, a result count, and an optional temporal range filter.
+        Returns titles, URLs, and snippets from search results.
 
         Args:
-            query: What to search for, e.g. 'latest ADK release notes'.
-            max_results: How many results to return (1-10, default 5).
+            query (str): The search query.
+            max_results (int): Maximum number of results to return (1-10).
+            time_range (str): Optional recency filter; one of 'day', 'week', 'month',
+                'year'. Omit or pass an empty string for no time limit.
 
         Returns:
-            A numbered list of results (title, URL, snippet), or a not-found message.
+            dict: On success, {'status': 'success', 'results': [{'title', 'url',
+            'snippet'}, ...]}. On failure, {'status': 'error', 'error_message': str}.
         """
-        print("Seraching....", query, max_results)
         cleaned = query.strip()
         if not cleaned:
-            raise ValueError("query must not be empty")
+            return {"status": "error", "error_message": "query must not be empty"}
+
+        timelimit: str | None = None
+        if time_range:
+            timelimit = TIME_RANGES.get(time_range.strip().lower())
+            if timelimit is None:
+                allowed = ", ".join(TIME_RANGES)
+                return {
+                    "status": "error",
+                    "error_message": f"time_range must be empty or one of: {allowed}",
+                }
+
         capped = max(1, min(max_results, MAX_RESULTS_CAP))
-        return provider(cleaned, capped)
+        results = provider(cleaned, capped, timelimit)
+        return {"status": "success", "results": results}
 
     return web_search

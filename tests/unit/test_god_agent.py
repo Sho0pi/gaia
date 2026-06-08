@@ -1,4 +1,4 @@
-"""God.build_root_agent wires tools declared on the 'god' agent binding in god.yaml."""
+"""God.build_root_agent attaches every registered tool to the root agent by default."""
 
 from __future__ import annotations
 
@@ -10,10 +10,8 @@ from godpy.config import Settings
 from godpy.god import God
 
 
-def _god_with_yaml(tmp_path: Path, yaml: str) -> God:
-    config_path = tmp_path / "god.yaml"
-    config_path.write_text(yaml)
-    settings = Settings(agent_registry_dir=tmp_path / "registry", config_path=config_path)
+def _god(tmp_path: Path) -> God:
+    settings = Settings(agent_registry_dir=tmp_path / "registry", config_path=tmp_path / "god.yaml")
     return God(settings)
 
 
@@ -31,20 +29,12 @@ def _capture_root_kwargs(god: God, monkeypatch: pytest.MonkeyPatch) -> dict[str,
     return captured
 
 
-def test_root_agent_attaches_configured_tools(
+def test_root_agent_attaches_all_registered_tools(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    god = _god_with_yaml(tmp_path, "agents:\n  god:\n    tools:\n      - web_search\n")
+    god = _god(tmp_path)
 
     kwargs = _capture_root_kwargs(god, monkeypatch)
 
-    assert kwargs["tools"] == god.tools.resolve(["web_search"])
-    assert len(kwargs["tools"]) == 1  # type: ignore[arg-type]
-
-
-def test_root_agent_no_tools_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    god = _god_with_yaml(tmp_path, "agents: {}\n")
-
-    kwargs = _capture_root_kwargs(god, monkeypatch)
-
-    assert kwargs["tools"] == []
+    assert kwargs["tools"] == god.tools.all()
+    assert {getattr(t, "__name__", t) for t in kwargs["tools"]} == {"web_search"}  # type: ignore[union-attr]

@@ -62,3 +62,16 @@ def test_default_registry_enabled_true_is_kept() -> None:
     config = GodConfig(tools={"web_search": ToolConfig(enabled=True)})
 
     assert "web_search" in default_registry(config).names()
+
+
+def test_default_registry_accepts_configured_engine() -> None:
+    config = GodConfig(tools={"web_search": ToolConfig(engine="duckduckgo")})  # type: ignore[call-arg]
+
+    assert "web_search" in default_registry(config).names()
+
+
+def test_default_registry_rejects_unknown_engine() -> None:
+    config = GodConfig(tools={"web_search": ToolConfig(engine="bing")})  # type: ignore[call-arg]
+
+    with pytest.raises(ValueError, match="unknown web_search engine 'bing'"):
+        default_registry(config)

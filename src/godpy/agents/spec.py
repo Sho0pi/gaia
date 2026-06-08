@@ -24,7 +24,7 @@ class AgentSpec(BaseModel):
     instruction: str
     model: str
     skills: list[str] = Field(default_factory=list)
-    # Tool ids resolved against the factory's ToolRegistry into callables ADK invokes.
+    # Tool ids to pin for this subagent; empty = every registered tool (the default).
     tools: list[str] = Field(default_factory=list)
     # Voice for this subagent; None = the factory's configured default style.
     communication_style: str | None = None

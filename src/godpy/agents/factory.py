@@ -60,9 +60,12 @@ class AgentFactory:
         style = spec.communication_style or self._default_communication_style
         instruction = apply_communication_style(instruction, style)
 
+        # Agents get every registered tool by default; a spec may pin a subset.
         tools: list[Any] = []
-        if self._tool_registry is not None and spec.tools:
-            tools = self._tool_registry.resolve(spec.tools)
+        if self._tool_registry is not None:
+            tools = (
+                self._tool_registry.resolve(spec.tools) if spec.tools else self._tool_registry.all()
+            )
 
         return LlmAgent(
             name=spec.key,
