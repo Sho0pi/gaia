@@ -37,3 +37,21 @@ def test_subagent_with_web_search_builds(tmp_path: Path) -> None:
 
     assert agent.name == "researcher"
     assert len(agent.tools) == 1
+
+
+def test_subagent_with_web_fetch_builds(tmp_path: Path) -> None:
+    # web_fetch needs no config; it is on by default.
+    settings = Settings(agent_registry_dir=tmp_path, config_path=tmp_path / "god.yaml")
+    god = God(settings)
+    spec = AgentSpec(
+        name="Reader",
+        description="Reads web pages.",
+        instruction="Fetch and summarise pages using web_fetch.",
+        model=settings.model,
+        tools=["web_fetch"],
+    )
+
+    agent = god.ensure_agent(spec)
+
+    assert agent.name == "reader"
+    assert len(agent.tools) == 1
