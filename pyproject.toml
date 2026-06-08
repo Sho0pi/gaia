@@ -31,6 +31,9 @@ dev = [
     "mypy>=1.14",
     "types-PyYAML>=6.0",
 ]
+tools = [
+    "ddgs>=9.14.4",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -59,7 +62,7 @@ files = ["src"]
 
 # These libraries ship no type stubs / py.typed marker yet.
 [[tool.mypy.overrides]]
-module = ["mem0.*", "pywa.*", "neonize.*", "google.protobuf.*"]
+module = ["mem0.*", "pywa.*", "neonize.*", "google.protobuf.*", "ddgs.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

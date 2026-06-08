@@ -15,6 +15,7 @@ from godpy.config import ConfigSupplier, Settings, configure_adk_env, get_settin
 from godpy.config.schema import AgentBinding
 from godpy.memory import LongTermMemory, ShortTermMemory
 from godpy.skills import attach_skills, resolve_skills_dir
+from godpy.tools import default_registry
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from google.adk.agents import LlmAgent
@@ -31,11 +32,13 @@ class God:
         self.config_supplier = ConfigSupplier(self.settings.config_path)
         self.skills_dir = resolve_skills_dir(self.config)
         self.registry = AgentRegistry(self.settings.agent_registry_dir)
+        self.tools = default_registry(self.config)
         self.factory = AgentFactory(
             self.registry,
             default_model=self.settings.model,
             skills_dir=self.skills_dir,
             default_communication_style=self.config.default_communication_style,
+            tool_registry=self.tools,
         )
         self.short_term = ShortTermMemory()
         self.long_term = LongTermMemory()

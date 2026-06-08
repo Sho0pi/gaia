@@ -17,6 +17,8 @@ from godpy.skills import attach_skills, load_skill
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from google.adk.agents import LlmAgent
 
+    from godpy.tools import ToolRegistry
+
 
 class AgentFactory:
     """Creates subagents, but reuses a stored one whenever the key already exists."""
@@ -28,11 +30,13 @@ class AgentFactory:
         default_model: str,
         skills_dir: Path | None = None,
         default_communication_style: str = DEFAULT_COMMUNICATION_STYLE,
+        tool_registry: ToolRegistry | None = None,
     ) -> None:
         self._registry = registry
         self._default_model = default_model
         self._skills_dir = skills_dir
         self._default_communication_style = default_communication_style
+        self._tool_registry = tool_registry
 
     def create_or_reuse(self, spec: AgentSpec) -> LlmAgent:
         """Return an ADK agent for ``spec``, loading from the registry if present.
@@ -56,11 +60,16 @@ class AgentFactory:
         style = spec.communication_style or self._default_communication_style
         instruction = apply_communication_style(instruction, style)
 
+        tools: list[Any] = []
+        if self._tool_registry is not None and spec.tools:
+            tools = self._tool_registry.resolve(spec.tools)
+
         return LlmAgent(
             name=spec.key,
             model=spec.model or self._default_model,
             description=spec.description,
             instruction=instruction,
+            tools=tools,
         )
 
 
