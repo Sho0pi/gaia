@@ -25,6 +25,8 @@ from collections.abc import Callable
 from typing import Any, Protocol
 from urllib.parse import urlparse, urlsplit
 
+from godpy.logs import log_event
+
 #: Tool id, used by the registry and as the ADK tool name (matches the closure name).
 NAME = "web_fetch"
 
@@ -183,29 +185,42 @@ def make_web_fetch(fetcher: Fetcher) -> Callable[..., dict[str, Any]]:
             'error_message': str}.
         """
         cleaned = url.strip()
+
+        def done(result: dict[str, Any]) -> dict[str, Any]:
+            log_event(
+                "tool_used",
+                tool=NAME,
+                url=cleaned,
+                status=result["status"],
+                chars=len(result.get("markdown", "")),
+            )
+            return result
+
         if not cleaned:
-            return {"status": "error", "error_message": "url must not be empty"}
+            return done({"status": "error", "error_message": "url must not be empty"})
 
         error = validate_url(cleaned)
         if error is not None:
-            return {"status": "error", "error_message": error}
+            return done({"status": "error", "error_message": error})
 
         capped = max(1, min(max_bytes, MAX_BYTES_CAP))
         try:
             fetched = fetcher(cleaned, capped)
         except BlockedURLError as exc:
-            return {"status": "error", "error_message": f"refused: {exc}"}
+            return done({"status": "error", "error_message": f"refused: {exc}"})
         except Exception as exc:
-            return {"status": "error", "error_message": f"fetch failed: {exc}"}
+            return done({"status": "error", "error_message": f"fetch failed: {exc}"})
 
         import trafilatura
 
         markdown = trafilatura.extract(fetched["html"], output_format="markdown")
         if not markdown:
-            return {
-                "status": "error",
-                "error_message": "no readable content could be extracted from the page",
-            }
-        return {"status": "success", "url": fetched["final_url"], "markdown": markdown}
+            return done(
+                {
+                    "status": "error",
+                    "error_message": "no readable content could be extracted from the page",
+                }
+            )
+        return done({"status": "success", "url": fetched["final_url"], "markdown": markdown})
 
     return web_fetch

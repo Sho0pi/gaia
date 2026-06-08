@@ -107,6 +107,29 @@ def test_success_shape_and_extracted_markdown(monkeypatch: pytest.MonkeyPatch) -
     assert fetcher.calls == [("https://example.com/post", wf.DEFAULT_MAX_BYTES)]
 
 
+def test_tool_call_is_logged(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(wf, "_resolve_ips", _resolve_to("93.184.216.34"))
+    events: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(wf, "log_event", lambda action, **f: events.append((action, f)))
+
+    make_web_fetch(_FakeFetcher(_ARTICLE))("https://example.com/post")
+
+    assert events[0][0] == "tool_used"
+    assert events[0][1]["tool"] == "web_fetch"
+    assert events[0][1]["status"] == "success"
+
+
+def test_error_path_is_logged(monkeypatch: pytest.MonkeyPatch) -> None:
+    events: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(wf, "log_event", lambda action, **f: events.append((action, f)))
+
+    make_web_fetch(_FakeFetcher(_ARTICLE))("   ")  # empty url, never fetched
+
+    assert events == [
+        ("tool_used", {"tool": "web_fetch", "url": "", "status": "error", "chars": 0})
+    ]
+
+
 def test_empty_url_returns_error_dict() -> None:
     out = make_web_fetch(_FakeFetcher(_ARTICLE))("   ")
 

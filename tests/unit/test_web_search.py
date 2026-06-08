@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from godpy.tools import web_search as ws
 from godpy.tools.web_search import (
     MAX_RESULTS_CAP,
     ddg_provider,
@@ -66,6 +67,20 @@ def test_max_results_capped_and_floored() -> None:
     web_search("q", max_results=0)
 
     assert [c[1] for c in provider.calls] == [MAX_RESULTS_CAP, 1]
+
+
+def test_tool_call_is_logged(monkeypatch: pytest.MonkeyPatch) -> None:
+    events: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(ws, "log_event", lambda action, **f: events.append((action, f)))
+
+    make_web_search(_FakeProvider())("python adk")
+
+    assert events == [
+        (
+            "tool_used",
+            {"tool": "web_search", "query": "python adk", "status": "success", "results": 1},
+        )
+    ]
 
 
 def test_get_search_provider_by_name_and_unknown() -> None:
