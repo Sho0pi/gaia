@@ -34,7 +34,9 @@ class TelegramConnector:
 
                 await self._handler(update.message.text, send)
 
-        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _on_message))
+        # filters.TEXT keeps slash-commands (/help, /reset, …) flowing to the handler,
+        # which dispatches them itself; ~COMMAND would swallow them before God sees them.
+        app.add_handler(MessageHandler(filters.TEXT, _on_message))
         return app
 
     def run(self) -> None:

@@ -38,6 +38,10 @@ class Mem0Client(Protocol):
 
     def search(self, query: str, **kwargs: Any) -> Any: ...
 
+    def get_all(self, **kwargs: Any) -> Any: ...
+
+    def delete_all(self, **kwargs: Any) -> Any: ...
+
 
 def _text_of(content: types.Content | None) -> str:
     """Join the text parts of an ADK ``Content`` into one string."""
@@ -128,6 +132,19 @@ class Mem0MemoryService(BaseMemoryService):
             if hit.get("memory")
         ]
         return SearchMemoryResponse(memories=memories)
+
+    async def list_memories(self, *, user_id: str) -> list[str]:
+        """Return every stored memory text for ``user_id`` (newest mem0 returns first)."""
+        raw = self._backend.get_all(filters={"user_id": user_id})
+        results = raw.get("results", []) if isinstance(raw, dict) else (raw or [])
+        return [hit["memory"] for hit in results if hit.get("memory")]
+
+    async def forget(self, *, user_id: str) -> int:
+        """Wipe all of ``user_id``'s long-term memory; return how many were removed."""
+        removed = len(await self.list_memories(user_id=user_id))
+        self._backend.delete_all(user_id=user_id)
+        log_event("memory_forgotten", user=user_id, removed=removed)
+        return removed
 
     def _ingest(
         self, messages: list[dict[str, str]], *, user_id: str, run_id: str | None = None, **kw: Any

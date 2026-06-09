@@ -13,6 +13,7 @@ module became a package.
 from godpy.config.scaffold import render_default_yaml, write_default_config
 from godpy.config.schema import (
     CLIConnectorConfig,
+    CommandConfig,
     ConnectorsConfig,
     GodConfig,
     GroupTrigger,
@@ -29,6 +30,7 @@ from godpy.config.store import ConfigSupplier
 
 __all__ = [
     "CLIConnectorConfig",
+    "CommandConfig",
     "ConfigSupplier",
     "ConnectorsConfig",
     "GodConfig",
