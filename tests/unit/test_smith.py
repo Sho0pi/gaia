@@ -16,14 +16,14 @@ def test_decision_roundtrips_forge_with_nested_spec() -> None:
     )
 
     assert d.action == "forge"
-    assert d.spec is not None and d.spec.key == "web-designer"
+    assert d.spec is not None and d.spec.key == "web_designer"
     assert d.soul_key is None
 
 
 def test_decision_roundtrips_reuse() -> None:
-    d = SoulDecision(action="reuse", reason="fits", soul_key="web-designer")
+    d = SoulDecision(action="reuse", reason="fits", soul_key="web_designer")
 
-    assert d.action == "reuse" and d.soul_key == "web-designer" and d.spec is None
+    assert d.action == "reuse" and d.soul_key == "web_designer" and d.spec is None
 
 
 def test_build_soul_smith_is_schema_only(monkeypatch: pytest.MonkeyPatch) -> None:

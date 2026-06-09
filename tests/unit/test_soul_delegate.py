@@ -80,8 +80,8 @@ async def test_forge_path_persists_runs_and_lists_files(
     assert out["created"] is True
     assert out["soul"] == "Web Designer"
     assert out["files"] == ["index.html"]
-    assert out["workspace"].endswith("web-designer/workspace")
-    assert god.registry.get("web-designer") is not None  # persisted for reuse
+    assert out["workspace"].endswith("web_designer/workspace")
+    assert god.registry.get("web_designer") is not None  # persisted for reuse
     assert events[0] == (
         "tool_used",
         {"tool": "delegate_to_soul", "soul": "Web Designer", "created": True, "status": "success"},
@@ -94,7 +94,7 @@ async def test_reuse_path_does_not_recreate(
     god, _ = env
     god.registry.save(_SPEC)  # already known
     _stub_decision(
-        monkeypatch, SoulDecision(action="reuse", reason="fits", soul_key="web-designer")
+        monkeypatch, SoulDecision(action="reuse", reason="fits", soul_key="web_designer")
     )
     _stub_run_writing(monkeypatch, "index.html")
 

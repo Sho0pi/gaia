@@ -25,4 +25,4 @@ def test_list_keys_returns_saved(registry: AgentRegistry, sample_spec: AgentSpec
 
 
 def test_key_is_slugified(sample_spec: AgentSpec) -> None:
-    assert sample_spec.key == "email-summarizer"
+    assert sample_spec.key == "email_summarizer"

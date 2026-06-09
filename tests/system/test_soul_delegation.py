@@ -47,7 +47,7 @@ async def test_soul_writes_html_into_its_workspace(
 
     summary = await _run_soul(soul, spec.key, "Create index.html containing an <h1>Hello</h1>.")
 
-    workspace = tmp_path / "agents" / "web-designer" / "workspace"
+    workspace = tmp_path / "agents" / "web_designer" / "workspace"
     html = list(workspace.rglob("*.html"))
     assert html, f"soul wrote no .html (summary: {summary!r})"
     assert "<h1>" in html[0].read_text().lower() or "hello" in html[0].read_text().lower()
