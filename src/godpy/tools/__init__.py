@@ -8,6 +8,11 @@ Individual tools live in their own modules (``web_search``, ``web_fetch``, the `
 package); import those directly when you need a specific factory.
 """
 
-from godpy.tools.registry import Tool, ToolRegistry, default_registry
+from godpy.tools.registry import (
+    SELF_LOGGING_TOOLS,
+    Tool,
+    ToolRegistry,
+    default_registry,
+)
 
-__all__ = ["Tool", "ToolRegistry", "default_registry"]
+__all__ = ["SELF_LOGGING_TOOLS", "Tool", "ToolRegistry", "default_registry"]

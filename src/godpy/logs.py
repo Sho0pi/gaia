@@ -17,6 +17,7 @@ use a plain ``logging.getLogger(__name__)``.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import sys
 from collections.abc import Callable
@@ -105,19 +106,91 @@ class RedactingJsonFormatter(_RedactMixin, JsonFormatter):
     """JSON-lines formatter with redaction (for events.jsonl)."""
 
 
-class EventConsoleFormatter(logging.Formatter):
-    """Human-readable mirror of an event: ``event: <action> k=v …``."""
+# ANSI styling for the console only (files stay plain). Kept tiny and dependency-free.
+_ANSI = {
+    "reset": "\033[0m",
+    "dim": "\033[2m",
+    "bold": "\033[1m",
+    "red": "\033[31m",
+    "green": "\033[32m",
+    "yellow": "\033[33m",
+    "magenta": "\033[35m",
+    "cyan": "\033[36m",
+    "grey": "\033[90m",
+}
 
-    def __init__(self, *args: Any, redactor: Redactor | None = None, **kwargs: Any) -> None:
+# Level → colour for the level tag (and the message itself on ERROR/CRITICAL).
+_LEVEL_COLOR = {
+    "DEBUG": "grey",
+    "INFO": "green",
+    "WARNING": "yellow",
+    "ERROR": "red",
+    "CRITICAL": "red",
+}
+
+
+def _supports_color(stream: Any) -> bool:
+    """True when ``stream`` is an interactive terminal that should get ANSI colour.
+
+    Honours the ``NO_COLOR`` convention and ``TERM=dumb`` so piped/redirected output
+    (and the test suite, whose stdout is not a tty) stays plain.
+    """
+    if os.environ.get("NO_COLOR") is not None or os.environ.get("TERM") == "dumb":
+        return False
+    return bool(getattr(stream, "isatty", None) and stream.isatty())
+
+
+class ConsoleFormatter(logging.Formatter):
+    """Colourised, scannable console output for both system and event streams.
+
+    System:  ``HH:MM:SS  LEVEL    name   message`` — dim time, bold colour-by-level tag,
+    dim-cyan logger name (``godpy.`` prefix stripped), message reddened on error.
+    Event:   ``HH:MM:SS  ▸ action  key=value …`` — bold-cyan action, dim keys, green
+    values — so user activity stands out from operational chatter at a glance.
+
+    Colour is applied only when enabled (a real terminal); otherwise the same layout is
+    emitted plain, so logs stay readable when piped. Redaction runs last, on the final
+    string, exactly as the file formatters do.
+    """
+
+    def __init__(
+        self, *, redactor: Redactor | None = None, color: bool, event: bool = False
+    ) -> None:
+        super().__init__(datefmt="%H:%M:%S")
         self._redactor = redactor
-        super().__init__(*args, **kwargs)
+        self._color = color
+        self._event = event
+
+    def _paint(self, text: str, *styles: str) -> str:
+        if not self._color or not text:
+            return text
+        codes = "".join(_ANSI[s] for s in styles)
+        return f"{codes}{text}{_ANSI['reset']}"
 
     def format(self, record: logging.LogRecord) -> str:
-        base = super().format(record)
-        fields = _extra_fields(record)
-        if fields:
-            base += " " + " ".join(f"{k}={v}" for k, v in fields.items())
-        return self._redactor(base) if self._redactor else base
+        ts = self._paint(self.formatTime(record, self.datefmt), "grey")
+        if self._event:
+            marker = self._paint("▸", "bold", "cyan")
+            action = self._paint(record.getMessage(), "bold", "cyan")
+            line = f"{ts} {marker} {action}"
+            fields = _extra_fields(record)
+            if fields:
+                rendered = " ".join(
+                    f"{self._paint(k, 'dim')}={self._paint(str(v), 'green')}"
+                    for k, v in fields.items()
+                )
+                line = f"{line}  {rendered}"
+        else:
+            color = _LEVEL_COLOR.get(record.levelname, "green")
+            level = self._paint(f"{record.levelname:<8}", "bold", color)
+            name = record.name.removeprefix("godpy.")
+            message = record.getMessage()
+            if record.levelname in ("ERROR", "CRITICAL"):
+                message = self._paint(message, color)
+            line = f"{ts} {level} {self._paint(name, 'dim', 'cyan')}  {message}"
+            if record.exc_info:
+                line = f"{line}\n{self.formatException(record.exc_info)}"
+        return self._redactor(line) if self._redactor else line
 
 
 def _rotating(
@@ -142,9 +215,12 @@ def setup_logging(settings: Settings, cfg: LoggingConfig, *, force: bool = False
     level = logging.getLevelNamesMapping().get(cfg.level.upper(), logging.INFO)
     redactor = _build_redactor(settings)
 
+    # Plain formatter for the rotating files (no ANSI ever lands on disk); colourised
+    # formatter for the console, on only when stdout is a real terminal.
     text_fmt = RedactingFormatter(
         "%(asctime)s %(levelname)s %(name)s: %(message)s", redactor=redactor
     )
+    color = _supports_color(sys.stdout)
 
     # Own the ROOT logger so third-party libraries (google_adk, google_genai, …) flow
     # into our files + console with our format + redaction, instead of only hitting the
@@ -159,7 +235,7 @@ def setup_logging(settings: Settings, cfg: LoggingConfig, *, force: bool = False
 
     console = logging.StreamHandler(sys.stdout)
     console.setLevel(level)
-    console.setFormatter(text_fmt)
+    console.setFormatter(ConsoleFormatter(redactor=redactor, color=color))
     root.addHandler(console)
     root.addHandler(_rotating(log_dir / "system.log", level, text_fmt, cfg))
     root.addHandler(_rotating(log_dir / "errors.log", logging.WARNING, text_fmt, cfg))
@@ -178,9 +254,7 @@ def setup_logging(settings: Settings, cfg: LoggingConfig, *, force: bool = False
 
     events_console = logging.StreamHandler(sys.stdout)
     events_console.setLevel(logging.INFO)
-    events_console.setFormatter(
-        EventConsoleFormatter("%(asctime)s %(levelname)s event: %(message)s", redactor=redactor)
-    )
+    events_console.setFormatter(ConsoleFormatter(redactor=redactor, color=color, event=True))
     events.addHandler(events_console)
     events.addHandler(
         _rotating(

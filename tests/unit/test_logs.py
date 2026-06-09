@@ -6,13 +6,20 @@ import json
 import logging
 from collections.abc import Iterator
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 import godpy.logs as logs_module
 from godpy.config import Settings
 from godpy.config.schema import LoggingConfig
-from godpy.logs import log_event, setup_logging
+from godpy.logs import ConsoleFormatter, _supports_color, log_event, setup_logging
+
+
+def _record(name: str, level: str, msg: str, **fields: object) -> logging.LogRecord:
+    record = logging.LogRecord(name, getattr(logging, level), "", 0, msg, None, None)
+    record.__dict__.update(fields)
+    return record
 
 
 @pytest.fixture(autouse=True)
@@ -102,6 +109,48 @@ def test_adk_basicconfig_after_setup_is_noop(tmp_path: Path) -> None:
     logging.basicConfig(level=logging.INFO, format="[%(name)s %(levelname)s]")
 
     assert len(root.handlers) == count
+
+
+def test_console_formatter_plain_when_color_off() -> None:
+    fmt = ConsoleFormatter(color=False)
+
+    line = fmt.format(_record("godpy.god.handler", "INFO", "built root agent"))
+
+    assert "\033[" not in line  # no ANSI
+    assert "INFO" in line and "god.handler" in line and "built root agent" in line
+
+
+def test_console_formatter_colors_when_on() -> None:
+    fmt = ConsoleFormatter(color=True)
+
+    line = fmt.format(_record("godpy", "ERROR", "boom"))
+
+    assert "\033[" in line  # ANSI present
+    assert "boom" in line
+
+
+def test_event_formatter_renders_action_and_fields() -> None:
+    fmt = ConsoleFormatter(color=False, event=True)
+
+    line = fmt.format(_record("godpy.events", "INFO", "tool_used", tool="web_search", results=5))
+
+    assert "▸ tool_used" in line
+    assert "tool=web_search" in line and "results=5" in line
+
+
+def test_supports_color_honours_no_color(monkeypatch: pytest.MonkeyPatch) -> None:
+    tty = SimpleNamespace(isatty=lambda: True)
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.delenv("TERM", raising=False)
+    assert _supports_color(tty) is True
+
+    monkeypatch.setenv("NO_COLOR", "1")
+    assert _supports_color(tty) is False
+
+
+def test_supports_color_false_for_non_tty(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    assert _supports_color(SimpleNamespace(isatty=lambda: False)) is False
 
 
 def test_setup_is_idempotent(tmp_path: Path) -> None:
