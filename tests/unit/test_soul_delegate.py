@@ -84,7 +84,7 @@ async def test_forge_path_persists_runs_and_lists_files(
     assert god.registry.get("web_designer") is not None  # persisted for reuse
     assert events[0] == (
         "tool_used",
-        {"tool": "delegate_to_soul", "soul": "Web Designer", "created": True, "status": "success"},
+        {"tool": "delegate_to_soul", "soul": "Web Designer", "forged": True, "status": "success"},
     )
 
 

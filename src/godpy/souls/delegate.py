@@ -76,7 +76,7 @@ def make_delegate(god: God) -> Callable[..., Awaitable[dict[str, Any]]]:
                 "tool_used",
                 tool=NAME,
                 soul=result.get("soul"),
-                created=result.get("created"),
+                forged=result.get("created"),  # 'created' is a reserved LogRecord field
                 status=result["status"],
             )
             return result

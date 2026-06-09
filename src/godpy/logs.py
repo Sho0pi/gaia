@@ -280,5 +280,10 @@ def log_event(action: str, **fields: Any) -> None:
     ``action`` is the event name; ``fields`` are structured key/values written verbatim
     to ``events.jsonl`` and mirrored to the console. Keep secrets out of ``fields`` —
     redaction is best-effort, not a guarantee.
+
+    A field whose name collides with a reserved ``LogRecord`` attribute (e.g. ``created``,
+    ``name``, ``module``) is suffixed with ``_`` rather than crashing ``logging`` — so a
+    field name can never take down the caller (usually a tool mid-run).
     """
-    logging.getLogger(constants.EVENTS_LOGGER_NAME).info(action, extra=fields)
+    safe = {(f"{k}_" if k in _STD_ATTRS else k): v for k, v in fields.items()}
+    logging.getLogger(constants.EVENTS_LOGGER_NAME).info(action, extra=safe)
