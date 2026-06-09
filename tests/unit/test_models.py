@@ -40,6 +40,14 @@ def test_already_prefixed_id_kept(lite: dict[str, Any]) -> None:
     assert lite["model"] == "openai/gpt-4o-mini"  # not doubled
 
 
+def test_openai_chatgpt_provider_uses_oauth_backend() -> None:
+    from godpy.providers.openai_chatgpt.responses_llm import ChatGptOAuthLlm
+
+    out = resolve_model("gpt-5", provider="openai-chatgpt")
+    assert isinstance(out, ChatGptOAuthLlm)
+    assert out.model == "gpt-5"
+
+
 def test_inference_without_provider(lite: dict[str, Any]) -> None:
     resolve_model("gpt-4o")
     assert lite["model"] == "openai/gpt-4o"

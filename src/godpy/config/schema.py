@@ -25,8 +25,9 @@ class LLMConfig(BaseModel):
 
     provider: str = Field(
         default="gemini",
-        description="LLM provider: gemini (key GEMINI_API_KEY) or openai (key OPENAI_API_KEY, "
-        "needs the 'llm' dep group); other litellm providers also work. Keys live in env.",
+        description="LLM provider: gemini (GEMINI_API_KEY), openai (OPENAI_API_KEY, needs the "
+        "'llm' dep group), or openai-chatgpt (Sign in with ChatGPT — run "
+        "'python main.py auth openai-chatgpt', no API key). Other litellm providers also work.",
     )
     model: str = Field(
         default="gemini-2.0-flash", description="Model id, e.g. gemini-2.5-flash or gpt-4o."

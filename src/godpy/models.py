@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from google.adk.models.lite_llm import LiteLlm
+    from google.adk.models.base_llm import BaseLlm
 
 #: model-id prefix → provider, used when no explicit provider is given.
 _PREFIXES = {
@@ -37,7 +37,7 @@ def _infer_provider(model: str) -> str:
     return "openai"
 
 
-def resolve_model(model: str, *, provider: str | None = None) -> str | LiteLlm:
+def resolve_model(model: str, *, provider: str | None = None) -> str | BaseLlm:
     """Return a model usable by ``LlmAgent``: a bare string for Gemini, else a ``LiteLlm``.
 
     ``provider`` (from ``llm.provider``) wins; otherwise it's inferred from ``model``. A
@@ -48,6 +48,12 @@ def resolve_model(model: str, *, provider: str | None = None) -> str | LiteLlm:
     prov = (provider or _infer_provider(model)).lower()
     if prov == "gemini":
         return model
+
+    if prov in ("openai-chatgpt", "chatgpt"):
+        # Subscription auth (Sign in with ChatGPT) — its own ADK backend, not LiteLLM.
+        from godpy.providers.openai_chatgpt import ChatGptOAuthLlm
+
+        return ChatGptOAuthLlm(model=model)
 
     lite_id = model if "/" in model else f"{prov}/{model}"
     try:
