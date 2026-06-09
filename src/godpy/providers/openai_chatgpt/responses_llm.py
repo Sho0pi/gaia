@@ -6,9 +6,10 @@ ChatGPT OAuth tokens don't work against ``api.openai.com``; they call
 ADK's request/response to that backend, mirroring openclaw's
 ``src/llm/providers/openai-chatgpt-responses.ts``.
 
-Scope: text + function (tool) calls — what God and souls need. Reasoning items and inline
-images are deliberately out of scope for v1. The wire shape of this backend is unofficial
-and may change; everything backend-specific is kept in this one module.
+Scope: text + function (tool) calls, with gpt-5.x reasoning items replayed across turns
+(carried on a ``thought_signature`` part) so tool calls don't loop. Inline images are out
+of scope. The wire shape of this backend is unofficial and may change; everything
+backend-specific is kept in this one module.
 
 httpx is imported lazily (optional ``llm`` dep group).
 """
@@ -43,7 +44,19 @@ def _content_to_input(contents: list[types.Content]) -> list[dict[str, Any]]:
     for content in contents:
         role = "assistant" if content.role == "model" else (content.role or "user")
         for part in content.parts or []:
-            if part.text:
+            if part.thought_signature:
+                # gpt-5.x is stateless here (store:false): its encrypted reasoning must be
+                # replayed verbatim before the call it led to, or the model re-issues it.
+                reasoning = json.loads(bytes(part.thought_signature).decode("utf-8"))
+                items.append(
+                    {
+                        "type": "reasoning",
+                        "id": reasoning["id"],
+                        "encrypted_content": reasoning["encrypted_content"],
+                        "summary": [],
+                    }
+                )
+            elif part.text:
                 kind = "output_text" if role == "assistant" else "input_text"
                 items.append(
                     {
@@ -72,12 +85,29 @@ def _content_to_input(contents: list[types.Content]) -> list[dict[str, Any]]:
     return items
 
 
+def _json_schema(node: Any) -> Any:
+    """Normalize a genai schema dump to JSON Schema: lowercase the enum-valued ``type``."""
+    if isinstance(node, dict):
+        return {
+            k: (v.lower() if k == "type" and isinstance(v, str) else _json_schema(v))
+            for k, v in node.items()
+        }
+    if isinstance(node, list):
+        return [_json_schema(v) for v in node]
+    return node
+
+
 def _tools_from_request(llm_request: LlmRequest) -> list[dict[str, Any]]:
     """Map the request's function declarations to Responses tool defs."""
     tools: list[dict[str, Any]] = []
     for tool in getattr(llm_request.config, "tools", None) or []:
         for decl in getattr(tool, "function_declarations", None) or []:
-            schema = decl.parameters.model_dump(exclude_none=True) if decl.parameters else {}
+            schema = (
+                _json_schema(decl.parameters.model_dump(exclude_none=True))
+                if decl.parameters
+                else {}
+            )
+            schema.setdefault("type", "object")
             tools.append(
                 {
                     "type": "function",
@@ -170,6 +200,7 @@ class ChatGptOAuthLlm(BaseLlm):
     ) -> AsyncGenerator[LlmResponse, None]:
         text_parts: list[str] = []
         calls: list[types.Part] = []
+        reasoning: list[types.Part] = []
         async with client.stream(
             "POST", RESPONSES_URL, headers=self._headers(creds, session_id), json=body
         ) as response:
@@ -206,8 +237,17 @@ class ChatGptOAuthLlm(BaseLlm):
                                 )
                             )
                         )
+                    elif item.get("type") == "reasoning" and item.get("encrypted_content"):
+                        # Carry the encrypted reasoning across turns on a thought part so
+                        # _content_to_input can replay it (prevents the tool-call loop).
+                        sig = json.dumps(
+                            {"id": item["id"], "encrypted_content": item["encrypted_content"]}
+                        ).encode("utf-8")
+                        reasoning.append(types.Part(thought=True, thought_signature=sig))
 
-        parts: list[types.Part] = []
+        # Reasoning first, then text, then the tool calls it led to — the order the
+        # backend expects when these items are replayed next turn.
+        parts: list[types.Part] = [*reasoning]
         full = "".join(text_parts)
         if full and not stream:
             parts.append(types.Part(text=full))

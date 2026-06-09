@@ -13,8 +13,41 @@ import godpy.providers.openai_chatgpt.responses_llm as rl
 from godpy.providers.openai_chatgpt.responses_llm import (
     ChatGptNotAuthenticatedError,
     ChatGptOAuthLlm,
+    _content_to_input,
+    _tools_from_request,
 )
 from godpy.providers.openai_chatgpt.store import Credentials
+
+
+def test_tool_schema_types_are_lowercased_json_schema() -> None:
+    decl = types.FunctionDeclaration(
+        name="get_price",
+        parameters=types.Schema(
+            type="OBJECT", properties={"c": types.Schema(type="STRING")}, required=["c"]
+        ),
+    )
+    req = LlmRequest(
+        config=types.GenerateContentConfig(tools=[types.Tool(function_declarations=[decl])])
+    )
+
+    params = _tools_from_request(req)[0]["parameters"]
+
+    assert params["type"] == "object"  # not the genai enum "OBJECT"
+    assert params["properties"]["c"]["type"] == "string"
+
+
+def test_reasoning_part_is_replayed_as_a_reasoning_item() -> None:
+    import json
+
+    sig = json.dumps({"id": "rs_1", "encrypted_content": "enc"}).encode()
+    contents = [
+        types.Content(role="model", parts=[types.Part(thought=True, thought_signature=sig)])
+    ]
+
+    item = _content_to_input(contents)[0]
+
+    assert item == {"type": "reasoning", "id": "rs_1", "encrypted_content": "enc", "summary": []}
+
 
 _SSE = [
     'data: {"type":"response.output_text.delta","delta":"Hello"}',
