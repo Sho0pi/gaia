@@ -10,9 +10,12 @@ factory.
 
 from __future__ import annotations
 
+import shutil
 from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Any, Union
 
+from godpy import constants
+from godpy.tools import fs
 from godpy.tools.web_fetch import NAME as WEB_FETCH
 from godpy.tools.web_fetch import httpx_fetcher, make_web_fetch
 from godpy.tools.web_search import NAME as WEB_SEARCH
@@ -82,11 +85,10 @@ def _is_enabled(config: GodConfig | None, name: str) -> bool:
 
 
 def default_registry(config: GodConfig | None = None) -> ToolRegistry:
-    """Build the registry with godpy's built-in tools, configured from ``config.tools``.
+    """Build the registry with all of godpy's built-in tools, configured from ``config``.
 
-    Most tools are on by default and only ``enabled: false`` removes them — e.g.
-    ``web_fetch``. A few need required config: ``web_search`` needs
-    ``tools.web_search.engine`` (e.g. ``duckduckgo``) and is absent without it.
+    Each tool is on by default and gated only by its ``enabled`` flag (and, where it needs
+    one, an external resource such as a configured engine or a binary on ``PATH``).
     """
     registry = ToolRegistry()
 
@@ -96,5 +98,17 @@ def default_registry(config: GodConfig | None = None) -> ToolRegistry:
     engine = _tool_setting(config, WEB_SEARCH, "engine")
     if engine and _is_enabled(config, WEB_SEARCH):
         registry.register(WEB_SEARCH, make_web_search(get_search_provider(engine)))
+
+    agents_dir = constants.AGENTS_DIR
+    if _is_enabled(config, fs.READ):
+        registry.register(fs.READ, fs.make_fs_read(agents_dir))
+    if _is_enabled(config, fs.WRITE):
+        registry.register(fs.WRITE, fs.make_fs_write(agents_dir))
+    if _is_enabled(config, fs.EDIT):
+        registry.register(fs.EDIT, fs.make_fs_edit(agents_dir))
+    if _is_enabled(config, fs.GLOB) and shutil.which("fd"):
+        registry.register(fs.GLOB, fs.make_fs_glob(agents_dir))
+    if _is_enabled(config, fs.GREP) and shutil.which("rg"):
+        registry.register(fs.GREP, fs.make_fs_grep(agents_dir))
 
     return registry

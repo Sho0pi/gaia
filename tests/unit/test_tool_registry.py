@@ -57,6 +57,31 @@ def test_web_fetch_removed_when_disabled() -> None:
     assert "web_fetch" not in default_registry(config).names()
 
 
+def test_fs_tools_on_by_default() -> None:
+    names = default_registry().names()
+
+    assert "fs_read" in names
+    assert "fs_write" in names
+    assert "fs_edit" in names
+
+
+def test_fs_tool_removed_when_disabled() -> None:
+    config = GodConfig(tools={"fs_write": ToolConfig(enabled=False)})
+
+    assert "fs_write" not in default_registry(config).names()
+
+
+def test_fs_glob_grep_absent_without_binaries(monkeypatch: pytest.MonkeyPatch) -> None:
+    import godpy.tools.registry as registry
+
+    monkeypatch.setattr(registry.shutil, "which", lambda _name: None)
+    names = default_registry().names()
+
+    assert "fs_glob" not in names
+    assert "fs_grep" not in names
+    assert "fs_read" in names  # pure-python fs tools unaffected
+
+
 def test_web_search_not_installed_without_engine() -> None:
     # No config at all: engine is unconfigured, so the tool is not installed.
     assert "web_search" not in default_registry().names()
