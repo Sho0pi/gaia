@@ -8,9 +8,9 @@ or the memory ingest path — they are pure control surface.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from godpy.commands.registry import CommandRegistry
@@ -33,19 +33,21 @@ class CommandContext:
     session_id: str
 
 
-#: A command body: takes a context, returns the reply text to send back.
-CommandFn = Callable[["CommandContext"], Awaitable[str]]
+class Command(ABC):
+    """A slash command: its metadata as class attributes + a ``run`` method.
 
+    Each command is a subclass setting ``name``/``summary`` (and optional ``aliases`` /
+    ``usage``) and implementing :meth:`run`. The registry holds one instance per command.
+    """
 
-@dataclass(frozen=True)
-class Command:
-    """A registered slash command: its id, help text, body, and aliases."""
+    name: ClassVar[str]
+    summary: ClassVar[str]
+    aliases: ClassVar[tuple[str, ...]] = ()
+    usage: ClassVar[str] = ""
 
-    name: str
-    summary: str
-    run: CommandFn
-    aliases: tuple[str, ...] = ()
-    usage: str = ""
+    @abstractmethod
+    async def run(self, ctx: CommandContext) -> str:
+        """Execute the command and return the reply text to send back."""
 
     def help_line(self) -> str:
         """One ``/name [usage] — summary (aka /alias)`` line for ``/help``."""
@@ -72,4 +74,4 @@ def parse(text: str) -> tuple[str, str] | None:
     return name.lower(), args.strip()
 
 
-__all__ = ["PREFIX", "Command", "CommandContext", "CommandFn", "parse"]
+__all__ = ["PREFIX", "Command", "CommandContext", "parse"]

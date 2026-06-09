@@ -9,31 +9,29 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from godpy.commands import (
-    agents,
-    forget,
-    help,
-    memories,
-    remember,
-    reset,
-    status,
-    whoami,
-)
+from godpy.commands.agents import AgentsCommand
 from godpy.commands.base import Command
+from godpy.commands.forget import ForgetCommand
+from godpy.commands.help import HelpCommand
+from godpy.commands.memories import MemoriesCommand
+from godpy.commands.remember import RememberCommand
+from godpy.commands.reset import ResetCommand
+from godpy.commands.status import StatusCommand
+from godpy.commands.whoami import WhoamiCommand
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from godpy.config import GodConfig
 
-#: Every built-in command module (each exposes a ``COMMAND``).
+#: One instance of every built-in command.
 _BUILTINS: tuple[Command, ...] = (
-    help.COMMAND,
-    reset.COMMAND,
-    whoami.COMMAND,
-    agents.COMMAND,
-    status.COMMAND,
-    remember.COMMAND,
-    memories.COMMAND,
-    forget.COMMAND,
+    HelpCommand(),
+    ResetCommand(),
+    WhoamiCommand(),
+    AgentsCommand(),
+    StatusCommand(),
+    RememberCommand(),
+    MemoriesCommand(),
+    ForgetCommand(),
 )
 
 
