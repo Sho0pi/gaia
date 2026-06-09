@@ -10,7 +10,7 @@ class AgentsCommand(Command):
     summary = "List the specialist subagents God has learned."
 
     async def run(self, ctx: CommandContext) -> str:
-        names = ctx.god.known_agents()
+        names = ctx.god.known_souls()
         if not names:
             return "No specialist subagents learned yet."
         return "Subagents:\n" + "\n".join(f"- {name}" for name in names)

@@ -14,7 +14,7 @@ import pytest
 
 import godpy.souls.delegate as delegate
 from godpy import constants
-from godpy.agents import AgentRegistry, AgentSpec
+from godpy.agents import AgentSpec, SoulRegistry
 from godpy.souls import make_delegate
 from godpy.souls.smith import SoulDecision
 from godpy.tools.fs.base import sandbox_for
@@ -25,7 +25,7 @@ _SPEC = AgentSpec(name="Web Designer", description="Builds websites.", instructi
 class _FakeFactory:
     """Persists a new spec then returns a stand-in soul (no real ADK build)."""
 
-    def __init__(self, registry: AgentRegistry) -> None:
+    def __init__(self, registry: SoulRegistry) -> None:
         self._registry = registry
 
     def create_or_reuse(self, spec: AgentSpec) -> Any:
@@ -34,11 +34,11 @@ class _FakeFactory:
         return SimpleNamespace(name=spec.key)
 
 
-def _god(registry: AgentRegistry) -> Any:
+def _god(registry: SoulRegistry) -> Any:
     return SimpleNamespace(
         config=SimpleNamespace(llm=SimpleNamespace(model="m")),
         settings=SimpleNamespace(model="m"),
-        registry=registry,
+        souls=registry,
         factory=_FakeFactory(registry),
     )
 
@@ -48,7 +48,7 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Any, list[Any]
     monkeypatch.setattr(constants, "AGENTS_DIR", tmp_path / "agents")
     events: list[Any] = []
     monkeypatch.setattr(delegate, "log_event", lambda a, **k: events.append((a, k)))
-    god = _god(AgentRegistry(tmp_path / "reg"))
+    god = _god(SoulRegistry(tmp_path / "reg"))
     return god, events
 
 
@@ -60,17 +60,20 @@ def _stub_decision(monkeypatch: pytest.MonkeyPatch, decision: SoulDecision) -> N
 
 
 def _stub_run_writing(monkeypatch: pytest.MonkeyPatch, filename: str) -> None:
-    async def fake_run(soul: Any, key: str, task: str) -> str:
+    async def fake_run(god: Any, soul: Any, key: str, task: str, user_id: str) -> str:
         (sandbox_for(constants.AGENTS_DIR, key).primary / filename).write_text("<html>")
         return "built it"
 
     monkeypatch.setattr(delegate, "_run_soul", fake_run)
 
 
-async def test_forge_path_persists_runs_and_lists_files(
+async def test_forge_path_persists_runs_and_lists_only_new_files(
     env: tuple[Any, list[Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     god, events = env
+    # An unrelated deliverable from a previous task already sits in the workspace.
+    old = sandbox_for(constants.AGENTS_DIR, "web_designer").primary / "old_site.html"
+    old.write_text("old")
     _stub_decision(monkeypatch, SoulDecision(action="forge", reason="none fit", spec=_SPEC))
     _stub_run_writing(monkeypatch, "index.html")
 
@@ -79,20 +82,39 @@ async def test_forge_path_persists_runs_and_lists_files(
     assert out["status"] == "success"
     assert out["created"] is True
     assert out["soul"] == "Web Designer"
-    assert out["files"] == ["index.html"]
+    assert out["files"] == ["index.html"]  # only this run's file; old_site.html excluded
     assert out["workspace"].endswith("web_designer/workspace")
-    assert god.registry.get("web_designer") is not None  # persisted for reuse
+    assert god.souls.get("web_designer") is not None  # persisted for reuse
     assert events[0] == (
         "tool_used",
         {"tool": "delegate_to_soul", "soul": "Web Designer", "forged": True, "status": "success"},
     )
 
 
+async def test_passes_invocation_user_id_to_the_soul(
+    env: tuple[Any, list[Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    god, _ = env
+    _stub_decision(monkeypatch, SoulDecision(action="forge", reason="r", spec=_SPEC))
+    seen: dict[str, str] = {}
+
+    async def fake_run(god: Any, soul: Any, key: str, task: str, user_id: str) -> str:
+        seen["user_id"] = user_id
+        return "ok"
+
+    monkeypatch.setattr(delegate, "_run_soul", fake_run)
+    ctx = SimpleNamespace(_invocation_context=SimpleNamespace(user_id="alice"))
+
+    await make_delegate(god)("task", tool_context=ctx)
+
+    assert seen["user_id"] == "alice"  # the soul reads/writes the real user's memory
+
+
 async def test_reuse_path_does_not_recreate(
     env: tuple[Any, list[Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     god, _ = env
-    god.registry.save(_SPEC)  # already known
+    god.souls.save(_SPEC)  # already known
     _stub_decision(
         monkeypatch, SoulDecision(action="reuse", reason="fits", soul_key="web_designer")
     )

@@ -26,6 +26,16 @@ def test_decision_roundtrips_reuse() -> None:
     assert d.action == "reuse" and d.soul_key == "web_designer" and d.spec is None
 
 
+def test_reuse_without_soul_key_is_rejected() -> None:
+    with pytest.raises(ValueError, match="reuse"):
+        SoulDecision(action="reuse", reason="r")
+
+
+def test_forge_without_spec_is_rejected() -> None:
+    with pytest.raises(ValueError, match="forge"):
+        SoulDecision(action="forge", reason="r")
+
+
 def test_build_soul_smith_is_schema_only(monkeypatch: pytest.MonkeyPatch) -> None:
     import google.adk.agents as adk
 

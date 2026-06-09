@@ -1,6 +1,6 @@
 """In-memory registry of callable tools the LLM can invoke.
 
-Unlike :class:`godpy.agents.registry.AgentRegistry`, tools are *code*, not data, so
+Unlike :class:`godpy.agents.registry.SoulRegistry`, tools are *code*, not data, so
 there is nothing to persist as JSON — the registry is a plain name → callable map,
 populated once at startup by :func:`default_registry`. A tool is a plain Python
 function with type hints + a docstring; ADK turns it into a tool schema on its own

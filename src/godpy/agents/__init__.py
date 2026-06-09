@@ -6,7 +6,7 @@ capability is never rebuilt twice.
 """
 
 from godpy.agents.factory import AgentFactory
-from godpy.agents.registry import AgentRegistry
+from godpy.agents.registry import SoulRegistry
 from godpy.agents.spec import AgentSpec
 
-__all__ = ["AgentFactory", "AgentRegistry", "AgentSpec"]
+__all__ = ["AgentFactory", "AgentSpec", "SoulRegistry"]

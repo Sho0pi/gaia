@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from godpy.agents import AgentRegistry, AgentSpec
+from godpy.agents import AgentSpec, SoulRegistry
 
 
-def test_get_missing_returns_none(registry: AgentRegistry) -> None:
+def test_get_missing_returns_none(registry: SoulRegistry) -> None:
     assert registry.get("does-not-exist") is None
 
 
-def test_save_then_get_roundtrips(registry: AgentRegistry, sample_spec: AgentSpec) -> None:
+def test_save_then_get_roundtrips(registry: SoulRegistry, sample_spec: AgentSpec) -> None:
     registry.save(sample_spec)
 
     loaded = registry.get(sample_spec.key)
@@ -18,7 +18,7 @@ def test_save_then_get_roundtrips(registry: AgentRegistry, sample_spec: AgentSpe
     assert loaded == sample_spec
 
 
-def test_list_keys_returns_saved(registry: AgentRegistry, sample_spec: AgentSpec) -> None:
+def test_list_keys_returns_saved(registry: SoulRegistry, sample_spec: AgentSpec) -> None:
     registry.save(sample_spec)
 
     assert registry.list_keys() == [sample_spec.key]

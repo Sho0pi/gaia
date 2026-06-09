@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from google.adk.tools.tool_context import ToolContext
@@ -38,18 +39,27 @@ MAX_FILES = 500
 def _existing_souls(god: God) -> str:
     """Render the souls God already knows as ``key: description`` lines (or 'none')."""
     lines = []
-    for key in god.registry.list_keys():
-        spec = god.registry.get(key)
+    for key in god.souls.list_keys():
+        spec = god.souls.get(key)
         if spec is not None:
             lines.append(f"{spec.key}: {spec.description}")
     return "\n".join(lines) or "(none yet)"
 
 
-def _workspace_files(key: str) -> tuple[str, list[str]]:
-    """Return the soul's workspace path and the relative paths of files it contains."""
-    primary = sandbox_for(constants.AGENTS_DIR, key).primary
-    files = sorted(str(p.relative_to(primary)) for p in primary.rglob("*") if p.is_file())
-    return str(primary), files[:MAX_FILES]
+def _snapshot(primary: Path) -> dict[str, float]:
+    """Map each file in the workspace to its mtime, for before/after diffing."""
+    return {
+        str(p.relative_to(primary)): p.stat().st_mtime for p in primary.rglob("*") if p.is_file()
+    }
+
+
+def _changed(before: dict[str, float], after: dict[str, float]) -> list[str]:
+    """Relative paths created or modified between two snapshots (sorted, capped).
+
+    Keeps the workspace flat — a reused soul's old, unrelated deliverables stay put but are
+    NOT reported again; only what this run touched comes back.
+    """
+    return sorted(rel for rel, mtime in after.items() if before.get(rel) != mtime)[:MAX_FILES]
 
 
 def make_delegate(god: God) -> Callable[..., Awaitable[dict[str, Any]]]:
@@ -87,9 +97,11 @@ def make_delegate(god: God) -> Callable[..., Awaitable[dict[str, Any]]]:
         except Exception as exc:
             return done({"status": "error", "error_message": f"soul-smith failed: {exc}"})
 
-        known = god.registry.list_keys()
+        known = god.souls.list_keys()
         if decision.action == "reuse" and decision.soul_key in known:
-            spec = god.registry.get(decision.soul_key)
+            spec = god.souls.get(decision.soul_key)
+            if spec is None:  # key vanished between listing and read
+                return done({"status": "error", "error_message": "chosen soul is unavailable"})
             created = False
         elif decision.spec is not None:
             spec = decision.spec
@@ -98,12 +110,16 @@ def make_delegate(god: God) -> Callable[..., Awaitable[dict[str, Any]]]:
             return done(
                 {"status": "error", "error_message": "soul-smith returned no usable decision"}
             )
-        assert spec is not None  # narrowed by the branches above
 
         soul = god.factory.create_or_reuse(spec)  # persist (new) + build the ADK agent
+        primary = sandbox_for(constants.AGENTS_DIR, spec.key).primary
+        before = _snapshot(primary)
+        user_id = getattr(getattr(tool_context, "_invocation_context", None), "user_id", "god")
 
         try:
-            summary = await asyncio.wait_for(_run_soul(soul, spec.key, task), timeout=SOUL_TIMEOUT)
+            summary = await asyncio.wait_for(
+                _run_soul(god, soul, spec.key, task, user_id), timeout=SOUL_TIMEOUT
+            )
         except TimeoutError:
             return done(
                 {
@@ -123,14 +139,14 @@ def make_delegate(god: God) -> Callable[..., Awaitable[dict[str, Any]]]:
                 }
             )
 
-        workspace, files = _workspace_files(spec.key)
+        files = _changed(before, _snapshot(primary))
         return done(
             {
                 "status": "success",
                 "soul": spec.name,
                 "created": created,
                 "reason": decision.reason,
-                "workspace": workspace,
+                "workspace": str(primary),
                 "files": files,
                 "summary": summary,
             }
@@ -149,8 +165,12 @@ async def _decide(model: str, task: str, existing: str, tool_context: ToolContex
     return raw if isinstance(raw, SoulDecision) else SoulDecision.model_validate(raw)
 
 
-async def _run_soul(soul: Any, key: str, task: str) -> str:
-    """Run the soul on ``task`` in a fresh nested Runner; return its final text."""
+async def _run_soul(god: God, soul: Any, key: str, task: str, user_id: str) -> str:
+    """Run the soul on ``task`` in a fresh nested Runner; return its final text.
+
+    The runner is given God's ``memory_service`` and the caller's ``user_id`` so the soul's
+    ``load_memory``/``remember`` tools read and write the *same* user's long-term memory.
+    """
     from google.adk.runners import Runner
     from google.adk.sessions import InMemorySessionService
     from google.genai import types
@@ -159,7 +179,7 @@ async def _run_soul(soul: Any, key: str, task: str) -> str:
     from godpy.tools import SELF_LOGGING_TOOLS
 
     session_service = InMemorySessionService()  # type: ignore[no-untyped-call]
-    user_id, session_id = "god", f"soul-{key}"
+    session_id = f"soul-{key}"
     await session_service.create_session(
         app_name=constants.APP_NAME, user_id=user_id, session_id=session_id
     )
@@ -167,6 +187,7 @@ async def _run_soul(soul: Any, key: str, task: str) -> str:
         app_name=constants.APP_NAME,
         agent=soul,
         session_service=session_service,
+        memory_service=god.memory_service,
         plugins=[ToolLoggingPlugin(SELF_LOGGING_TOOLS)],
     )
     content = types.Content(role="user", parts=[types.Part(text=task)])

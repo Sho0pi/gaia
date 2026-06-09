@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from godpy.agents import AgentFactory, AgentRegistry, AgentSpec
+from godpy.agents import AgentFactory, AgentSpec, SoulRegistry
 from godpy.communication import apply_communication_style
 from godpy.config import ConfigSupplier, Settings, configure_adk_env, get_settings
 from godpy.config.schema import AgentBinding
@@ -31,10 +31,10 @@ class God:
         configure_adk_env(self.settings)
         self.config_supplier = ConfigSupplier(self.settings.config_path)
         self.skills_dir = resolve_skills_dir(self.config)
-        self.registry = AgentRegistry(self.settings.agent_registry_dir)
+        self.souls = SoulRegistry(self.settings.agent_registry_dir)
         self.tools = default_registry(self.config)
         self.factory = AgentFactory(
-            self.registry,
+            self.souls,
             default_model=self.settings.model,
             skills_dir=self.skills_dir,
             default_communication_style=self.config.default_communication_style,
@@ -70,9 +70,9 @@ class God:
         """Get a subagent for ``spec`` — reused if known, created+stored if new."""
         return self.factory.create_or_reuse(spec)
 
-    def known_agents(self) -> list[str]:
+    def known_souls(self) -> list[str]:
         """Keys of every subagent God has already learned."""
-        return self.registry.list_keys()
+        return self.souls.list_keys()
 
     def build_root_agent(self) -> LlmAgent:
         """Construct the ADK root agent with all known subagents attached.
@@ -82,8 +82,8 @@ class God:
         from google.adk.agents import BaseAgent, LlmAgent
 
         sub_agents: list[BaseAgent] = [
-            self.factory.create_or_reuse(self.registry.get(key))  # type: ignore[arg-type]
-            for key in self.known_agents()
+            self.factory.create_or_reuse(self.souls.get(key))  # type: ignore[arg-type]
+            for key in self.known_souls()
         ]
         base_instruction = (
             "You are God. Answer simple questions yourself, calling your own tools when one "

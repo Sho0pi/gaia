@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from godpy.agents.spec import AgentSpec
 
@@ -33,6 +33,15 @@ class SoulDecision(BaseModel):
     spec: AgentSpec | None = Field(
         default=None, description="When action='forge': the new soul to create."
     )
+
+    @model_validator(mode="after")
+    def _consistent(self) -> SoulDecision:
+        """A 'reuse' must name a soul_key; a 'forge' must carry a spec."""
+        if self.action == "reuse" and not self.soul_key:
+            raise ValueError("action 'reuse' requires soul_key")
+        if self.action == "forge" and self.spec is None:
+            raise ValueError("action 'forge' requires spec")
+        return self
 
 
 _INSTRUCTION = """\

@@ -8,12 +8,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from godpy.agents import AgentFactory, AgentRegistry, AgentSpec
+from godpy.agents import AgentFactory, AgentSpec, SoulRegistry
 from godpy.communication import CAVEMAN_PROMPT, HUMAN_PROMPT
 
 
 def test_default_human_and_override_caveman(tmp_path: Path) -> None:
-    registry = AgentRegistry(tmp_path / "registry")
+    registry = SoulRegistry(tmp_path / "registry")
     factory = AgentFactory(
         registry, default_model="gemini-2.0-flash", default_communication_style="human"
     )

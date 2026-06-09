@@ -22,7 +22,7 @@ class StatusCommand(Command):
         return (
             f"model: {model}\n"
             f"memory: {memory_line}\n"
-            f"subagents: {len(ctx.god.known_agents())}\n"
+            f"subagents: {len(ctx.god.known_souls())}\n"
             f"tools: {len(ctx.god.tools.names())}\n"
             f"commands: {len(ctx.registry.all())}"
         )

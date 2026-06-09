@@ -45,7 +45,9 @@ async def test_soul_writes_html_into_its_workspace(
     )
     soul = god.factory.create_or_reuse(spec)
 
-    summary = await _run_soul(soul, spec.key, "Create index.html containing an <h1>Hello</h1>.")
+    summary = await _run_soul(
+        god, soul, spec.key, "Create index.html containing an <h1>Hello</h1>.", "tester"
+    )
 
     workspace = tmp_path / "agents" / "web_designer" / "workspace"
     html = list(workspace.rglob("*.html"))
