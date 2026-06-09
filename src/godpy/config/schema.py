@@ -95,6 +95,26 @@ class ToolConfig(BaseModel):
     enabled: bool = Field(default=True, description="Whether the tool is available.")
 
 
+class MemoryConfig(BaseModel):
+    """Long-term (mem0) memory settings. Short-term is ADK's session state, no config."""
+
+    enabled: bool = Field(
+        default=True,
+        description="Run long-term memory (mem0). Off = session-only, no cross-session recall.",
+    )
+    auto_ingest: bool = Field(
+        default=True,
+        description="Feed each turn to mem0 so it auto-extracts facts; off = remember-tool only.",
+    )
+    recall_limit: int = Field(
+        default=5, description="How many memories load_memory returns per search."
+    )
+    vector_store: str | None = Field(
+        default=None,
+        description="mem0 vector store provider; empty = chroma (embedded, runs anywhere).",
+    )
+
+
 class LoggingConfig(BaseModel):
     """Log level + rotation. Applied once at startup (changes need a restart)."""
 
@@ -124,6 +144,7 @@ class GodConfig(BaseModel):
         default_factory=list, description="Sender ids with admin privileges (reserved)."
     )
     connectors: ConnectorsConfig = Field(default_factory=ConnectorsConfig)
+    memory: MemoryConfig = Field(default_factory=MemoryConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     default_communication_style: str = Field(
         default="human", description="Fallback voice for agents (human/caveman/ai)."

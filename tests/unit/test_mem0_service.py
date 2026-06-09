@@ -1,0 +1,105 @@
+"""Mem0MemoryService adapts mem0 to ADK without importing a vector store.
+
+A fake mem0 client records ``add`` calls and returns canned ``search`` hits, so the
+event->message mapping, the hit->MemoryEntry mapping and the write logging are all
+checked offline.
+"""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+from typing import Any
+
+import pytest
+from google.adk.memory.memory_entry import MemoryEntry
+from google.genai import types
+
+from godpy.memory.service import Mem0MemoryService
+
+
+class _FakeMem0:
+    """Records add() calls; returns a preset search payload."""
+
+    def __init__(self, search_result: Any = None) -> None:
+        self.added: list[tuple[list[dict[str, str]], dict[str, Any]]] = []
+        self._search_result = search_result if search_result is not None else {"results": []}
+
+    def add(self, messages: list[dict[str, str]], **kwargs: Any) -> Any:
+        self.added.append((messages, kwargs))
+        return {"results": []}
+
+    def search(self, query: str, **kwargs: Any) -> Any:
+        self.last_search = (query, kwargs)
+        return self._search_result
+
+
+def _event(text: str, role: str) -> SimpleNamespace:
+    return SimpleNamespace(content=types.Content(role=role, parts=[types.Part(text=text)]))
+
+
+async def test_add_session_maps_events_and_logs(monkeypatch: pytest.MonkeyPatch) -> None:
+    events: list[dict[str, Any]] = []
+    monkeypatch.setattr("godpy.memory.service.log_event", lambda a, **k: events.append((a, k)))
+    backend = _FakeMem0()
+    service = Mem0MemoryService(backend)
+    session = SimpleNamespace(
+        events=[_event("I live in Berlin", "user"), _event("Noted.", "model")],
+        user_id="u1",
+        id="s1",
+    )
+
+    await service.add_session_to_memory(session)  # type: ignore[arg-type]
+
+    messages, kwargs = backend.added[0]
+    assert messages == [
+        {"role": "user", "content": "I live in Berlin"},
+        {"role": "assistant", "content": "Noted."},  # ADK "model" -> mem0 "assistant"
+    ]
+    assert kwargs["user_id"] == "u1" and kwargs["run_id"] == "s1"
+    assert ("memory_updated", {"user": "u1", "messages": 2}) in events
+
+
+async def test_search_maps_hits_to_memory_entries() -> None:
+    backend = _FakeMem0(
+        {"results": [{"id": "m1", "memory": "timezone is IST", "updated_at": "2026-06-09"}]}
+    )
+    service = Mem0MemoryService(backend, recall_limit=3)
+
+    response = await service.search_memory(app_name="godpy", user_id="u1", query="tz")
+
+    assert backend.last_search == ("tz", {"filters": {"user_id": "u1"}, "top_k": 3})
+    (entry,) = response.memories
+    assert entry.content.parts[0].text == "timezone is IST"
+    assert entry.id == "m1" and entry.timestamp == "2026-06-09"
+
+
+async def test_search_accepts_bare_list_payload() -> None:
+    backend = _FakeMem0([{"id": "m1", "memory": "likes tea"}])
+    service = Mem0MemoryService(backend)
+
+    response = await service.search_memory(app_name="godpy", user_id="u1", query="drink")
+
+    assert response.memories[0].content.parts[0].text == "likes tea"
+
+
+async def test_add_memory_stores_verbatim() -> None:
+    backend = _FakeMem0()
+    service = Mem0MemoryService(backend)
+    entry = MemoryEntry(content=types.Content(parts=[types.Part(text="uses vim")]))
+
+    await service.add_memory(app_name="godpy", user_id="u1", memories=[entry])
+
+    messages, kwargs = backend.added[0]
+    assert messages == [{"role": "user", "content": "uses vim"}]
+    assert kwargs["infer"] is False  # explicit facts are not re-inferred
+
+
+async def test_empty_events_are_a_noop(monkeypatch: pytest.MonkeyPatch) -> None:
+    logged: list[Any] = []
+    monkeypatch.setattr("godpy.memory.service.log_event", lambda a, **k: logged.append(a))
+    backend = _FakeMem0()
+    service = Mem0MemoryService(backend)
+
+    await service.add_events_to_memory(app_name="godpy", user_id="u1", events=[])
+
+    assert backend.added == [] and logged == []

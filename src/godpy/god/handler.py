@@ -8,6 +8,7 @@ unit-testable without a model backend.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 from godpy import constants
@@ -48,6 +49,7 @@ class GodHandler:
                 app_name=constants.APP_NAME,
                 agent=self._god.build_root_agent(),
                 session_service=session_service,
+                memory_service=self._god.memory_service,
             )
         return self._runner
 
@@ -58,9 +60,11 @@ class GodHandler:
         runner = await self._ensure_runner()
         content = types.Content(role="user", parts=[types.Part(text=text)])
 
+        turn_events: list[Any] = []
         async for event in runner.run_async(
             user_id=self._user_id, session_id=self._session_id, new_message=content
         ):
+            turn_events.append(event)
             # A model turn can carry several parts (text, function calls, inline
             # data). Stream each text part of the final answer as its own reply
             # instead of joining them, so one inbound message can fan out to many.
@@ -69,6 +73,28 @@ class GodHandler:
                     if part.text:
                         log_event("message_out", user=self._user_id, chars=len(part.text))
                         await send(part.text)
+
+        await self._ingest(turn_events)
+
+    async def _ingest(self, events: list[Any]) -> None:
+        """Auto-feed this turn to long-term memory so mem0 extracts durable facts.
+
+        Best-effort: the reply has already been sent, so a mem0 hiccup is logged and
+        swallowed rather than surfaced to the user. No-op when memory is off or
+        ``memory.auto_ingest`` is false.
+        """
+        service = self._god.memory_service
+        if service is None or not self._god.config.memory.auto_ingest:
+            return
+        try:
+            await service.add_events_to_memory(
+                app_name=constants.APP_NAME,
+                user_id=self._user_id,
+                events=events,
+                session_id=self._session_id,
+            )
+        except Exception:
+            logging.getLogger(constants.LOGGER_NAME).warning("auto-ingest to memory failed")
 
 
 def build_handler(

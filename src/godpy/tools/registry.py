@@ -16,10 +16,15 @@ from typing import TYPE_CHECKING, Any, Union
 
 from godpy import constants
 from godpy.tools import fs
+from godpy.tools.remember import NAME as REMEMBER
+from godpy.tools.remember import make_remember
 from godpy.tools.web_fetch import NAME as WEB_FETCH
 from godpy.tools.web_fetch import httpx_fetcher, make_web_fetch
 from godpy.tools.web_search import NAME as WEB_SEARCH
 from godpy.tools.web_search import get_search_provider, make_web_search
+
+#: ADK's built-in memory-fetch tool id (registered as the agent-facing tool name).
+LOAD_MEMORY = "load_memory"
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from google.adk.tools.base_tool import BaseTool
@@ -110,5 +115,15 @@ def default_registry(config: GodConfig | None = None) -> ToolRegistry:
         registry.register(fs.GLOB, fs.make_fs_glob(agents_dir))
     if _is_enabled(config, fs.GREP) and shutil.which("rg"):
         registry.register(fs.GREP, fs.make_fs_grep(agents_dir))
+
+    # Memory tools are only useful when long-term memory is on (mem0 wired into the
+    # Runner); each is still individually gateable via tools.<name>.enabled.
+    if config is None or config.memory.enabled:
+        if _is_enabled(config, LOAD_MEMORY):
+            from google.adk.tools.load_memory_tool import load_memory_tool
+
+            registry.register(LOAD_MEMORY, load_memory_tool)
+        if _is_enabled(config, REMEMBER):
+            registry.register(REMEMBER, make_remember())
 
     return registry

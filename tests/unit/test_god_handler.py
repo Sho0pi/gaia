@@ -44,7 +44,8 @@ async def _collect(handler: GodHandler, text: str) -> list[str]:
 
 
 async def test_streams_each_text_part_of_final_response() -> None:
-    handler = GodHandler(SimpleNamespace())  # god unused: runner is pre-set below
+    # god only needs memory_service here: None short-circuits auto-ingest.
+    handler = GodHandler(SimpleNamespace(memory_service=None))
     handler._runner = _FakeRunner([_event("hello", "", "world")])
 
     sent = await _collect(handler, "hi")
@@ -54,7 +55,7 @@ async def test_streams_each_text_part_of_final_response() -> None:
 
 
 async def test_ignores_non_final_events() -> None:
-    handler = GodHandler(SimpleNamespace())
+    handler = GodHandler(SimpleNamespace(memory_service=None))
     handler._runner = _FakeRunner([_event("interim", final=False), _event("done")])
 
     assert await _collect(handler, "hi") == ["done"]
