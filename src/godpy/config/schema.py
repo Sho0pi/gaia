@@ -95,6 +95,26 @@ class ToolConfig(BaseModel):
     enabled: bool = Field(default=True, description="Whether the tool is available.")
 
 
+class MemoryProvider(BaseModel):
+    """One mem0 component (llm / embedder / vector store): a provider + its config.
+
+    Only ``provider`` is typed; any extra keys (``model``, ``host``, ``path``, …) are
+    kept verbatim and passed straight to mem0 as that component's ``config``. **Secrets
+    (api keys) belong in env, not here** — mem0 reads each provider's standard env var
+    (``OPENAI_API_KEY``, ``ANTHROPIC_API_KEY``, …); the Gemini default reuses
+    ``GEMINI_API_KEY`` automatically.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    provider: str = Field(
+        default="gemini",
+        description="mem0 provider id. LLM: gemini/openai/anthropic/minimax/litellm/ollama. "
+        "Embedder: gemini/openai/vertexai/fastembed/ollama (Anthropic has no embeddings). "
+        "Vector store: chroma/pgvector/qdrant/pinecone/…",
+    )
+
+
 class MemoryConfig(BaseModel):
     """Long-term (mem0) memory settings. Short-term is ADK's session state, no config."""
 
@@ -109,9 +129,20 @@ class MemoryConfig(BaseModel):
     recall_limit: int = Field(
         default=5, description="How many memories load_memory returns per search."
     )
-    vector_store: str | None = Field(
-        default=None,
-        description="mem0 vector store provider; empty = chroma (embedded, runs anywhere).",
+    # Provider-agnostic components. Defaults wire Gemini (reusing the agent's key/model)
+    # + a local chroma store; override provider/model per component for any backend.
+    # Changing the embedder invalidates the existing store (vectors live in its space).
+    llm: MemoryProvider = Field(
+        default_factory=lambda: MemoryProvider(provider="gemini"),
+        description="Fact-extraction model. e.g. provider: openai, model: gpt-4o-mini.",
+    )
+    embedder: MemoryProvider = Field(
+        default_factory=lambda: MemoryProvider(provider="gemini"),
+        description="Vectoriser. e.g. provider: fastembed (local, no key) or openai.",
+    )
+    vector_store: MemoryProvider = Field(
+        default_factory=lambda: MemoryProvider(provider="chroma"),
+        description="Store. chroma (embedded, default) or e.g. provider: pgvector, host, port.",
     )
 
 

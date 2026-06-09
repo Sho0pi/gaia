@@ -64,6 +64,11 @@ class Mem0MemoryService(BaseMemoryService):
     mem0 auto-extracts durable facts from the conversation it is given (``infer=True``)
     so the store grows and de-duplicates itself day by day; explicit writes from the
     ``remember`` tool are stored verbatim (``infer=False``).
+
+    ``app_name`` is part of ADK's ``BaseMemoryService`` contract and is accepted on
+    every method, but it's unused here: mem0 scopes by ``user_id`` (plus ``run_id``),
+    which is enough for one app. It would only matter to namespace a store shared across
+    multiple apps — then it'd map to a per-app ``collection_name`` or filter.
     """
 
     def __init__(self, backend: Mem0Client, *, recall_limit: int = DEFAULT_RECALL_LIMIT) -> None:

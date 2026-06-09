@@ -2,10 +2,18 @@
 
 mem0 is orchestration, not a model: each ``add``/``search`` leans on an **LLM** (to
 extract facts), an **embedder** (to vectorise) and a **vector store** (to hold them).
-We point the first two at **Gemini** — reusing godpy's existing key/model, so the heavy
-compute runs in Google's cloud and the device only runs a small embedded vector store
-(chroma) plus mem0's SQLite history. That keeps godpy's memory portable: anything that
-can already reach Gemini for the agent can also remember, down to a Raspberry Pi.
+Each of the three is provider-agnostic — picked in ``god.yaml``'s ``memory`` section
+(:class:`~godpy.config.schema.MemoryProvider`) and passed straight through to mem0.
+
+The defaults wire **Gemini** for the LLM + embedder (reusing godpy's existing key and
+model) and a local **chroma** vector store, so out of the box the heavy compute runs in
+Google's cloud and the device only runs a small embedded store + mem0's SQLite history —
+portable down to a Raspberry Pi. Point any component elsewhere (OpenAI, Anthropic via
+litellm, a local embedder, pgvector/qdrant) without touching code.
+
+**Secrets stay in env.** Only the Gemini default injects ``GEMINI_API_KEY`` (godpy owns
+it); every other provider reads its own standard env var (``OPENAI_API_KEY``, …) the way
+mem0/litellm expect, so api keys never land in the hand-edited ``god.yaml``.
 
 The ``mem0`` import is deferred (heavy-deps convention) so this module imports cleanly
 without a configured store.
@@ -20,47 +28,57 @@ from godpy import constants
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from mem0 import Memory
 
-    from godpy.config import MemoryConfig
-    from godpy.config.settings import Settings
+    from godpy.config import MemoryConfig, MemoryProvider, Settings
 
-#: Gemini embedding model used to vectorise memories.
-DEFAULT_EMBEDDER_MODEL = "models/gemini-embedding-001"
+#: Gemini embedding model used when the embedder provider is the (default) gemini one.
+DEFAULT_GEMINI_EMBEDDER_MODEL = "models/gemini-embedding-001"
 
-#: Embedded, file-backed vector store — no server, runs anywhere Python does.
-DEFAULT_VECTOR_STORE = "chroma"
+
+def _component(block: MemoryProvider, defaults: dict[str, Any]) -> dict[str, Any]:
+    """Turn a :class:`MemoryProvider` into mem0's ``{provider, config}`` shape.
+
+    Extra keys set in ``god.yaml`` win; ``defaults`` fill what the user left out (and
+    only apply to the provider they belong to — the caller passes provider-specific
+    defaults).
+    """
+    config = {**defaults, **(block.model_extra or {})}
+    return {"provider": block.provider, "config": config}
 
 
 def build_mem0_config(settings: Settings, memory: MemoryConfig) -> dict[str, Any]:
     """Assemble the mem0 ``from_config`` dict from godpy settings + ``god.yaml``.
 
-    LLM and embedder are Gemini (reusing ``settings.model`` / ``GEMINI_API_KEY``); the
-    vector store defaults to a local chroma dir under the home folder, keyed by
-    ``settings.mem0_collection``. ``memory.vector_store`` overrides the provider for
-    leaner/heavier hosts without touching code.
+    Each component falls back to a Gemini/chroma default; the Gemini defaults reuse
+    ``settings.model`` and ``GEMINI_API_KEY`` so a stock install needs no extra config.
     """
     store_dir = constants.HOME_DIR / "memory" / "chroma"
-    api_key = settings.google_api_key
+
+    # Gemini is the only provider whose key godpy holds, so it's the only one we inject;
+    # other providers read their own env var inside mem0.
+    llm_defaults: dict[str, Any] = {}
+    if memory.llm.provider == "gemini":
+        llm_defaults = {"model": settings.model, "api_key": settings.google_api_key}
+
+    embedder_defaults: dict[str, Any] = {}
+    if memory.embedder.provider == "gemini":
+        embedder_defaults = {
+            "model": DEFAULT_GEMINI_EMBEDDER_MODEL,
+            "api_key": settings.google_api_key,
+        }
+
+    store_defaults: dict[str, Any] = {"collection_name": settings.mem0_collection}
+    if memory.vector_store.provider == "chroma":
+        store_defaults["path"] = str(store_dir)
+
     return {
-        "llm": {
-            "provider": "gemini",
-            "config": {"model": settings.model, "api_key": api_key},
-        },
-        "embedder": {
-            "provider": "gemini",
-            "config": {"model": DEFAULT_EMBEDDER_MODEL, "api_key": api_key},
-        },
-        "vector_store": {
-            "provider": memory.vector_store or DEFAULT_VECTOR_STORE,
-            "config": {
-                "collection_name": settings.mem0_collection,
-                "path": str(store_dir),
-            },
-        },
+        "llm": _component(memory.llm, llm_defaults),
+        "embedder": _component(memory.embedder, embedder_defaults),
+        "vector_store": _component(memory.vector_store, store_defaults),
     }
 
 
 def build_mem0(settings: Settings, memory: MemoryConfig) -> Memory:
-    """Construct a Gemini-backed mem0 ``Memory`` for ``settings`` + ``memory`` config."""
+    """Construct a mem0 ``Memory`` configured from ``settings`` + ``memory`` config."""
     from mem0 import Memory
 
     return Memory.from_config(build_mem0_config(settings, memory))

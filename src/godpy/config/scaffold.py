@@ -10,9 +10,7 @@ through ``GodConfig`` to guarantee it stays valid and in sync.
 
 from __future__ import annotations
 
-import types
 from pathlib import Path
-from typing import Union, get_args, get_origin
 
 from pydantic import BaseModel
 
@@ -23,19 +21,6 @@ _HEADER = """\
 # Edit and save; changes are picked up without a restart.
 # Secrets (tokens, api keys) belong in env / .env, NOT here.
 """
-
-
-def _unwrap_optional(annotation: object) -> object:
-    """``X | None`` -> ``X``; leave anything else untouched."""
-    if get_origin(annotation) in (Union, types.UnionType):
-        args = [a for a in get_args(annotation) if a is not type(None)]
-        if len(args) == 1:
-            return args[0]
-    return annotation
-
-
-def _is_model(annotation: object) -> bool:
-    return isinstance(annotation, type) and issubclass(annotation, BaseModel)
 
 
 def _scalar(value: object) -> str:
@@ -53,25 +38,30 @@ def _scalar(value: object) -> str:
     return str(value)
 
 
-def _render_model(model_cls: type[BaseModel], indent: int) -> list[str]:
+def _render_instance(model: BaseModel, indent: int) -> list[str]:
+    """Render a model *instance* so each field shows its real default value.
+
+    Walking the instance (not the class) matters when a field's default differs from
+    its type's class default — e.g. ``vector_store`` defaults to a ``MemoryProvider``
+    whose ``provider`` is ``chroma``, not the class default ``gemini``.
+    """
     pad = "  " * indent
     lines: list[str] = []
-    for name, field in model_cls.model_fields.items():
+    for name, field in type(model).model_fields.items():
         if field.description:
             lines.append(f"{pad}# {field.description}")
-        annotation = _unwrap_optional(field.annotation)
-        if _is_model(annotation):
+        value = getattr(model, name)
+        if isinstance(value, BaseModel):
             lines.append(f"{pad}{name}:")
-            lines.extend(_render_model(annotation, indent + 1))  # type: ignore[arg-type]
+            lines.extend(_render_instance(value, indent + 1))
         else:
-            default = field.get_default(call_default_factory=True)
-            lines.append(f"{pad}{name}: {_scalar(default)}")
+            lines.append(f"{pad}{name}: {_scalar(value)}")
     return lines
 
 
 def render_default_yaml() -> str:
     """Render the commented default ``god.yaml`` from the live schema."""
-    return _HEADER + "\n" + "\n".join(_render_model(GodConfig, 0)) + "\n"
+    return _HEADER + "\n" + "\n".join(_render_instance(GodConfig(), 0)) + "\n"
 
 
 def write_default_config(path: Path, *, override: bool = False) -> bool:
