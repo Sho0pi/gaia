@@ -45,6 +45,9 @@ class GodHandler:
         from google.adk.runners import Runner
         from google.adk.sessions import InMemorySessionService
 
+        from godpy.god.plugins import ToolLoggingPlugin
+        from godpy.tools import SELF_LOGGING_TOOLS
+
         if self._runner is None:
             session_service = InMemorySessionService()  # type: ignore[no-untyped-call]
             await session_service.create_session(
@@ -55,6 +58,7 @@ class GodHandler:
                 agent=self._god.build_root_agent(),
                 session_service=session_service,
                 memory_service=self._god.memory_service,
+                plugins=[ToolLoggingPlugin(SELF_LOGGING_TOOLS)],
             )
         return self._runner
 

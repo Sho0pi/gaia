@@ -26,6 +26,13 @@ from godpy.tools.web_search import get_search_provider, make_web_search
 #: ADK's built-in memory-fetch tool id (registered as the agent-facing tool name).
 LOAD_MEMORY = "load_memory"
 
+#: godpy's own tools each emit their own ``tool_used`` event (rich, tool-specific fields)
+#: from their ``done()`` closure. The central ToolLoggingPlugin skips these to avoid
+#: double-logging and covers everything else (ADK built-ins like ``load_memory``).
+SELF_LOGGING_TOOLS = frozenset(
+    {WEB_FETCH, WEB_SEARCH, REMEMBER, fs.READ, fs.WRITE, fs.EDIT, fs.GLOB, fs.GREP}
+)
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from google.adk.tools.base_tool import BaseTool
     from google.adk.tools.base_toolset import BaseToolset
