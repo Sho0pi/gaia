@@ -8,8 +8,16 @@ from pydantic import BaseModel, Field
 
 
 def slugify(name: str) -> str:
-    """Normalize a human name into a stable registry key."""
-    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    """Normalize a human name into a stable, identifier-safe registry key.
+
+    ADK requires an agent's ``name`` to be a valid Python identifier (it becomes a graph
+    node name), so the key uses underscores — never hyphens — and never starts with a
+    digit. The same key names the agent's workspace dir, keeping the two in lockstep.
+    """
+    slug = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+    if not slug:
+        return "agent"
+    return f"_{slug}" if slug[0].isdigit() else slug
 
 
 class AgentSpec(BaseModel):

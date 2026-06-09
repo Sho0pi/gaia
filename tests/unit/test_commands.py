@@ -38,7 +38,7 @@ def _ctx(
         config=GodConfig(),
         settings=SimpleNamespace(model="gemini-test"),
         memory_service=memory,
-        known_agents=lambda: agents or [],
+        known_souls=lambda: agents or [],
         tools=SimpleNamespace(names=lambda: ["web_fetch", "fs_read"]),
     )
     return CommandContext(

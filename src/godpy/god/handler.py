@@ -20,6 +20,16 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from godpy.god.agent import God
 
 
+def _friendly_error(exc: Exception) -> str:
+    """A short, user-facing message for a failed turn (rate limit / outage / other)."""
+    text = str(exc)
+    if "429" in text or "RESOURCE_EXHAUSTED" in text:
+        return "I'm being rate-limited right now (model quota). Please try again in a minute."
+    if "503" in text or "UNAVAILABLE" in text or "overloaded" in text.lower():
+        return "The model is busy at the moment. Please try again shortly."
+    return "Sorry — something went wrong handling that. Please try again."
+
+
 class GodHandler:
     """Runs inbound text through God's ADK root agent and returns the reply text.
 
@@ -76,18 +86,26 @@ class GodHandler:
         content = types.Content(role="user", parts=[types.Part(text=text)])
 
         turn_events: list[Any] = []
-        async for event in runner.run_async(
-            user_id=self._user_id, session_id=self._session_id, new_message=content
-        ):
-            turn_events.append(event)
-            # A model turn can carry several parts (text, function calls, inline
-            # data). Stream each text part of the final answer as its own reply
-            # instead of joining them, so one inbound message can fan out to many.
-            if event.is_final_response() and event.content and event.content.parts:
-                for part in event.content.parts:
-                    if part.text:
-                        log_event("message_out", user=self._user_id, chars=len(part.text))
-                        await send(part.text)
+        try:
+            async for event in runner.run_async(
+                user_id=self._user_id, session_id=self._session_id, new_message=content
+            ):
+                turn_events.append(event)
+                # A model turn can carry several parts (text, function calls, inline
+                # data). Stream each text part of the final answer as its own reply
+                # instead of joining them, so one inbound message can fan out to many.
+                if event.is_final_response() and event.content and event.content.parts:
+                    for part in event.content.parts:
+                        if part.text:
+                            log_event("message_out", user=self._user_id, chars=len(part.text))
+                            await send(part.text)
+        except Exception as exc:
+            # A model error (rate limit, outage) or tool fault must not surface as a raw
+            # traceback to the user. Log the detail, send a short apology, end the turn.
+            logging.getLogger(constants.LOGGER_NAME).exception("god turn failed")
+            log_event("turn_error", user=self._user_id, error=type(exc).__name__)
+            await send(_friendly_error(exc))
+            return
 
         await self._buffer_turn(turn_events)
 

@@ -8,15 +8,15 @@ import pytest
 from dotenv import load_dotenv
 
 from godpy import constants
-from godpy.agents import AgentRegistry, AgentSpec
+from godpy.agents import AgentSpec, SoulRegistry
 
 # Make the home .env (GEMINI_API_KEY / GEMINI_MODEL) visible to tests and skip-guards.
 load_dotenv(constants.ENV_FILE)
 
 
 @pytest.fixture
-def registry(tmp_path: Path) -> AgentRegistry:
-    return AgentRegistry(tmp_path / "agent_registry")
+def registry(tmp_path: Path) -> SoulRegistry:
+    return SoulRegistry(tmp_path / "agent_registry")
 
 
 @pytest.fixture

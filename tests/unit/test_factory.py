@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from godpy.agents import AgentFactory, AgentRegistry, AgentSpec
+from godpy.agents import AgentFactory, AgentSpec, SoulRegistry
 from godpy.agents.factory import to_agent_card
 from godpy.communication import CAVEMAN_PROMPT
 
@@ -14,7 +14,7 @@ from godpy.communication import CAVEMAN_PROMPT
 class _RecordingFactory(AgentFactory):
     """Captures which spec reached the (mocked) ADK build step."""
 
-    def __init__(self, registry: AgentRegistry) -> None:
+    def __init__(self, registry: SoulRegistry) -> None:
         super().__init__(registry, default_model="test-model")
         self.built: AgentSpec | None = None
 
@@ -31,7 +31,7 @@ def _make_skill(skills_dir: Path, name: str, body: str) -> None:
     )
 
 
-def test_new_spec_is_persisted(registry: AgentRegistry, sample_spec: AgentSpec) -> None:
+def test_new_spec_is_persisted(registry: SoulRegistry, sample_spec: AgentSpec) -> None:
     factory = _RecordingFactory(registry)
 
     factory.create_or_reuse(sample_spec)
@@ -40,7 +40,7 @@ def test_new_spec_is_persisted(registry: AgentRegistry, sample_spec: AgentSpec) 
     assert factory.built == sample_spec
 
 
-def test_existing_spec_is_reused(registry: AgentRegistry, sample_spec: AgentSpec) -> None:
+def test_existing_spec_is_reused(registry: SoulRegistry, sample_spec: AgentSpec) -> None:
     registry.save(sample_spec)
     factory = _RecordingFactory(registry)
 
@@ -62,7 +62,7 @@ def test_to_agent_card_shape(sample_spec: AgentSpec) -> None:
     assert {s["id"] for s in card["skills"]} == {"summarization", "email"}
 
 
-def test_skills_dir_injects_instruction(registry: AgentRegistry, tmp_path: Path) -> None:
+def test_skills_dir_injects_instruction(registry: SoulRegistry, tmp_path: Path) -> None:
     _make_skill(tmp_path, "caveman", "CAVEMAN RULES")
     spec = AgentSpec(
         name="Talker",
@@ -116,7 +116,7 @@ def _capture_instruction(
 
 
 def test_factory_composes_default_style_and_skill(
-    registry: AgentRegistry, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    registry: SoulRegistry, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _make_skill(tmp_path, "caveman", "CAVEMAN RULES")
     spec = AgentSpec(
@@ -151,7 +151,7 @@ def _capture_kwargs(
 
 
 def test_factory_resolves_and_passes_tools(
-    registry: AgentRegistry, monkeypatch: pytest.MonkeyPatch
+    registry: SoulRegistry, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from godpy.tools import ToolRegistry
 
@@ -171,7 +171,7 @@ def test_factory_resolves_and_passes_tools(
 
 
 def test_factory_defaults_to_all_tools(
-    registry: AgentRegistry, sample_spec: AgentSpec, monkeypatch: pytest.MonkeyPatch
+    registry: SoulRegistry, sample_spec: AgentSpec, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from godpy.tools import ToolRegistry
 
@@ -188,7 +188,7 @@ def test_factory_defaults_to_all_tools(
 
 
 def test_factory_no_registry_passes_empty(
-    registry: AgentRegistry, sample_spec: AgentSpec, monkeypatch: pytest.MonkeyPatch
+    registry: SoulRegistry, sample_spec: AgentSpec, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     factory = AgentFactory(registry, default_model="m")  # no tool_registry
 
@@ -198,7 +198,7 @@ def test_factory_no_registry_passes_empty(
 
 
 def test_spec_style_overrides_default(
-    registry: AgentRegistry, monkeypatch: pytest.MonkeyPatch
+    registry: SoulRegistry, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     spec = AgentSpec(
         name="Talker",

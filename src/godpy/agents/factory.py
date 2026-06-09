@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from godpy.agents.registry import AgentRegistry
+from godpy.agents.registry import SoulRegistry
 from godpy.agents.spec import AgentSpec, slugify
 from godpy.communication import DEFAULT_COMMUNICATION_STYLE, apply_communication_style
 from godpy.skills import attach_skills, load_skill
@@ -25,7 +25,7 @@ class AgentFactory:
 
     def __init__(
         self,
-        registry: AgentRegistry,
+        registry: SoulRegistry,
         *,
         default_model: str,
         skills_dir: Path | None = None,

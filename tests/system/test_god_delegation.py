@@ -36,7 +36,7 @@ def test_god_reuses_stored_agent_across_instances(tmp_path: Path) -> None:
     God(settings).ensure_agent(_spec("Translator", settings.model))
 
     # A fresh God on the same registry must already know the agent (no recreate).
-    assert "translator" in God(settings).known_agents()
+    assert "translator" in God(settings).known_souls()
 
 
 def test_build_root_agent_attaches_subagents(tmp_path: Path) -> None:

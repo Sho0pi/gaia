@@ -96,6 +96,34 @@ async def test_plain_text_still_reaches_the_model() -> None:
     assert await _collect(handler, "not a command") == ["answer"]
 
 
+class _BoomRunner:
+    def __init__(self, exc: Exception) -> None:
+        self._exc = exc
+
+    async def run_async(self, **_kwargs: Any) -> Any:
+        raise self._exc
+        yield  # pragma: no cover - makes this an async generator
+
+
+async def test_model_error_yields_friendly_message_not_traceback() -> None:
+    handler = GodHandler(SimpleNamespace(memory_service=None))
+    handler._runner = _BoomRunner(RuntimeError("429 RESOURCE_EXHAUSTED quota"))
+
+    sent = await _collect(handler, "hi")  # must not raise
+
+    assert len(sent) == 1
+    assert "rate-limited" in sent[0]
+
+
+async def test_generic_error_yields_generic_message() -> None:
+    handler = GodHandler(SimpleNamespace(memory_service=None))
+    handler._runner = _BoomRunner(ValueError("boom"))
+
+    sent = await _collect(handler, "hi")
+
+    assert sent == ["Sorry — something went wrong handling that. Please try again."]
+
+
 def _god(*, batch_size: int = 2, interval: int = 3600, auto_ingest: bool = True) -> Any:
     """Fake God whose memory service records each add_events_to_memory call."""
     calls: list[dict[str, Any]] = []

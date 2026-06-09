@@ -79,6 +79,17 @@ def test_event_is_json_and_isolated_from_system_log(tmp_path: Path) -> None:
     assert "tool_used" not in (tmp_path / "system.log").read_text()
 
 
+def test_reserved_field_name_does_not_crash(tmp_path: Path) -> None:
+    _setup(tmp_path)
+
+    # 'created' is a reserved LogRecord attribute; logging it must not raise.
+    log_event("tool_used", tool="delegate_to_soul", created=True)
+
+    record = json.loads((tmp_path / "events.jsonl").read_text().strip().splitlines()[-1])
+    assert record["message"] == "tool_used"
+    assert record["created_"] is True  # suffixed to dodge the reserved name
+
+
 def test_secrets_are_redacted_before_disk(tmp_path: Path) -> None:
     token = "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcd"  # telegram-shaped
     _setup(tmp_path, GODPY_TELEGRAM_BOT_TOKEN=token)
