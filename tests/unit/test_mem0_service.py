@@ -20,9 +20,11 @@ from godpy.memory.service import Mem0MemoryService
 class _FakeMem0:
     """Records add() calls; returns a preset search payload."""
 
-    def __init__(self, search_result: Any = None) -> None:
+    def __init__(self, search_result: Any = None, all_result: Any = None) -> None:
         self.added: list[tuple[list[dict[str, str]], dict[str, Any]]] = []
         self._search_result = search_result if search_result is not None else {"results": []}
+        self._all_result = all_result if all_result is not None else {"results": []}
+        self.deleted: list[dict[str, Any]] = []
 
     def add(self, messages: list[dict[str, str]], **kwargs: Any) -> Any:
         self.added.append((messages, kwargs))
@@ -31,6 +33,13 @@ class _FakeMem0:
     def search(self, query: str, **kwargs: Any) -> Any:
         self.last_search = (query, kwargs)
         return self._search_result
+
+    def get_all(self, **kwargs: Any) -> Any:
+        self.last_get_all = kwargs
+        return self._all_result
+
+    def delete_all(self, **kwargs: Any) -> Any:
+        self.deleted.append(kwargs)
 
 
 def _event(text: str, role: str) -> SimpleNamespace:
@@ -92,6 +101,31 @@ async def test_add_memory_stores_verbatim() -> None:
     messages, kwargs = backend.added[0]
     assert messages == [{"role": "user", "content": "uses vim"}]
     assert kwargs["infer"] is False  # explicit facts are not re-inferred
+
+
+async def test_list_memories_returns_texts() -> None:
+    backend = _FakeMem0(
+        all_result={"results": [{"memory": "likes teal"}, {"memory": "owns a cat"}, {}]}
+    )
+    service = Mem0MemoryService(backend)
+
+    items = await service.list_memories(user_id="u1")
+
+    assert items == ["likes teal", "owns a cat"]  # the field-less hit is skipped
+    assert backend.last_get_all == {"filters": {"user_id": "u1"}}
+
+
+async def test_forget_counts_then_deletes(monkeypatch: pytest.MonkeyPatch) -> None:
+    logged: list[Any] = []
+    monkeypatch.setattr("godpy.memory.service.log_event", lambda a, **k: logged.append((a, k)))
+    backend = _FakeMem0(all_result={"results": [{"memory": "a"}, {"memory": "b"}]})
+    service = Mem0MemoryService(backend)
+
+    removed = await service.forget(user_id="u1")
+
+    assert removed == 2
+    assert backend.deleted == [{"user_id": "u1"}]
+    assert ("memory_forgotten", {"user": "u1", "removed": 2}) in logged
 
 
 async def test_empty_events_are_a_noop(monkeypatch: pytest.MonkeyPatch) -> None:

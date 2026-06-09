@@ -66,6 +66,12 @@ class GodHandler:
         from google.genai import types
 
         log_event("message_in", user=self._user_id, session=self._session_id, chars=len(text))
+
+        # A slash command is handled out-of-band: it never reaches the model or the
+        # memory ingest path.
+        if await self._maybe_run_command(text, send):
+            return
+
         runner = await self._ensure_runner()
         content = types.Content(role="user", parts=[types.Part(text=text)])
 
@@ -84,6 +90,45 @@ class GodHandler:
                         await send(part.text)
 
         await self._buffer_turn(turn_events)
+
+    def reset_session(self) -> None:
+        """Drop the live ADK session and pending memory buffer (used by ``/reset``).
+
+        Nulling ``_runner`` makes the next message build a fresh session with no prior
+        turns; long-term memory is untouched.
+        """
+        self._runner = None
+        self._buffer = []
+        self._buffer_started = None
+
+    async def _maybe_run_command(self, text: str, send: Send) -> bool:
+        """If ``text`` is a slash command, run it and reply; return whether it was one."""
+        from godpy.commands import CommandContext, default_registry, parse
+
+        parsed = parse(text)
+        if parsed is None:
+            return False
+        name, args = parsed
+
+        registry = default_registry(self._god.config)
+        command = registry.get(name)
+        if command is None:
+            log_event("command_used", command=name, status="unknown")
+            await send(f"Unknown command '/{name}'. Try /help.")
+            return True
+
+        ctx = CommandContext(
+            args=args,
+            god=self._god,
+            handler=self,
+            registry=registry,
+            user_id=self._user_id,
+            session_id=self._session_id,
+        )
+        reply = await command.run(ctx)
+        log_event("command_used", command=command.name, status="ok")
+        await send(reply)
+        return True
 
     async def _buffer_turn(self, events: list[Any]) -> None:
         """Add a turn to the auto-ingest buffer, flushing when it's full or stale."""

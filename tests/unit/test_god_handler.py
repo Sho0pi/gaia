@@ -61,6 +61,41 @@ async def test_ignores_non_final_events() -> None:
     assert await _collect(handler, "hi") == ["done"]
 
 
+class _ExplodingRunner:
+    """A runner that fails if the model is ever invoked (commands must not reach it)."""
+
+    async def run_async(self, **_kwargs: Any) -> Any:
+        raise AssertionError("run_async must not be called for a command")
+        yield  # pragma: no cover - makes this an async generator
+
+
+async def test_command_runs_instead_of_model() -> None:
+    from godpy.config import GodConfig
+
+    handler = GodHandler(SimpleNamespace(config=GodConfig(), memory_service=None))
+    handler._runner = _ExplodingRunner()
+
+    sent = await _collect(handler, "/help")
+
+    assert sent and sent[0].startswith("Commands:")  # handled out-of-band, model untouched
+
+
+async def test_unknown_command_replies_hint() -> None:
+    from godpy.config import GodConfig
+
+    handler = GodHandler(SimpleNamespace(config=GodConfig(), memory_service=None))
+    handler._runner = _ExplodingRunner()
+
+    assert await _collect(handler, "/nope") == ["Unknown command '/nope'. Try /help."]
+
+
+async def test_plain_text_still_reaches_the_model() -> None:
+    handler = GodHandler(SimpleNamespace(memory_service=None))
+    handler._runner = _FakeRunner([_event("answer")])
+
+    assert await _collect(handler, "not a command") == ["answer"]
+
+
 def _god(*, batch_size: int = 2, interval: int = 3600, auto_ingest: bool = True) -> Any:
     """Fake God whose memory service records each add_events_to_memory call."""
     calls: list[dict[str, Any]] = []

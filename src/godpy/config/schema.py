@@ -157,6 +157,14 @@ class MemoryConfig(BaseModel):
     )
 
 
+class CommandConfig(BaseModel):
+    """Per-command settings. Extra keys are kept verbatim for future per-command options."""
+
+    model_config = ConfigDict(extra="allow")
+
+    enabled: bool = Field(default=True, description="Whether the slash command is available.")
+
+
 class LoggingConfig(BaseModel):
     """Log level + rotation. Applied once at startup (changes need a restart)."""
 
@@ -210,4 +218,9 @@ class GodConfig(BaseModel):
     )
     souls: dict[str, Any] = Field(
         default_factory=dict, description="Agent personas (not yet wired)."
+    )
+    commands: dict[str, CommandConfig] = Field(
+        default_factory=dict,
+        description="Per-command settings keyed by command name (e.g. forget.enabled: "
+        "false). Every command is on by default.",
     )
