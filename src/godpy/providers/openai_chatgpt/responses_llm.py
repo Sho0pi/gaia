@@ -119,18 +119,29 @@ class ChatGptOAuthLlm(BaseLlm):
                 "no ChatGPT login — run: python main.py auth openai-chatgpt"
             )
 
-        body = {
+        # Body shape matches openclaw's working Codex request (buildRequestBody): the
+        # backend 400s without text/include/tool_choice/parallel_tool_calls/prompt_cache_key,
+        # and rejects an empty instructions string or an empty tools array.
+        session_id = str(uuid.uuid4())
+        body: dict[str, Any] = {
             "model": self._model_id(),
-            "instructions": _system_text(llm_request),
+            "instructions": _system_text(llm_request) or "You are a helpful assistant.",
             "input": _content_to_input(llm_request.contents),
-            "tools": _tools_from_request(llm_request),
-            "stream": True,
+            "tool_choice": "auto",
+            "parallel_tool_calls": True,
             "store": False,
+            "stream": True,
+            "text": {"verbosity": "low"},
+            "include": ["reasoning.encrypted_content"],
+            "prompt_cache_key": session_id,
         }
+        tools = _tools_from_request(llm_request)
+        if tools:
+            body["tools"] = tools
 
         async with httpx.AsyncClient(timeout=httpx.Timeout(600.0)) as client:
             creds = await self._ensure_fresh(creds, client)
-            async for resp in self._stream(client, creds, body, stream):
+            async for resp in self._stream(client, creds, body, session_id, stream):
                 yield resp
 
     async def _ensure_fresh(self, creds: Credentials, client: Any) -> Credentials:
@@ -139,30 +150,37 @@ class ChatGptOAuthLlm(BaseLlm):
             creds.save()
         return creds
 
-    def _headers(self, creds: Credentials) -> dict[str, str]:
+    def _headers(self, creds: Credentials, session_id: str) -> dict[str, str]:
+        # Mirrors openclaw's buildSSEHeaders. originator must match the Codex client id;
+        # accept=text/event-stream + the request-id headers are required by the backend.
         return {
             "Authorization": f"Bearer {creds.access_token}",
             "chatgpt-account-id": creds.account_id,
-            "Content-Type": "application/json",
+            "content-type": "application/json",
+            "accept": "text/event-stream",
             "OpenAI-Beta": "responses=experimental",
-            "originator": "codex",
-            "session_id": str(uuid.uuid4()),
+            "originator": "codex_cli_rs",
+            "session_id": session_id,
+            "x-client-request-id": session_id,
+            "User-Agent": "codex_cli_rs/0.0.0",
         }
 
     async def _stream(
-        self, client: Any, creds: Credentials, body: dict[str, Any], stream: bool
+        self, client: Any, creds: Credentials, body: dict[str, Any], session_id: str, stream: bool
     ) -> AsyncGenerator[LlmResponse, None]:
         text_parts: list[str] = []
         calls: list[types.Part] = []
         async with client.stream(
-            "POST", RESPONSES_URL, headers=self._headers(creds), json=body
+            "POST", RESPONSES_URL, headers=self._headers(creds, session_id), json=body
         ) as response:
             if response.status_code == 401:
                 # token rejected mid-flight: refresh once and retry on the next turn
                 refreshed = await device_auth.refresh(creds, client=client)
                 refreshed.save()
                 raise ChatGptNotAuthenticatedError("ChatGPT token refreshed — retry the request")
-            response.raise_for_status()
+            if response.status_code >= 400:
+                detail = (await response.aread()).decode("utf-8", "replace")[:800]
+                raise RuntimeError(f"ChatGPT Responses {response.status_code}: {detail}")
             async for line in response.aiter_lines():
                 event = _parse_sse(line)
                 if event is None:
