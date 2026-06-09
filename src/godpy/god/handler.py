@@ -90,15 +90,22 @@ class GodHandler:
         async for event in runner.run_async(
             user_id=self._user_id, session_id=self._session_id, new_message=content
         ):
-            # An ``ask`` call surfaces as a long-running function call: pause here,
-            # render the question, and wait for the next message (the answer).
+            # An ``ask`` call surfaces as a long-running function call: render the
+            # question and wait for the next message (the answer). A long-running call
+            # ends the invocation, so the generator finishes on its own — we keep
+            # draining it (ignoring any trailing events) rather than breaking out, which
+            # would close it mid-span and trip OpenTelemetry's context teardown.
+            if self._pending is not None:
+                continue
             lr_ids = getattr(event, "long_running_tool_ids", None)
             if lr_ids:
                 for call in event.get_function_calls():
                     if call.id in lr_ids and call.name == ASK:
                         self._pending = {"call_id": call.id, "name": call.name}
                         await self._render_question(call.args or {}, send)
-                        return
+                        break
+                if self._pending is not None:
+                    continue
 
             # A model turn can carry several parts (text, function calls, inline
             # data). Stream each text part of the final answer as its own reply

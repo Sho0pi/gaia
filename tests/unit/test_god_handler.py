@@ -39,11 +39,15 @@ class _FakeRunner:
     def __init__(self, events: list[SimpleNamespace]) -> None:
         self._events = events
         self.messages: list[Any] = []
+        self.drained = False
 
     async def run_async(self, *, new_message: Any = None, **_kwargs: Any) -> AsyncIterator[Any]:
         self.messages.append(new_message)
         for event in self._events:
             yield event
+        # Only reached if the consumer exhausts the generator. Breaking out early would
+        # close it mid-iteration (GeneratorExit) and trip ADK's OpenTelemetry teardown.
+        self.drained = True
 
 
 async def _collect(handler: GodHandler, text: str) -> list[str]:
@@ -76,14 +80,17 @@ async def test_ignores_non_final_events() -> None:
 async def test_ask_pauses_and_renders_question_via_text_floor() -> None:
     handler = GodHandler(SimpleNamespace())
     args = {"question": "Which env?", "options": ["dev", "prod"]}
-    # A trailing text event must NOT be streamed once the ask short-circuits.
-    handler._runner = _FakeRunner([_ask_event("c1", "ask", args), _event("ignored")])
+    # A trailing text event must NOT be streamed once an ask is pending, but the
+    # generator must still be drained to the end (no early break).
+    runner = _FakeRunner([_ask_event("c1", "ask", args), _event("ignored")])
+    handler._runner = runner
 
     sent = await _collect(handler, "deploy it")
 
     assert len(sent) == 1
     assert "Which env?" in sent[0] and "1. dev" in sent[0]
     assert handler._pending == {"call_id": "c1", "name": "ask"}
+    assert runner.drained is True  # did not break out mid-iteration (OTel regression)
 
 
 async def test_ask_uses_native_send_ask_when_present() -> None:
