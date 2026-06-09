@@ -15,7 +15,7 @@ from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Any, Union
 
 from godpy import constants
-from godpy.tools import filesystem as fs
+from godpy.tools import fs
 from godpy.tools.web_fetch import NAME as WEB_FETCH
 from godpy.tools.web_fetch import httpx_fetcher, make_web_fetch
 from godpy.tools.web_search import NAME as WEB_SEARCH
@@ -85,13 +85,10 @@ def _is_enabled(config: GodConfig | None, name: str) -> bool:
 
 
 def default_registry(config: GodConfig | None = None) -> ToolRegistry:
-    """Build the registry with godpy's built-in tools, configured from ``config.tools``.
+    """Build the registry with all of godpy's built-in tools, configured from ``config``.
 
-    Most tools are on by default and only ``enabled: false`` removes them — e.g.
-    ``web_fetch`` and the ``fs_*`` filesystem bundle. A few need a required resource:
-    ``web_search`` needs ``tools.web_search.engine`` and is absent without it; ``fs_glob``
-    and ``fs_grep`` need the ``fd`` / ``rg`` binaries and are absent when those are not
-    installed.
+    Each tool is on by default and gated only by its ``enabled`` flag (and, where it needs
+    one, an external resource such as a configured engine or a binary on ``PATH``).
     """
     registry = ToolRegistry()
 

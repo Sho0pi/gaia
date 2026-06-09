@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from godpy.tools import filesystem as fs
-from godpy.tools.filesystem import (
+from godpy.tools.fs import (
+    Sandbox,
     SandboxError,
     make_fs_edit,
     make_fs_glob,
@@ -16,6 +16,7 @@ from godpy.tools.filesystem import (
     make_fs_read,
     make_fs_write,
 )
+from godpy.tools.fs import write as fs_write_mod
 
 
 class _Ctx:
@@ -23,11 +24,6 @@ class _Ctx:
 
     def __init__(self, agent_name: str = "tester") -> None:
         self.agent_name = agent_name
-
-
-@pytest.fixture(autouse=True)
-def _clear_sandbox_cache() -> None:
-    fs._SANDBOX_CACHE.clear()
 
 
 @pytest.fixture
@@ -65,8 +61,9 @@ def test_symlink_escape_rejected(tmp_path: Path, workspace: Path) -> None:
     assert "escapes" in out["error_message"]
 
 
-def test_tmp_is_allowed(tmp_path: Path) -> None:
-    target = Path("/tmp") / "godpy_fs_test_allowed.txt"
+def test_scoped_tmp_is_allowed(tmp_path: Path) -> None:
+    # The agent's scoped scratch dir (/tmp/godpy/<agent>) is a second allowed root.
+    target = Path("/tmp/godpy/tester") / "scratch.txt"
     try:
         make_fs_write(tmp_path)(str(target), "hi", mode="overwrite", tool_context=_Ctx())
         out = make_fs_read(tmp_path)(str(target), tool_context=_Ctx())
@@ -76,9 +73,17 @@ def test_tmp_is_allowed(tmp_path: Path) -> None:
         target.unlink(missing_ok=True)
 
 
+def test_generic_tmp_is_blocked(tmp_path: Path) -> None:
+    # A /tmp path outside the agent's own scratch dir must be refused.
+    out = make_fs_read(tmp_path)("/tmp/other_app_secret.txt", tool_context=_Ctx())
+
+    assert out["status"] == "error"
+    assert "escapes" in out["error_message"]
+
+
 def test_null_byte_rejected(tmp_path: Path) -> None:
     with pytest.raises(SandboxError, match="null byte"):
-        fs.Sandbox(tmp_path / "ws").resolve("a\x00b")
+        Sandbox(tmp_path / "ws").resolve("a\x00b")
 
 
 # --- deny-list / binary -------------------------------------------------------------
@@ -235,7 +240,7 @@ def test_tool_call_logged_success_and_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     events: list[tuple[str, dict[str, object]]] = []
-    monkeypatch.setattr(fs, "log_event", lambda action, **f: events.append((action, f)))
+    monkeypatch.setattr(fs_write_mod, "log_event", lambda action, **f: events.append((action, f)))
     write = make_fs_write(tmp_path)
 
     write("ok.txt", "v", tool_context=_Ctx())

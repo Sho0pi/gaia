@@ -5,7 +5,7 @@ its schema. :class:`ToolRegistry` maps tool ids to those callables so the factor
 attach exactly the tools an :class:`~godpy.agents.spec.AgentSpec` asks for.
 """
 
-from godpy.tools.filesystem import (
+from godpy.tools.fs import (
     Sandbox,
     SandboxError,
     make_fs_edit,
