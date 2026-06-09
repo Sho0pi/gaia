@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from godpy.config import GodConfig, ToolConfig
+from godpy.config import GodConfig, MemoryConfig, ToolConfig
 from godpy.tools import ToolRegistry, default_registry
 
 
@@ -102,6 +102,29 @@ def test_disabled_flag_removes_configured_tool() -> None:
     )
 
     assert "web_search" not in default_registry(config).names()
+
+
+def test_memory_tools_on_by_default() -> None:
+    names = default_registry().names()
+
+    assert "load_memory" in names  # ADK's built-in read tool
+    assert "remember" in names  # godpy's explicit write tool
+
+
+def test_memory_tools_dropped_when_memory_disabled() -> None:
+    config = GodConfig(memory=MemoryConfig(enabled=False))
+    names = default_registry(config).names()
+
+    assert "load_memory" not in names
+    assert "remember" not in names
+
+
+def test_remember_dropped_when_tool_disabled_but_load_memory_kept() -> None:
+    config = GodConfig(tools={"remember": ToolConfig(enabled=False)})
+    names = default_registry(config).names()
+
+    assert "remember" not in names
+    assert "load_memory" in names  # gated independently per tool
 
 
 def test_default_registry_rejects_unknown_engine() -> None:

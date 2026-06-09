@@ -37,6 +37,12 @@ tools = [
     "httpx>=0.27",
     "trafilatura>=1.8",
 ]
+# Long-term memory backend. mem0 (a core dep) orchestrates the LLM+embedder via
+# google-genai (already pulled by google-adk); only the embedded vector store is
+# extra. chroma is file-backed and serverless, so it runs anywhere — down to a Pi.
+memory = [
+    "chromadb>=0.5",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -67,6 +73,7 @@ files = ["src"]
 [[tool.mypy.overrides]]
 module = [
     "mem0.*",
+    "chromadb.*",
     "pywa.*",
     "neonize.*",
     "google.protobuf.*",

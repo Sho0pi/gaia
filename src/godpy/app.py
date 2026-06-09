@@ -118,5 +118,13 @@ async def _run_background(settings: Settings, god: God, selected: list[str]) -> 
         else:
             tasks.append(asyncio.create_task(TelegramConnector(token, handler).start()))
 
-    if tasks:
+    if not tasks:
+        return
+    try:
         await asyncio.gather(*tasks)
+    finally:
+        # Drain any turns still buffered for memory before the process exits, so a
+        # Ctrl-C doesn't drop the tail of the conversation (best-effort).
+        flush = getattr(handler, "flush", None)
+        if flush is not None:
+            await flush()

@@ -95,6 +95,68 @@ class ToolConfig(BaseModel):
     enabled: bool = Field(default=True, description="Whether the tool is available.")
 
 
+class MemoryProvider(BaseModel):
+    """One mem0 component (llm / embedder / vector store): a provider + its config.
+
+    Only ``provider`` is typed; any extra keys (``model``, ``host``, ``path``, …) are
+    kept verbatim and passed straight to mem0 as that component's ``config``. **Secrets
+    (api keys) belong in env, not here** — mem0 reads each provider's standard env var
+    (``OPENAI_API_KEY``, ``ANTHROPIC_API_KEY``, …); the Gemini default reuses
+    ``GEMINI_API_KEY`` automatically.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    provider: str = Field(
+        default="gemini",
+        description="mem0 provider id. Verified today: gemini (llm + embedder) and chroma "
+        "(vector store). Others are passed through to mem0 but UNVERIFIED — LLM: "
+        "openai/anthropic/minimax/litellm/ollama; embedder: openai/vertexai/fastembed/ollama "
+        "(Anthropic has no embeddings); store: pgvector/qdrant/pinecone/…",
+    )
+
+
+class MemoryConfig(BaseModel):
+    """Long-term (mem0) memory settings. Short-term is ADK's session state, no config."""
+
+    enabled: bool = Field(
+        default=True,
+        description="Run long-term memory (mem0). Off = session-only, no cross-session recall.",
+    )
+    auto_ingest: bool = Field(
+        default=True,
+        description="Auto-extract facts from the conversation; off = remember-tool only. "
+        "Turns are batched (see ingest_batch_size / ingest_interval_seconds) to keep cost down.",
+    )
+    ingest_batch_size: int = Field(
+        default=10,
+        description="Flush buffered turns to mem0 once this many have accumulated.",
+    )
+    ingest_interval_seconds: int = Field(
+        default=3600,
+        description="Also flush if this many seconds have passed since the first buffered turn.",
+    )
+    recall_limit: int = Field(
+        default=5, description="How many memories load_memory returns per search."
+    )
+    # Provider-agnostic components. Defaults wire Gemini (reusing the agent's model; keys
+    # come from env like the agent) + a local chroma store; override provider/model per
+    # component. Only gemini + chroma are verified — see the provider field. Changing the
+    # embedder invalidates the existing store (vectors live in its space).
+    llm: MemoryProvider = Field(
+        default_factory=lambda: MemoryProvider(provider="gemini"),
+        description="Fact-extraction model. e.g. provider: openai, model: gpt-4o-mini.",
+    )
+    embedder: MemoryProvider = Field(
+        default_factory=lambda: MemoryProvider(provider="gemini"),
+        description="Vectoriser. e.g. provider: fastembed (local, no key) or openai.",
+    )
+    vector_store: MemoryProvider = Field(
+        default_factory=lambda: MemoryProvider(provider="chroma"),
+        description="Store. chroma (embedded, default) or e.g. provider: pgvector, host, port.",
+    )
+
+
 class LoggingConfig(BaseModel):
     """Log level + rotation. Applied once at startup (changes need a restart)."""
 
@@ -124,6 +186,7 @@ class GodConfig(BaseModel):
         default_factory=list, description="Sender ids with admin privileges (reserved)."
     )
     connectors: ConnectorsConfig = Field(default_factory=ConnectorsConfig)
+    memory: MemoryConfig = Field(default_factory=MemoryConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     default_communication_style: str = Field(
         default="human", description="Fallback voice for agents (human/caveman/ai)."
