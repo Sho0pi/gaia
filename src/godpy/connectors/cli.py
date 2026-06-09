@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, ClassVar
 
 from godpy import constants
-from godpy.connectors.base import Handler
+from godpy.connectors.base import Ask, Handler
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from textual.app import App
@@ -32,11 +32,15 @@ class CLIConnector:
         from textual.binding import BindingType
         from textual.containers import VerticalScroll
         from textual.widgets import (
+            Button,
             Footer,
             Header,
             Input,
             LoadingIndicator,
             Markdown,
+            RadioButton,
+            RadioSet,
+            SelectionList,
             Static,
         )
 
@@ -65,11 +69,18 @@ class CLIConnector:
             def on_mount(self) -> None:
                 self.query_one("#prompt", Input).focus()
 
+            #: The question currently awaiting a picker selection, if any.
+            _active_ask: Ask | None = None
+
             async def on_input_submitted(self, event: Input.Submitted) -> None:
                 text = event.value.strip()
                 if not text:
                     return
                 event.input.value = ""
+                await self._submit(text)
+
+            async def _submit(self, text: str) -> None:
+                """Show the user's message and run it through the handler."""
                 log = self.query_one("#log", VerticalScroll)
                 await log.mount(Static(text, classes="user bubble"))
                 loading = LoadingIndicator(classes="loading")
@@ -84,10 +95,52 @@ class CLIConnector:
                     await log.mount(Markdown(reply, classes="god bubble"))
                     log.scroll_end(animate=False)
 
+                async def ask(question: Ask) -> None:
+                    await self._render_ask(question)
+
+                send.ask = ask  # type: ignore[attr-defined]  # native-picker capability
                 try:
                     await handler(text, send)
                 finally:
                     await loading.remove()
+
+            async def _render_ask(self, ask: Ask) -> None:
+                """Render an ``Ask`` as a markdown question plus a choice widget."""
+                log = self.query_one("#log", VerticalScroll)
+                await log.mount(Markdown(ask.question, classes="god bubble"))
+                if not ask.options:  # free-text: the normal Input answers it
+                    log.scroll_end(animate=False)
+                    return
+                self._active_ask = ask
+                if ask.multi_select:
+                    await log.mount(
+                        SelectionList[str](*[(o, o) for o in ask.options], id="ask-choices")
+                    )
+                    await log.mount(Button("Submit", id="ask-submit", variant="primary"))
+                else:
+                    await log.mount(
+                        RadioSet(*[RadioButton(o) for o in ask.options], id="ask-choices")
+                    )
+                log.scroll_end(animate=False)
+
+            async def _choose(self, label: str) -> None:
+                """Resolve the active ask with ``label`` and tear the widget down."""
+                self._active_ask = None
+                for wid in ("#ask-choices", "#ask-submit"):
+                    for widget in self.query(wid):
+                        await widget.remove()
+                await self._submit(label)
+
+            async def on_radio_set_changed(self, event: RadioSet.Changed) -> None:
+                if self._active_ask is not None and event.pressed is not None:
+                    await self._choose(str(event.pressed.label))
+
+            async def on_button_pressed(self, event: Button.Pressed) -> None:
+                if self._active_ask is None or event.button.id != "ask-submit":
+                    return
+                chosen = self.query_one("#ask-choices", SelectionList).selected
+                if chosen:
+                    await self._choose(", ".join(chosen))
 
             def action_clear_log(self) -> None:
                 self.query_one("#log", VerticalScroll).remove_children()

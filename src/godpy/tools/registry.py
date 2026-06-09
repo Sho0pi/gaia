@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING, Any, Union
 
 from godpy import constants
 from godpy.tools import fs
+from godpy.tools.ask import NAME as ASK
+from godpy.tools.ask import make_ask
 from godpy.tools.web_fetch import NAME as WEB_FETCH
 from godpy.tools.web_fetch import httpx_fetcher, make_web_fetch
 from godpy.tools.web_search import NAME as WEB_SEARCH
@@ -91,6 +93,13 @@ def default_registry(config: GodConfig | None = None) -> ToolRegistry:
     one, an external resource such as a configured engine or a binary on ``PATH``).
     """
     registry = ToolRegistry()
+
+    if _is_enabled(config, ASK):
+        # Wrapped so ADK treats it as human-in-the-loop: the closure returns a pending
+        # ticket and the run pauses until GodHandler resumes it with the user's reply.
+        from google.adk.tools.long_running_tool import LongRunningFunctionTool
+
+        registry.register(ASK, LongRunningFunctionTool(make_ask()))
 
     if _is_enabled(config, WEB_FETCH):
         registry.register(WEB_FETCH, make_web_fetch(httpx_fetcher))

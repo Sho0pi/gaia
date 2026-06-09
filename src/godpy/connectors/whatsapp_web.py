@@ -15,7 +15,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from godpy.connectors.base import Handler
+from godpy.connectors.base import Ask, Handler, render_ask_text, resolve_option_reply
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from neonize.aioze.client import NewAClient
@@ -51,6 +51,10 @@ class WhatsAppWebConnector:
     def __init__(self, session_db: Path, handler: Handler) -> None:
         self._session_db = session_db
         self._handler = handler
+        # A personal WhatsApp account can't reliably send interactive buttons, so an
+        # ``ask`` renders as a numbered list and the next reply is a number we map back
+        # to the chosen option. This holds the question awaiting that reply.
+        self._pending_ask: Ask | None = None
 
     def build_client(self) -> NewAClient:
         """Create a neonize client wired to the handler.
@@ -78,12 +82,24 @@ class WhatsAppWebConnector:
         @client.event(MessageEv)  # type: ignore[untyped-decorator]
         async def _on_message(client: NewAClient, message: MessageEv) -> None:
             text = _message_text(message)
-            if text:
+            if not text:
+                return
 
-                async def send(reply: str) -> None:
-                    await client.reply_message(reply, message)
+            # If a question is outstanding, turn a numbered reply into the option label
+            # before the handler resumes the dangling ``ask``.
+            if self._pending_ask is not None:
+                text = resolve_option_reply(self._pending_ask, text)
+                self._pending_ask = None
 
-                await self._handler(text, send)
+            async def send(reply: str) -> None:
+                await client.reply_message(reply, message)
+
+            async def ask(question: Ask) -> None:
+                self._pending_ask = question
+                await client.reply_message(render_ask_text(question), message)
+
+            send.ask = ask  # type: ignore[attr-defined]  # native-render capability
+            await self._handler(text, send)
 
         return client
 
