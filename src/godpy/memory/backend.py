@@ -11,9 +11,10 @@ Google's cloud and the device only runs a small embedded store + mem0's SQLite h
 portable down to a Raspberry Pi. Point any component elsewhere (OpenAI, Anthropic via
 litellm, a local embedder, pgvector/qdrant) without touching code.
 
-**Secrets stay in env.** Only the Gemini default injects ``GEMINI_API_KEY`` (godpy owns
-it); every other provider reads its own standard env var (``OPENAI_API_KEY``, …) the way
-mem0/litellm expect, so api keys never land in the hand-edited ``god.yaml``.
+**Secrets stay in env, never config.** No api key is ever injected here — every provider
+reads its own standard env var inside mem0 (gemini reads ``GOOGLE_API_KEY``, which
+``configure_adk_env`` already sets from ``GEMINI_API_KEY``; ``OPENAI_API_KEY`` etc. for
+the rest), exactly like the agent model. So keys never land in the hand-edited ``god.yaml``.
 
 The ``mem0`` import is deferred (heavy-deps convention) so this module imports cleanly
 without a configured store.
@@ -31,7 +32,8 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from godpy.config import MemoryConfig, MemoryProvider, Settings
 
 #: Gemini embedding model used when the embedder provider is the (default) gemini one.
-DEFAULT_GEMINI_EMBEDDER_MODEL = "models/gemini-embedding-001"
+#: ``gemini-embedding-2`` is the current/GA model per ai.google.dev/gemini-api/docs/embeddings.
+DEFAULT_GEMINI_EMBEDDER_MODEL = "models/gemini-embedding-2"
 
 
 def _component(block: MemoryProvider, defaults: dict[str, Any]) -> dict[str, Any]:
@@ -53,18 +55,16 @@ def build_mem0_config(settings: Settings, memory: MemoryConfig) -> dict[str, Any
     """
     store_dir = constants.HOME_DIR / "memory" / "chroma"
 
-    # Gemini is the only provider whose key godpy holds, so it's the only one we inject;
-    # other providers read their own env var inside mem0.
+    # Keys never come from config — every provider reads its own env var inside mem0, the
+    # same way the agent model does (gemini reads GOOGLE_API_KEY, which configure_adk_env
+    # sets). We only supply the model name for the gemini defaults.
     llm_defaults: dict[str, Any] = {}
     if memory.llm.provider == "gemini":
-        llm_defaults = {"model": settings.model, "api_key": settings.google_api_key}
+        llm_defaults = {"model": settings.model}
 
     embedder_defaults: dict[str, Any] = {}
     if memory.embedder.provider == "gemini":
-        embedder_defaults = {
-            "model": DEFAULT_GEMINI_EMBEDDER_MODEL,
-            "api_key": settings.google_api_key,
-        }
+        embedder_defaults = {"model": DEFAULT_GEMINI_EMBEDDER_MODEL}
 
     store_defaults: dict[str, Any] = {"collection_name": settings.mem0_collection}
     if memory.vector_store.provider == "chroma":

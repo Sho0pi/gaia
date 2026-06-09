@@ -109,9 +109,10 @@ class MemoryProvider(BaseModel):
 
     provider: str = Field(
         default="gemini",
-        description="mem0 provider id. LLM: gemini/openai/anthropic/minimax/litellm/ollama. "
-        "Embedder: gemini/openai/vertexai/fastembed/ollama (Anthropic has no embeddings). "
-        "Vector store: chroma/pgvector/qdrant/pinecone/…",
+        description="mem0 provider id. Verified today: gemini (llm + embedder) and chroma "
+        "(vector store). Others are passed through to mem0 but UNVERIFIED — LLM: "
+        "openai/anthropic/minimax/litellm/ollama; embedder: openai/vertexai/fastembed/ollama "
+        "(Anthropic has no embeddings); store: pgvector/qdrant/pinecone/…",
     )
 
 
@@ -124,14 +125,24 @@ class MemoryConfig(BaseModel):
     )
     auto_ingest: bool = Field(
         default=True,
-        description="Feed each turn to mem0 so it auto-extracts facts; off = remember-tool only.",
+        description="Auto-extract facts from the conversation; off = remember-tool only. "
+        "Turns are batched (see ingest_batch_size / ingest_interval_seconds) to keep cost down.",
+    )
+    ingest_batch_size: int = Field(
+        default=10,
+        description="Flush buffered turns to mem0 once this many have accumulated.",
+    )
+    ingest_interval_seconds: int = Field(
+        default=3600,
+        description="Also flush if this many seconds have passed since the first buffered turn.",
     )
     recall_limit: int = Field(
         default=5, description="How many memories load_memory returns per search."
     )
-    # Provider-agnostic components. Defaults wire Gemini (reusing the agent's key/model)
-    # + a local chroma store; override provider/model per component for any backend.
-    # Changing the embedder invalidates the existing store (vectors live in its space).
+    # Provider-agnostic components. Defaults wire Gemini (reusing the agent's model; keys
+    # come from env like the agent) + a local chroma store; override provider/model per
+    # component. Only gemini + chroma are verified — see the provider field. Changing the
+    # embedder invalidates the existing store (vectors live in its space).
     llm: MemoryProvider = Field(
         default_factory=lambda: MemoryProvider(provider="gemini"),
         description="Fact-extraction model. e.g. provider: openai, model: gpt-4o-mini.",

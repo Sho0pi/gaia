@@ -59,3 +59,59 @@ async def test_ignores_non_final_events() -> None:
     handler._runner = _FakeRunner([_event("interim", final=False), _event("done")])
 
     assert await _collect(handler, "hi") == ["done"]
+
+
+def _god(*, batch_size: int = 2, interval: int = 3600, auto_ingest: bool = True) -> Any:
+    """Fake God whose memory service records each add_events_to_memory call."""
+    calls: list[dict[str, Any]] = []
+
+    async def add_events_to_memory(**kwargs: Any) -> None:
+        calls.append(kwargs)
+
+    service = SimpleNamespace(calls=calls, add_events_to_memory=add_events_to_memory)
+    memory = SimpleNamespace(
+        auto_ingest=auto_ingest,
+        ingest_batch_size=batch_size,
+        ingest_interval_seconds=interval,
+    )
+    return SimpleNamespace(memory_service=service, config=SimpleNamespace(memory=memory))
+
+
+async def test_buffers_until_batch_size_then_flushes_once() -> None:
+    god = _god(batch_size=2)
+    handler = GodHandler(god)
+    handler._runner = _FakeRunner([_event("ok")])  # one event per turn
+
+    await _collect(handler, "msg 1")
+    assert god.memory_service.calls == []  # 1 < 2 buffered, nothing ingested yet
+
+    await _collect(handler, "msg 2")
+    assert len(god.memory_service.calls) == 1  # threshold reached → single flush
+    assert len(god.memory_service.calls[0]["events"]) == 2  # both turns in one batch
+    assert handler._buffer == []  # buffer drained
+
+
+async def test_flush_drains_remaining_buffer() -> None:
+    god = _god(batch_size=100)  # never auto-flushes
+    handler = GodHandler(god)
+    handler._runner = _FakeRunner([_event("ok")])
+
+    await _collect(handler, "lonely message")
+    assert god.memory_service.calls == []  # below threshold
+
+    await handler.flush()  # shutdown-style drain
+    assert len(god.memory_service.calls) == 1
+    assert len(god.memory_service.calls[0]["events"]) == 1
+    assert handler._buffer == []
+
+
+async def test_auto_ingest_off_never_buffers() -> None:
+    god = _god(auto_ingest=False)
+    handler = GodHandler(god)
+    handler._runner = _FakeRunner([_event("ok")])
+
+    await _collect(handler, "msg")
+
+    assert handler._buffer == []
+    await handler.flush()
+    assert god.memory_service.calls == []

@@ -9,6 +9,7 @@ unit-testable without a model backend.
 from __future__ import annotations
 
 import logging
+import time
 from typing import TYPE_CHECKING, Any
 
 from godpy import constants
@@ -35,6 +36,10 @@ class GodHandler:
         self._user_id = user_id
         self._session_id = session_id
         self._runner: Any | None = None
+        # Auto-ingest buffer: turns accumulate here and flush in batches (by count or
+        # age) so mem0's per-add extraction LLM call fires once per batch, not per turn.
+        self._buffer: list[Any] = []
+        self._buffer_started: float | None = None
 
     async def _ensure_runner(self) -> Any:
         from google.adk.runners import Runner
@@ -74,18 +79,38 @@ class GodHandler:
                         log_event("message_out", user=self._user_id, chars=len(part.text))
                         await send(part.text)
 
-        await self._ingest(turn_events)
+        await self._buffer_turn(turn_events)
 
-    async def _ingest(self, events: list[Any]) -> None:
-        """Auto-feed this turn to long-term memory so mem0 extracts durable facts.
-
-        Best-effort: the reply has already been sent, so a mem0 hiccup is logged and
-        swallowed rather than surfaced to the user. No-op when memory is off or
-        ``memory.auto_ingest`` is false.
-        """
+    async def _buffer_turn(self, events: list[Any]) -> None:
+        """Add a turn to the auto-ingest buffer, flushing when it's full or stale."""
         service = self._god.memory_service
         if service is None or not self._god.config.memory.auto_ingest:
             return
+        if not events:
+            return
+        if self._buffer_started is None:
+            self._buffer_started = time.monotonic()
+        self._buffer.extend(events)
+
+        memory = self._god.config.memory
+        age = time.monotonic() - self._buffer_started
+        if len(self._buffer) >= memory.ingest_batch_size or age >= memory.ingest_interval_seconds:
+            # The reply is already streamed, so awaiting the flush here only delays the
+            # next turn slightly and keeps the batch boundary deterministic.
+            await self.flush()
+
+    async def flush(self) -> None:
+        """Ingest the buffered turns into long-term memory and clear the buffer.
+
+        Best-effort: the reply is already sent, so a mem0 hiccup is logged and swallowed
+        rather than surfaced. Called on the batch threshold and on shutdown. No-op when
+        memory is off or the buffer is empty.
+        """
+        service = self._god.memory_service
+        if service is None or not self._buffer:
+            return
+        events, self._buffer = self._buffer, []
+        self._buffer_started = None
         try:
             await service.add_events_to_memory(
                 app_name=constants.APP_NAME,

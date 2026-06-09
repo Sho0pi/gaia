@@ -19,13 +19,12 @@ def _settings() -> Settings:
 def test_defaults_wire_gemini_and_chroma() -> None:
     cfg = build_mem0_config(_settings(), MemoryConfig())
 
-    assert cfg["llm"] == {
+    # No api_key injected — mem0 reads GOOGLE_API_KEY from env, like the agent model.
+    assert cfg["llm"] == {"provider": "gemini", "config": {"model": "gemini-2.0-flash"}}
+    assert cfg["embedder"] == {
         "provider": "gemini",
-        "config": {"model": "gemini-2.0-flash", "api_key": "gem-key"},
+        "config": {"model": DEFAULT_GEMINI_EMBEDDER_MODEL},
     }
-    assert cfg["embedder"]["provider"] == "gemini"
-    assert cfg["embedder"]["config"]["model"] == DEFAULT_GEMINI_EMBEDDER_MODEL
-    assert cfg["embedder"]["config"]["api_key"] == "gem-key"
     store = cfg["vector_store"]
     assert store["provider"] == "chroma"
     assert store["config"]["collection_name"] == "godpy"
@@ -49,8 +48,7 @@ def test_user_extras_override_gemini_defaults() -> None:
     )
     cfg = build_mem0_config(_settings(), memory)
 
-    assert cfg["llm"]["config"]["model"] == "gemini-2.5-pro"  # override wins
-    assert cfg["llm"]["config"]["api_key"] == "gem-key"  # default still filled
+    assert cfg["llm"]["config"] == {"model": "gemini-2.5-pro"}  # override wins, no key
 
 
 def test_pgvector_store_passes_extras_through() -> None:
