@@ -43,6 +43,11 @@ tools = [
 memory = [
     "chromadb>=0.5",
 ]
+# Non-Gemini model providers (OpenAI/GPT, Anthropic, …) via ADK's LiteLLM wrapper.
+# Only needed when god.yaml sets a non-gemini llm.provider; lazy-imported.
+llm = [
+    "litellm>=1.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -74,6 +79,7 @@ files = ["src"]
 module = [
     "mem0.*",
     "chromadb.*",
+    "litellm.*",
     "pywa.*",
     "neonize.*",
     "google.protobuf.*",

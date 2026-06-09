@@ -23,8 +23,14 @@ from pydantic import BaseModel, ConfigDict, Field
 class LLMConfig(BaseModel):
     """Which model/provider backs an agent."""
 
-    provider: str = Field(default="gemini", description="LLM provider id.")
-    model: str = Field(default="gemini-2.0-flash", description="Model id to call.")
+    provider: str = Field(
+        default="gemini",
+        description="LLM provider: gemini (key GEMINI_API_KEY) or openai (key OPENAI_API_KEY, "
+        "needs the 'llm' dep group); other litellm providers also work. Keys live in env.",
+    )
+    model: str = Field(
+        default="gemini-2.0-flash", description="Model id, e.g. gemini-2.5-flash or gpt-4o."
+    )
 
 
 class GroupTrigger(BaseModel):

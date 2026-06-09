@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     # LLM backing the ADK agents (matches the .env: GEMINI_MODEL / GEMINI_API_KEY).
     model: str = Field(default="gemini-2.0-flash", validation_alias="GEMINI_MODEL")
     google_api_key: str | None = Field(default=None, validation_alias="GEMINI_API_KEY")
+    # OpenAI key for GPT models (provider: openai); read by litellm from the env.
+    openai_api_key: str | None = Field(default=None, validation_alias="OPENAI_API_KEY")
 
     # Where reusable AgentCards are persisted.
     agent_registry_dir: Path = Field(
@@ -84,6 +86,12 @@ def get_settings(env_file: Path | None = None) -> Settings:
 
 
 def configure_adk_env(settings: Settings) -> None:
-    """Bridge our key into the env var ADK / google-genai expects (``GOOGLE_API_KEY``)."""
+    """Bridge our keys into the env vars the model backends expect.
+
+    ADK / google-genai read ``GOOGLE_API_KEY``; litellm (GPT models) reads
+    ``OPENAI_API_KEY``. Each is exported only when present.
+    """
     if settings.google_api_key:
         os.environ.setdefault("GOOGLE_API_KEY", settings.google_api_key)
+    if settings.openai_api_key:
+        os.environ.setdefault("OPENAI_API_KEY", settings.openai_api_key)

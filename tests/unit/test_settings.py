@@ -7,7 +7,20 @@ from pathlib import Path
 import pytest
 
 from godpy import constants
-from godpy.config import Settings, get_settings
+from godpy.config import Settings, configure_adk_env, get_settings
+
+
+def test_openai_key_reads_env_and_configures_adk(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+
+    settings = Settings()
+    assert settings.openai_api_key == "sk-test"
+
+    configure_adk_env(settings)
+    import os
+
+    assert os.environ["OPENAI_API_KEY"] == "sk-test"
 
 
 def test_defaults_come_from_constants() -> None:
