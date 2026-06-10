@@ -43,7 +43,7 @@ def make_exec_poll(manager: ProcessManager) -> Callable[..., Awaitable[dict[str,
         if managed is None:
             return done(err(f"unknown process {process_id!r} (it may belong to another agent)"))
 
-        output, truncated = managed.read_new()
+        output, truncated = managed.consume_new_output()
         return done(
             {
                 "status": "running" if managed.running else "exited",

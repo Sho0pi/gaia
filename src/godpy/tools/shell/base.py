@@ -146,6 +146,9 @@ class ManagedProcess:
     _delivered: int = 0  # absolute chars already returned by poll
     exit_code: int | None = None
     started: float = field(default_factory=time.monotonic)
+    # The background task draining the process's output into _buf + the log file. Held
+    # so the manager can await it after terminating the process (so the final output
+    # and exit_code are captured before we report back). Set by ProcessManager.spawn.
     _pump_task: asyncio.Task[None] | None = None
 
     def _append(self, chunk: str) -> None:
@@ -170,11 +173,13 @@ class ManagedProcess:
         finally:
             log.close()
 
-    def read_new(self) -> tuple[str, bool]:
-        """Return output produced since the last call (advancing the cursor) + truncated.
+    def consume_new_output(self) -> tuple[str, bool]:
+        """Return the output produced since the last call, and mark it as consumed.
 
-        ``truncated`` is True when the buffer had already dropped bytes the caller never
-        saw (a very chatty process) or the new slice exceeds the per-poll cap.
+        Each poll gets only what's new: the cursor (``_delivered``) advances past what's
+        returned. ``truncated`` is True when the in-memory buffer had already dropped
+        bytes the caller never saw (a very chatty process), or the new slice exceeds the
+        per-poll cap. The full transcript always remains in the log file.
         """
         buffer_start = self._total - len(self._buf)
         dropped = self._delivered < buffer_start
@@ -190,17 +195,40 @@ class ManagedProcess:
 
 
 class ProcessManager:
-    """Per-agent registry of background processes; mirrors BrowserSessionManager."""
+    """Owns an agent's background processes and guarantees they're cleaned up.
+
+    One instance is created by the tool registry and shared by the exec tools (each
+    tool closure captures it) — so there is no module-level singleton. On its first
+    spawn it registers a single ``atexit`` hook to terminate anything still running
+    when the process exits, so a forgotten background process can't outlive godpy.
+    """
 
     def __init__(self, spawner: Spawner | None = None) -> None:
         self._spawner = spawner or local_spawner
         self._procs: dict[str, ManagedProcess] = {}
         self._counter = 0
+        self._cleanup_registered = False
+
+    def _register_cleanup_once(self) -> None:
+        """Arrange for ``close_all`` to run on process exit (idempotent, lazy)."""
+        if not self._cleanup_registered:
+            atexit.register(self._cleanup_at_exit)
+            self._cleanup_registered = True
+
+    def _cleanup_at_exit(self) -> None:
+        """atexit hook: terminate any still-running processes. Best-effort."""
+        if not self._procs:
+            return
+        try:
+            asyncio.run(self.close_all())
+        except Exception:  # pragma: no cover - shutdown best-effort
+            pass
 
     async def spawn(
         self, agent: str, command: str, cwd: Path, *, env: dict[str, str] | None = None
     ) -> ManagedProcess:
         """Start ``command`` in the background and register it; returns the record."""
+        self._register_cleanup_once()
         self._counter += 1
         process_id = f"proc-{self._counter}"
         log_path = cwd / LOG_DIR_NAME / f"{process_id}.log"
@@ -244,28 +272,6 @@ class ProcessManager:
             except Exception:  # pragma: no cover - shutdown best-effort
                 pass
         self._procs.clear()
-
-
-_DEFAULT_MANAGER: ProcessManager | None = None
-
-
-def default_process_manager() -> ProcessManager:
-    """The process-wide manager the registered tools share (built once)."""
-    global _DEFAULT_MANAGER
-    if _DEFAULT_MANAGER is None:
-        _DEFAULT_MANAGER = ProcessManager()
-        atexit.register(_close_default_manager)
-    return _DEFAULT_MANAGER
-
-
-def _close_default_manager() -> None:
-    """atexit hook: kill any processes the default manager still holds. Best-effort."""
-    if _DEFAULT_MANAGER is None:
-        return
-    try:
-        asyncio.run(_DEFAULT_MANAGER.close_all())
-    except Exception:  # pragma: no cover - shutdown best-effort
-        pass
 
 
 async def run_foreground(

@@ -120,7 +120,9 @@ def _register_shell_tools(registry: ToolRegistry, config: GodConfig | None) -> N
     configured = _tool_setting(config, shell.EXEC, "allowlist")
     allowlist = tuple(configured) if configured else shell.DEFAULT_ALLOWLIST
 
-    manager = shell.default_process_manager()
+    # One manager per registry, shared by the four tools below (each closure captures
+    # it); it cleans up its processes on exit. No module-level singleton.
+    manager = shell.ProcessManager()
     spawner = shell.local_spawner
     if _is_enabled(config, shell.EXEC):
         registry.register(

@@ -12,7 +12,6 @@ spawner seam. The package is named ``shell`` (not ``exec``) to avoid shadowing t
 from godpy.tools.shell.base import (
     DEFAULT_ALLOWLIST,
     ProcessManager,
-    default_process_manager,
     local_spawner,
 )
 from godpy.tools.shell.kill import NAME as KILL
@@ -31,7 +30,6 @@ __all__ = [
     "LIST",
     "POLL",
     "ProcessManager",
-    "default_process_manager",
     "local_spawner",
     "make_exec",
     "make_exec_kill",
