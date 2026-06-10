@@ -10,8 +10,9 @@ before disk, noisy third-party loggers muted. Two streams:
   ``propagate=False`` so events do not also land in the system files.
 
 Everything streams to the screen *and* to rotating files under ``settings.log_dir``
-(default ``~/.godpy/logs``). Use :func:`log_event` for user activity; everywhere else
-use a plain ``logging.getLogger(__name__)``.
+(default ``~/.godpy/logs``) — except in TUI mode, where the console handlers are
+skipped (``console=False``) because Textual owns the terminal. Use :func:`log_event`
+for user activity; everywhere else use a plain ``logging.getLogger(__name__)``.
 """
 
 from __future__ import annotations
@@ -68,7 +69,12 @@ def _build_redactor(settings: Settings) -> Redactor:
     """Return a function that strips secrets from a formatted log line."""
     exact = [
         re.escape(v)
-        for v in (settings.telegram_bot_token, settings.whatsapp_token, settings.google_api_key)
+        for v in (
+            settings.telegram_bot_token,
+            settings.whatsapp_token,
+            settings.google_api_key,
+            settings.openai_api_key,
+        )
         if v
     ]
     exact_re = re.compile("|".join(exact)) if exact else None
@@ -205,8 +211,16 @@ def _rotating(
     return handler
 
 
-def setup_logging(settings: Settings, cfg: LoggingConfig, *, force: bool = False) -> Path:
-    """Configure logging once. Returns the log directory. Idempotent unless ``force``."""
+def setup_logging(
+    settings: Settings, cfg: LoggingConfig, *, force: bool = False, console: bool = True
+) -> Path:
+    """Configure logging once. Returns the log directory. Idempotent unless ``force``.
+
+    ``console=False`` skips the stdout handlers and logs to the rotating files only.
+    The TUI path needs this: Textual runs full-screen on the alternate buffer, but a
+    ``StreamHandler`` grabs the *real* stdout before Textual redirects ``sys.stdout``,
+    so its writes would draw over the chat UI.
+    """
     global _configured
     log_dir = Path(settings.log_dir)
     if _configured and not force:
@@ -234,10 +248,11 @@ def setup_logging(settings: Settings, cfg: LoggingConfig, *, force: bool = False
         root.removeHandler(handler)
         handler.close()
 
-    console = logging.StreamHandler(sys.stdout)
-    console.setLevel(level)
-    console.setFormatter(ConsoleFormatter(redactor=redactor, color=color))
-    root.addHandler(console)
+    if console:
+        stream = logging.StreamHandler(sys.stdout)
+        stream.setLevel(level)
+        stream.setFormatter(ConsoleFormatter(redactor=redactor, color=color))
+        root.addHandler(stream)
     root.addHandler(_rotating(log_dir / "system.log", level, text_fmt, cfg))
     root.addHandler(_rotating(log_dir / "errors.log", logging.WARNING, text_fmt, cfg))
 
@@ -253,10 +268,11 @@ def setup_logging(settings: Settings, cfg: LoggingConfig, *, force: bool = False
     events.handlers.clear()
     events.propagate = False
 
-    events_console = logging.StreamHandler(sys.stdout)
-    events_console.setLevel(logging.INFO)
-    events_console.setFormatter(ConsoleFormatter(redactor=redactor, color=color, event=True))
-    events.addHandler(events_console)
+    if console:
+        events_console = logging.StreamHandler(sys.stdout)
+        events_console.setLevel(logging.INFO)
+        events_console.setFormatter(ConsoleFormatter(redactor=redactor, color=color, event=True))
+        events.addHandler(events_console)
     events.addHandler(
         _rotating(
             log_dir / "events.jsonl",

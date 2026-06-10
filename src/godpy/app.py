@@ -68,7 +68,8 @@ def run_cli(settings: Settings | None = None, *, env_file: Path | None = None) -
     """Launch the local CLI/TUI frontend and chat with God in the terminal."""
     settings = settings or get_settings(env_file)
     god = God(settings)
-    setup_logging(settings, god.config.logging)
+    # The TUI owns the terminal, so console log handlers would draw over it — files only.
+    setup_logging(settings, god.config.logging, console=False)
     CLIConnector(build_handler(god)).run()
 
 
@@ -111,8 +112,9 @@ def run(settings: Settings | None = None, *, env_file: Path | None = None) -> No
     settings = settings or get_settings(env_file)
     write_default_config(settings.config_path)
     god = God(settings)
-    setup_logging(settings, god.config.logging)
     selected = plan_launch(god.config)
+    # The CLI/TUI owns the terminal, so console log handlers would draw over it.
+    setup_logging(settings, god.config.logging, console=selected != ["cli"])
 
     if not selected:
         logger.warning("no connectors enabled in god.yaml — nothing to run")
