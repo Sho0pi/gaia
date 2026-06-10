@@ -1188,6 +1188,7 @@ dev = [
     { name = "types-pyyaml" },
 ]
 llm = [
+    { name = "httpx" },
     { name = "litellm" },
 ]
 memory = [
@@ -1224,7 +1225,10 @@ dev = [
     { name = "ruff", specifier = ">=0.9" },
     { name = "types-pyyaml", specifier = ">=6.0" },
 ]
-llm = [{ name = "litellm", specifier = ">=1.0" }]
+llm = [
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "litellm", specifier = ">=1.0" },
+]
 memory = [{ name = "chromadb", specifier = ">=0.5" }]
 tools = [
     { name = "binaryornot", specifier = ">=0.4.4" },

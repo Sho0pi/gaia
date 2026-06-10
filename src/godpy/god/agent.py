@@ -38,6 +38,7 @@ class God:
             self.souls,
             default_model=self.config.llm.model or self.settings.model,
             default_provider=self.config.llm.provider,
+            default_use_oauth=self.config.llm.openai.use_oauth,
             skills_dir=self.skills_dir,
             default_communication_style=self.config.default_communication_style,
             tool_registry=self.tools,
@@ -107,7 +108,9 @@ class God:
         return LlmAgent(
             name="god",
             model=resolve_model(
-                self.config.llm.model or self.settings.model, provider=self.config.llm.provider
+                self.config.llm.model or self.settings.model,
+                provider=self.config.llm.provider,
+                use_oauth=self.config.llm.openai.use_oauth,
             ),
             description="Root orchestrator that routes tasks to specialized subagents.",
             instruction=instruction,

@@ -43,10 +43,12 @@ tools = [
 memory = [
     "chromadb>=0.5",
 ]
-# Non-Gemini model providers (OpenAI/GPT, Anthropic, …) via ADK's LiteLLM wrapper.
-# Only needed when god.yaml sets a non-gemini llm.provider; lazy-imported.
+# Non-Gemini model providers: OpenAI/GPT etc. via ADK's LiteLLM wrapper, and "Sign in
+# with ChatGPT" (httpx for the OAuth flow + Responses backend). Only needed when
+# god.yaml sets a non-gemini llm.provider; lazy-imported.
 llm = [
     "litellm>=1.0",
+    "httpx>=0.27",
 ]
 
 [build-system]
