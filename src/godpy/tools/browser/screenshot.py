@@ -22,15 +22,21 @@ def make_browser_screenshot(
 ) -> Callable[..., Awaitable[dict[str, Any]]]:
     """Return the ADK ``browser_screenshot`` tool bound to ``manager``."""
 
-    async def browser_screenshot(*, tool_context: ToolContext) -> dict[str, Any]:
+    async def browser_screenshot(
+        full_page: bool = True, *, tool_context: ToolContext
+    ) -> dict[str, Any]:
         """Capture a screenshot of the current page.
 
         Saves a PNG into your workspace and returns its path. Use this to show the user
         what a page looks like, or to verify a site you built renders correctly.
 
+        Args:
+            full_page (bool): Capture the entire scrollable page (default True). Set
+                False to capture only the visible viewport.
+
         Returns:
-            dict: On success {'status': 'success', 'path': str, 'url': str}. On failure
-            {'status': 'error', 'error_message': str}.
+            dict: On success {'status': 'success', 'path': str, 'url': str,
+            'full_page': bool}. On failure {'status': 'error', 'error_message': str}.
         """
         agent = tool_context.agent_name
 
@@ -49,11 +55,11 @@ def make_browser_screenshot(
         target: Path = workspace / f"screenshot-{int(time.time() * 1000)}.png"
         try:
             session = await manager.get(agent)
-            await session.page.screenshot(path=str(target))
+            await session.page.screenshot(path=str(target), full_page=full_page)
             url = str(session.page.url)
         except Exception as exc:
             return done(err(f"screenshot failed: {exc}"))
 
-        return done({"status": "success", "path": str(target), "url": url})
+        return done({"status": "success", "path": str(target), "url": url, "full_page": full_page})
 
     return browser_screenshot

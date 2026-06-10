@@ -67,8 +67,9 @@ class _FakePage:
             return self.action_locators.setdefault(ref, _ActionLocator())
         raise AssertionError(f"unexpected selector {selector!r}")
 
-    async def screenshot(self, path: str) -> None:
+    async def screenshot(self, path: str, full_page: bool = False) -> None:
         self.screenshot_path = path
+        self.screenshot_full_page = full_page
         Path(path).write_bytes(b"\x89PNG fake")  # noqa: ASYNC240 - test fake, not real I/O
 
 
@@ -220,15 +221,33 @@ async def test_type_does_not_log_secret_text(caplog: pytest.LogCaptureFixture) -
 # --- screenshot -------------------------------------------------------------------
 
 
-async def test_screenshot_writes_png(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_screenshot_writes_png_full_page_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr("godpy.constants.AGENTS_DIR", tmp_path / "agents")
-    shot = browser.make_browser_screenshot(_manager_with(_FakePage()))
+    page = _FakePage()
+    shot = browser.make_browser_screenshot(_manager_with(page))
 
     result = await shot(tool_context=_FakeToolContext())
 
     assert result["status"] == "success"
     assert Path(result["path"]).is_file()  # noqa: ASYNC240 - assertion, not hot-path I/O
     assert result["path"].endswith(".png")
+    assert result["full_page"] is True
+    assert page.screenshot_full_page is True  # the whole scrollable page, not just viewport
+
+
+async def test_screenshot_viewport_only_when_requested(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("godpy.constants.AGENTS_DIR", tmp_path / "agents")
+    page = _FakePage()
+    shot = browser.make_browser_screenshot(_manager_with(page))
+
+    result = await shot(full_page=False, tool_context=_FakeToolContext())
+
+    assert result["full_page"] is False
+    assert page.screenshot_full_page is False
 
 
 # --- session lifecycle ------------------------------------------------------------
