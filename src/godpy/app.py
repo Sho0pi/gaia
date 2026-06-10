@@ -72,6 +72,22 @@ def run_cli(settings: Settings | None = None, *, env_file: Path | None = None) -
     CLIConnector(build_handler(god)).run()
 
 
+def run_dev(
+    settings: Settings | None = None,
+    *,
+    env_file: Path | None = None,
+    host: str = "127.0.0.1",
+    port: int = 8000,
+) -> None:
+    """Launch ADK's dev web UI on God — inspect tool calls and LLM requests live."""
+    from godpy.dev import serve_dev
+
+    settings = settings or get_settings(env_file)
+    god = God(settings)
+    setup_logging(settings, god.config.logging)
+    serve_dev(god, host=host, port=port)
+
+
 def run_auth(provider: str, *, env_file: Path | None = None) -> None:
     """Run an interactive provider login and store the credentials.
 
