@@ -18,28 +18,36 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 
 def resolve_model(model: str, provider: str) -> str | BaseLlm:
-    """Return a model usable by ``LlmAgent``: a bare string for Gemini, else a ``LiteLlm``.
+    """Build the model object ADK's ``LlmAgent(model=...)`` needs for ``provider``/``model``.
 
-    Both ``provider`` and ``model`` are required and come straight from ``llm.provider`` /
-    ``llm.model`` — there's no guessing. A ``gemini`` provider returns the model string
-    unchanged (ADK handles it natively); anything else is wrapped in a ``LiteLlm`` whose id
-    is ``"<provider>/<model>"`` (unless ``model`` already carries a ``provider/`` prefix).
-    Keys come from the provider's env var (e.g. ``OPENAI_API_KEY``).
+    The return type differs by provider because ADK only has a *native* backend for one of
+    them — Gemini. ``provider`` and ``model`` are both required and taken verbatim from
+    ``llm.provider`` / ``llm.model`` (no inference).
+
+    * ``gemini`` -> the bare model **string**. ADK's model registry matches ``gemini-.*`` and
+      routes it to its built-in Gemini backend itself, so there's nothing to wrap.
+    * anything else -> a ``LiteLlm`` adapter. ADK has no native backend for these, so the call
+      goes through LiteLLM, which picks the right SDK/key from a ``"<provider>/<model>"`` id.
     """
     prov = provider.lower()
+
+    # Gemini is ADK-native: the registry resolves the bare string; the provider is implicit.
     if prov == "gemini":
         return model
 
+    # ChatGPT subscription auth (Sign in with ChatGPT) is our own ADK backend, not LiteLLM —
+    # those tokens hit chatgpt.com/backend-api, which LiteLLM doesn't speak.
     if prov in ("openai-chatgpt", "chatgpt"):
-        # Subscription auth (Sign in with ChatGPT) — its own ADK backend, not LiteLLM.
         from godpy.providers.openai_chatgpt import ChatGptOAuthLlm
 
         return ChatGptOAuthLlm(model=model)
 
+    # No native ADK backend for this provider -> hand it to the LiteLLM adapter. LiteLLM needs
+    # the provider baked into the model id ("<provider>/<model>") to choose the SDK + env key.
     lite_id = model if "/" in model else f"{prov}/{model}"
     try:
         from google.adk.models.lite_llm import LiteLlm
-    except ImportError as exc:  # litellm not installed
+    except ImportError as exc:  # litellm is the optional 'llm' dep group
         raise RuntimeError(
             f"model {model!r} (provider {prov!r}) needs litellm — run: uv sync --group llm"
         ) from exc
