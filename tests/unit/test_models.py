@@ -39,12 +39,22 @@ def test_already_prefixed_id_kept(lite: dict[str, Any]) -> None:
     assert lite["model"] == "openai/gpt-4o-mini"  # not doubled
 
 
-def test_openai_chatgpt_provider_uses_oauth_backend() -> None:
-    from godpy.providers.openai_chatgpt.responses_llm import ChatGptOAuthLlm
+def test_openai_api_key_default_uses_litellm(lite: dict[str, Any]) -> None:
+    out = resolve_model("gpt-4o", "openai")  # use_oauth defaults False
 
-    out = resolve_model("gpt-5.5", "openai-chatgpt")
+    assert lite["model"] == "openai/gpt-4o"  # LiteLLM (API key) path
+    assert out.model == "openai/gpt-4o"
+
+
+def test_openai_with_use_oauth_uses_chatgpt_backend() -> None:
+    from godpy.providers.openai.responses_llm import ChatGptOAuthLlm
+
+    out = resolve_model("gpt-5.5", "openai", use_oauth=True)
     assert isinstance(out, ChatGptOAuthLlm)
     assert out.model == "gpt-5.5"
+
+    # the openai-chatgpt alias implies OAuth without the flag
+    assert isinstance(resolve_model("gpt-5.5", "openai-chatgpt"), ChatGptOAuthLlm)
 
 
 def test_provider_is_required() -> None:

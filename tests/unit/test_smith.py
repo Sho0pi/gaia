@@ -64,8 +64,12 @@ def test_build_soul_smith_resolves_openai_model(monkeypatch: pytest.MonkeyPatch)
 
     captured: dict[str, object] = {}
     monkeypatch.setattr(adk, "LlmAgent", lambda **kw: captured.update(kw))
-    monkeypatch.setattr(models, "resolve_model", lambda model, *, provider: f"<{provider}:{model}>")
+    monkeypatch.setattr(
+        models,
+        "resolve_model",
+        lambda model, *, provider, use_oauth: f"<{provider}:{model}:{use_oauth}>",
+    )
 
-    build_soul_smith("gpt-4o", "openai")
+    build_soul_smith("gpt-4o", "openai", use_oauth=True)
 
-    assert captured["model"] == "<openai:gpt-4o>"  # routed through the resolver
+    assert captured["model"] == "<openai:gpt-4o:True>"  # provider + use_oauth routed through

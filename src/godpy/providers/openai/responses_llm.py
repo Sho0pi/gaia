@@ -25,8 +25,8 @@ from google.adk.models.base_llm import BaseLlm
 from google.adk.models.llm_response import LlmResponse
 from google.genai import types
 
-from godpy.providers.openai_chatgpt import device_auth
-from godpy.providers.openai_chatgpt.store import Credentials, load_credentials
+from godpy.providers.openai import device_auth
+from godpy.providers.openai.store import Credentials, load_credentials
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from google.adk.models.llm_request import LlmRequest
@@ -145,9 +145,7 @@ class ChatGptOAuthLlm(BaseLlm):
 
         creds = load_credentials()
         if creds is None:
-            raise ChatGptNotAuthenticatedError(
-                "no ChatGPT login — run: python main.py auth openai-chatgpt"
-            )
+            raise ChatGptNotAuthenticatedError("no ChatGPT login — run: python main.py auth openai")
 
         # Body shape matches openclaw's working Codex request (buildRequestBody): the
         # backend 400s without text/include/tool_choice/parallel_tool_calls/prompt_cache_key,

@@ -9,14 +9,14 @@ import pytest
 from google.adk.models.llm_request import LlmRequest
 from google.genai import types
 
-import godpy.providers.openai_chatgpt.responses_llm as rl
-from godpy.providers.openai_chatgpt.responses_llm import (
+import godpy.providers.openai.responses_llm as rl
+from godpy.providers.openai.responses_llm import (
     ChatGptNotAuthenticatedError,
     ChatGptOAuthLlm,
     _content_to_input,
     _tools_from_request,
 )
-from godpy.providers.openai_chatgpt.store import Credentials
+from godpy.providers.openai.store import Credentials
 
 
 def test_tool_schema_types_are_lowercased_json_schema() -> None:
@@ -139,6 +139,6 @@ async def test_streams_text_and_function_call(
 async def test_missing_credentials_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(rl, "load_credentials", lambda *a, **k: None)
 
-    with pytest.raises(ChatGptNotAuthenticatedError, match="auth openai-chatgpt"):
+    with pytest.raises(ChatGptNotAuthenticatedError, match="auth openai"):
         async for _ in ChatGptOAuthLlm(model="gpt-5").generate_content_async(_request()):
             pass

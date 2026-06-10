@@ -4,7 +4,7 @@ Run with ``uv run python main.py``:
 
 * ``python main.py``                    -> local CLI/TUI chat (default).
 * ``python main.py whatsapp``           -> WhatsApp backend (QR on first run, see app.run).
-* ``python main.py auth openai-chatgpt``-> sign in with ChatGPT (device-code OAuth).
+* ``python main.py auth openai``        -> sign in with ChatGPT (device-code OAuth).
 * ``python main.py --env-file ./.env``  -> read secrets from a specific .env file.
 
 Secrets are read from ``~/.godpy/.env`` by default; ``--env-file`` overrides that
@@ -33,7 +33,7 @@ def main() -> None:
         "provider",
         nargs="?",
         default=None,
-        help="auth mode: the provider to sign in to (e.g. openai-chatgpt).",
+        help="auth mode: the provider to sign in to (e.g. openai).",
     )
     parser.add_argument(
         "--env-file",
@@ -46,7 +46,7 @@ def main() -> None:
     if args.mode == "whatsapp":
         run(env_file=args.env_file)
     elif args.mode == "auth":
-        run_auth(args.provider or "openai-chatgpt", env_file=args.env_file)
+        run_auth(args.provider or "openai", env_file=args.env_file)
     else:
         run_cli(env_file=args.env_file)
 

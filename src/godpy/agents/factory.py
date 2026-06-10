@@ -30,6 +30,7 @@ class AgentFactory:
         *,
         default_model: str,
         default_provider: str = "gemini",
+        default_use_oauth: bool = False,
         skills_dir: Path | None = None,
         default_communication_style: str = DEFAULT_COMMUNICATION_STYLE,
         tool_registry: ToolRegistry | None = None,
@@ -37,6 +38,7 @@ class AgentFactory:
         self._registry = registry
         self._default_model = default_model
         self._default_provider = default_provider
+        self._default_use_oauth = default_use_oauth
         self._skills_dir = skills_dir
         self._default_communication_style = default_communication_style
         self._tool_registry = tool_registry
@@ -72,7 +74,11 @@ class AgentFactory:
 
         return LlmAgent(
             name=spec.key,
-            model=resolve_model(spec.model or self._default_model, provider=self._default_provider),
+            model=resolve_model(
+                spec.model or self._default_model,
+                provider=self._default_provider,
+                use_oauth=self._default_use_oauth,
+            ),
             description=spec.description,
             instruction=instruction,
             tools=tools,

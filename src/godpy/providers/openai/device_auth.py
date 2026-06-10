@@ -15,7 +15,7 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from godpy.providers.openai_chatgpt.store import Credentials
+from godpy.providers.openai.store import Credentials
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     import httpx

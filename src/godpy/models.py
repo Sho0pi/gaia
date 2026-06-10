@@ -17,7 +17,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from google.adk.models.base_llm import BaseLlm
 
 
-def resolve_model(model: str, provider: str) -> str | BaseLlm:
+def resolve_model(model: str, provider: str, *, use_oauth: bool = False) -> str | BaseLlm:
     """Build the model object ADK's ``LlmAgent(model=...)`` needs for ``provider``/``model``.
 
     The return type differs by provider because ADK only has a *native* backend for one of
@@ -26,6 +26,7 @@ def resolve_model(model: str, provider: str) -> str | BaseLlm:
 
     * ``gemini`` -> the bare model **string**. ADK's model registry matches ``gemini-.*`` and
       routes it to its built-in Gemini backend itself, so there's nothing to wrap.
+    * ``openai`` with ``use_oauth`` -> our ChatGPT subscription backend (Sign in with ChatGPT).
     * anything else -> a ``LiteLlm`` adapter. ADK has no native backend for these, so the call
       goes through LiteLLM, which picks the right SDK/key from a ``"<provider>/<model>"`` id.
     """
@@ -35,10 +36,11 @@ def resolve_model(model: str, provider: str) -> str | BaseLlm:
     if prov == "gemini":
         return model
 
-    # ChatGPT subscription auth (Sign in with ChatGPT) is our own ADK backend, not LiteLLM —
-    # those tokens hit chatgpt.com/backend-api, which LiteLLM doesn't speak.
-    if prov in ("openai-chatgpt", "chatgpt"):
-        from godpy.providers.openai_chatgpt import ChatGptOAuthLlm
+    # OpenAI has two auth modes: an API key (default, via LiteLLM) or a ChatGPT subscription
+    # (use_oauth). The OAuth tokens hit chatgpt.com/backend-api, which LiteLLM can't speak, so
+    # that path uses our own ADK backend. ('openai-chatgpt'/'chatgpt' imply OAuth.)
+    if prov in ("openai-chatgpt", "chatgpt") or (prov == "openai" and use_oauth):
+        from godpy.providers.openai import ChatGptOAuthLlm
 
         return ChatGptOAuthLlm(model=model)
 

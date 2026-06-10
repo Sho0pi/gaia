@@ -75,19 +75,19 @@ def run_cli(settings: Settings | None = None, *, env_file: Path | None = None) -
 def run_auth(provider: str, *, env_file: Path | None = None) -> None:
     """Run an interactive provider login and store the credentials.
 
-    Currently supports ``openai-chatgpt`` (Sign in with ChatGPT, device-code flow).
+    Currently supports ``openai`` (Sign in with ChatGPT, device-code flow).
     """
     settings = get_settings(env_file)
     god = God(settings)
     setup_logging(settings, god.config.logging)
-    if provider in ("openai-chatgpt", "chatgpt"):
-        from godpy.providers.openai_chatgpt import login
+    if provider in ("openai", "openai-chatgpt", "chatgpt"):
+        from godpy.providers.openai import login
 
         creds = asyncio.run(login())
         creds.save()
         logger.info("ChatGPT credentials saved for account %s", creds.account_id)
     else:
-        raise SystemExit(f"unknown auth provider: {provider!r} (try: openai-chatgpt)")
+        raise SystemExit(f"unknown auth provider: {provider!r} (try: openai)")
 
 
 def run(settings: Settings | None = None, *, env_file: Path | None = None) -> None:
