@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from godpy.connectors.base import Handler
+from godpy.connectors.base import Handler, Reply, as_text
 
 
 class TelegramConnector:
@@ -29,8 +29,10 @@ class TelegramConnector:
             if update.message and update.message.text:
                 message = update.message
 
-                async def send(reply: str) -> None:
-                    await message.reply_text(reply)
+                async def send(reply: Reply) -> None:
+                    # Telegram media replies (reply_photo) are a follow-up; for now a
+                    # Media reply degrades to its caption/path text.
+                    await message.reply_text(as_text(reply))
 
                 await self._handler(update.message.text, send)
 

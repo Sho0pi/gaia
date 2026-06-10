@@ -15,7 +15,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from godpy.connectors.base import Handler
+from godpy.connectors.base import Handler, Media, Reply
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from neonize.aioze.client import NewAClient
@@ -79,9 +79,17 @@ class WhatsAppWebConnector:
         async def _on_message(client: NewAClient, message: MessageEv) -> None:
             text = _message_text(message)
             if text:
+                chat = message.Info.MessageSource.Chat  # JID to send media replies to
 
-                async def send(reply: str) -> None:
-                    await client.reply_message(reply, message)
+                async def send(reply: Reply) -> None:
+                    # An image reply goes out as a real WhatsApp image; text replies
+                    # quote the inbound message as before.
+                    if isinstance(reply, Media):
+                        await client.send_image(
+                            chat, str(reply.path), caption=reply.caption or None
+                        )
+                    else:
+                        await client.reply_message(reply, message)
 
                 await self._handler(text, send)
 

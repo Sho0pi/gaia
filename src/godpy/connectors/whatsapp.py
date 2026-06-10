@@ -5,7 +5,7 @@ Deferred import keeps the module importable without the pywa dep installed.
 
 from __future__ import annotations
 
-from godpy.connectors.base import Handler
+from godpy.connectors.base import Handler, Reply, as_text
 
 
 class WhatsAppConnector:
@@ -27,9 +27,9 @@ class WhatsAppConnector:
         async def _on_message(_client: WhatsApp, message: Message) -> None:
             if message.text:
 
-                async def send(reply: str) -> None:
+                async def send(reply: Reply) -> None:
                     message.reply_text(
-                        reply,
+                        as_text(reply),
                         buttons=[
                             Button(title="Menu", callback_data="menu"),
                             Button(title="Help", callback_data="help"),
