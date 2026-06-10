@@ -78,7 +78,13 @@ async def _playwright_launcher() -> tuple[Any, Callable[[], Awaitable[None]]]:
 
 
 class BrowserSessionManager:
-    """Per-agent :class:`BrowserSession` store with idle + exit cleanup."""
+    """Owns each agent's browser session and guarantees they're closed.
+
+    One instance is created by the tool registry and shared by the browser tools (each
+    tool closure captures it) — so there is no module-level singleton. On its first
+    session it registers a single ``atexit`` hook to close any still-open browsers when
+    the process exits, so a headless Chromium can't orphan.
+    """
 
     def __init__(
         self, launcher: Launcher | None = None, *, idle_timeout: float = IDLE_TIMEOUT_SECONDS
@@ -86,12 +92,29 @@ class BrowserSessionManager:
         self._launcher = launcher or _playwright_launcher
         self._idle_timeout = idle_timeout
         self._sessions: dict[str, BrowserSession] = {}
+        self._cleanup_registered = False
+
+    def _register_cleanup_once(self) -> None:
+        """Arrange for ``close_all`` to run on process exit (idempotent, lazy)."""
+        if not self._cleanup_registered:
+            atexit.register(self._cleanup_at_exit)
+            self._cleanup_registered = True
+
+    def _cleanup_at_exit(self) -> None:
+        """atexit hook: close any still-open sessions. Best-effort."""
+        if not self._sessions:
+            return
+        try:
+            asyncio.run(self.close_all())
+        except Exception:  # pragma: no cover - shutdown best-effort
+            pass
 
     async def get(self, agent: str) -> BrowserSession:
         """Return ``agent``'s session, opening one on first use. Sweeps idle sessions."""
         await self._sweep_idle()
         session = self._sessions.get(agent)
         if session is None:
+            self._register_cleanup_once()
             page, close = await self._launcher()
             session = BrowserSession(page=page, close=close)
             self._sessions[agent] = session
@@ -114,28 +137,6 @@ class BrowserSessionManager:
         stale = [a for a, s in self._sessions.items() if now - s.last_used > self._idle_timeout]
         for agent in stale:
             await self.close(agent)
-
-
-_DEFAULT_MANAGER: BrowserSessionManager | None = None
-
-
-def default_manager() -> BrowserSessionManager:
-    """The process-wide manager the registered tools share (built once)."""
-    global _DEFAULT_MANAGER
-    if _DEFAULT_MANAGER is None:
-        _DEFAULT_MANAGER = BrowserSessionManager()
-        atexit.register(_close_default_manager)
-    return _DEFAULT_MANAGER
-
-
-def _close_default_manager() -> None:
-    """atexit hook: close any sessions the default manager still holds. Best-effort."""
-    if _DEFAULT_MANAGER is None:
-        return
-    try:
-        asyncio.run(_DEFAULT_MANAGER.close_all())
-    except Exception:  # pragma: no cover - shutdown best-effort
-        pass
 
 
 async def aria_snapshot(page: Any) -> str:

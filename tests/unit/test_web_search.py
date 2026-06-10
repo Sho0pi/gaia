@@ -83,6 +83,29 @@ def test_tool_call_is_logged(monkeypatch: pytest.MonkeyPatch) -> None:
     ]
 
 
+def test_provider_exception_returns_error_dict() -> None:
+    def boom(query: str, max_results: int, timelimit: str | None) -> list[dict[str, str]]:
+        raise TimeoutError("network down")
+
+    out = make_web_search(boom)("anything")
+
+    assert out["status"] == "error"
+    assert "network down" in out["error_message"]
+
+
+def test_provider_failure_still_logs_one_event(monkeypatch: pytest.MonkeyPatch) -> None:
+    events: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(ws, "log_event", lambda action, **f: events.append((action, f)))
+
+    def boom(query: str, max_results: int, timelimit: str | None) -> list[dict[str, str]]:
+        raise RuntimeError("ddgs broke")
+
+    make_web_search(boom)("q")
+
+    assert len(events) == 1
+    assert events[0][1]["status"] == "error"
+
+
 def test_get_search_provider_by_name_and_unknown() -> None:
     assert get_search_provider("duckduckgo") is ddg_provider
     with pytest.raises(ValueError, match="unknown web_search engine 'bing'"):

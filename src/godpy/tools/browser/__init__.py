@@ -8,7 +8,7 @@ flattener, and the ref resolver. Playwright is imported lazily, so this package
 imports without it; the registry only attaches the tools when Playwright is installed.
 """
 
-from godpy.tools.browser.base import BrowserSessionManager, default_manager
+from godpy.tools.browser.base import BrowserSessionManager
 from godpy.tools.browser.click import NAME as CLICK
 from godpy.tools.browser.click import make_browser_click
 from godpy.tools.browser.navigate import NAME as NAVIGATE
@@ -27,7 +27,6 @@ __all__ = [
     "SNAPSHOT",
     "TYPE",
     "BrowserSessionManager",
-    "default_manager",
     "make_browser_click",
     "make_browser_navigate",
     "make_browser_screenshot",

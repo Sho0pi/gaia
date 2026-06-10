@@ -17,7 +17,7 @@ from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Any, Union
 
 from godpy import constants
-from godpy.tools import browser, fs
+from godpy.tools import browser, fs, shell
 from godpy.tools.remember import NAME as REMEMBER
 from godpy.tools.remember import make_remember
 from godpy.tools.web_fetch import NAME as WEB_FETCH
@@ -48,6 +48,10 @@ SELF_LOGGING_TOOLS = frozenset(
         browser.CLICK,
         browser.TYPE,
         browser.SCREENSHOT,
+        shell.EXEC,
+        shell.POLL,
+        shell.KILL,
+        shell.LIST,
     }
 )
 
@@ -142,10 +146,40 @@ def _register_browser_tools(registry: ToolRegistry, config: GodConfig | None) ->
             "browser && uv run playwright install chromium')"
         )
         return
-    manager = browser.default_manager()
+    # One manager per registry, shared by the browser tools (each closure captures it);
+    # it closes its sessions on exit. No module-level singleton.
+    manager = browser.BrowserSessionManager()
     for name, make in _BROWSER_TOOLS:
         if _is_enabled(config, name):
             registry.register(name, make(manager))
+
+
+def _register_shell_tools(registry: ToolRegistry, config: GodConfig | None) -> None:
+    """Attach the exec tool + its background-process trio, sharing one ProcessManager.
+
+    Safety comes from ``tools.exec.security`` (default ``allowlist``) and an optional
+    ``tools.exec.allowlist`` override, both read from config. The trio (poll/kill/list)
+    is only useful alongside ``exec``, but each stays individually gateable.
+    """
+    security = _tool_setting(config, shell.EXEC, "security") or "allowlist"
+    configured = _tool_setting(config, shell.EXEC, "allowlist")
+    allowlist = tuple(configured) if configured else shell.DEFAULT_ALLOWLIST
+
+    # One manager per registry, shared by the four tools below (each closure captures
+    # it); it cleans up its processes on exit. No module-level singleton.
+    manager = shell.ProcessManager()
+    spawner = shell.local_spawner
+    if _is_enabled(config, shell.EXEC):
+        registry.register(
+            shell.EXEC,
+            shell.make_exec(manager, spawner, security=security, allowlist=allowlist),
+        )
+    if _is_enabled(config, shell.POLL):
+        registry.register(shell.POLL, shell.make_exec_poll(manager))
+    if _is_enabled(config, shell.KILL):
+        registry.register(shell.KILL, shell.make_exec_kill(manager))
+    if _is_enabled(config, shell.LIST):
+        registry.register(shell.LIST, shell.make_exec_list(manager))
 
 
 def default_registry(config: GodConfig | None = None) -> ToolRegistry:
@@ -176,6 +210,7 @@ def default_registry(config: GodConfig | None = None) -> ToolRegistry:
         registry.register(fs.GREP, fs.make_fs_grep(agents_dir))
 
     _register_browser_tools(registry, config)
+    _register_shell_tools(registry, config)
 
     # Memory tools are only useful when long-term memory is on (mem0 wired into the
     # Runner); each is still individually gateable via tools.<name>.enabled.

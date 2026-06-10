@@ -39,10 +39,40 @@ def patch_protobuf_version_guard() -> None:
     runtime_version.ValidateProtobufRuntimeVersion = lambda *_a, **_k: None
 
 
+def _plain_text(msg: Any) -> str:
+    """Plain text of a neonize ``Message`` — its ``conversation`` or extended text."""
+    if msg is None:
+        return ""
+    extended = getattr(msg, "extendedTextMessage", None)
+    return str(getattr(msg, "conversation", "") or getattr(extended, "text", "") or "")
+
+
+def _quoted_text(msg: Any) -> str:
+    """Text of the message this one replies to (the quoted message), or ``""``.
+
+    A WhatsApp reply arrives as an ``extendedTextMessage`` whose ``contextInfo`` carries
+    the original under ``quotedMessage``. We read it defensively (``getattr``) so a
+    non-reply — or a future proto shape — yields ``""`` instead of raising.
+    """
+    extended = getattr(msg, "extendedTextMessage", None)
+    context = getattr(extended, "contextInfo", None)
+    quoted = getattr(context, "quotedMessage", None)
+    return _plain_text(quoted)
+
+
 def _message_text(message: Any) -> str:
-    """Extract plain text from a neonize ``MessageEv`` (plain or extended)."""
+    """Extract the inbound text from a neonize ``MessageEv``.
+
+    When the user *replies to* a previous message, the quoted message is included as
+    context so God sees what the user is referring to (otherwise it only got the new
+    line and the reply made no sense).
+    """
     msg = message.Message
-    return str(msg.conversation or msg.extendedTextMessage.text)
+    text = _plain_text(msg)
+    quoted = _quoted_text(msg)
+    if quoted:
+        return f"[Replying to an earlier message: {quoted}]\n\n{text}"
+    return text
 
 
 class WhatsAppWebConnector:

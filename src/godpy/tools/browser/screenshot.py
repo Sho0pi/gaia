@@ -11,7 +11,7 @@ from google.adk.tools.tool_context import ToolContext
 
 from godpy import constants
 from godpy.logs import log_event
-from godpy.tools.browser.base import BrowserSessionManager, err
+from godpy.tools.browser.base import BrowserError, BrowserSessionManager, err, resolve_locator
 from godpy.tools.fs.base import sandbox_for
 
 NAME = "browser_screenshot"
@@ -23,7 +23,7 @@ def make_browser_screenshot(
     """Return the ADK ``browser_screenshot`` tool bound to ``manager``."""
 
     async def browser_screenshot(
-        full_page: bool = True, *, tool_context: ToolContext
+        full_page: bool = True, ref: str = "", *, tool_context: ToolContext
     ) -> dict[str, Any]:
         """Capture a screenshot of the current page.
 
@@ -32,11 +32,13 @@ def make_browser_screenshot(
 
         Args:
             full_page (bool): Capture the entire scrollable page (default True). Set
-                False to capture only the visible viewport.
+                False to capture only the visible viewport. Ignored when ref is set.
+            ref (str): Optional element ref from the last snapshot (e.g. 'e4') to
+                screenshot just that element instead of the whole page.
 
         Returns:
-            dict: On success {'status': 'success', 'path': str, 'url': str,
-            'full_page': bool}. On failure {'status': 'error', 'error_message': str}.
+            dict: On success {'status': 'success', 'path': str, 'url': str}. On failure
+            {'status': 'error', 'error_message': str}.
         """
         agent = tool_context.agent_name
 
@@ -55,11 +57,18 @@ def make_browser_screenshot(
         target: Path = workspace / f"screenshot-{int(time.time() * 1000)}.png"
         try:
             session = await manager.get(agent)
-            await session.page.screenshot(path=str(target), full_page=full_page)
+            if ref.strip():
+                # Screenshot a single element (the rest of the page is excluded).
+                locator = resolve_locator(session, ref.strip())
+                await locator.screenshot(path=str(target))
+            else:
+                await session.page.screenshot(path=str(target), full_page=full_page)
             url = str(session.page.url)
+        except BrowserError as exc:
+            return done(err(str(exc)))
         except Exception as exc:
             return done(err(f"screenshot failed: {exc}"))
 
-        return done({"status": "success", "path": str(target), "url": url, "full_page": full_page})
+        return done({"status": "success", "path": str(target), "url": url})
 
     return browser_screenshot

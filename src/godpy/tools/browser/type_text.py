@@ -30,8 +30,8 @@ def make_browser_type(manager: BrowserSessionManager) -> Callable[..., Awaitable
             submit (bool): Press Enter after typing (default False).
 
         Returns:
-            dict: On success {'status': 'success', 'ref': str, 'submitted': bool}. On
-            failure {'status': 'error', 'error_message': str}.
+            dict: On success {'status': 'success'}. On failure {'status': 'error',
+            'error_message': str}.
         """
         agent = tool_context.agent_name
 
@@ -53,6 +53,6 @@ def make_browser_type(manager: BrowserSessionManager) -> Callable[..., Awaitable
         except Exception as exc:
             return done(err(f"type failed: {exc}"))
 
-        return done({"status": "success", "ref": ref, "submitted": submit})
+        return done({"status": "success"})
 
     return browser_type

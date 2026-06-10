@@ -19,12 +19,21 @@ from godpy.connectors.base import Send
 from godpy.connectors.whatsapp_web import WhatsAppWebConnector, _message_text
 
 
-def _msg(*, conversation: str = "", extended: str = "") -> SimpleNamespace:
-    """Build a fake neonize MessageEv with the fields the connector reads."""
+def _msg(*, conversation: str = "", extended: str = "", quoted: str = "") -> SimpleNamespace:
+    """Build a fake neonize MessageEv with the fields the connector reads.
+
+    ``quoted`` populates extendedTextMessage.contextInfo.quotedMessage (a reply).
+    """
+    quoted_message = (
+        SimpleNamespace(conversation=quoted, extendedTextMessage=SimpleNamespace(text=""))
+        if quoted
+        else None
+    )
+    context_info = SimpleNamespace(quotedMessage=quoted_message)
     return SimpleNamespace(
         Message=SimpleNamespace(
             conversation=conversation,
-            extendedTextMessage=SimpleNamespace(text=extended),
+            extendedTextMessage=SimpleNamespace(text=extended, contextInfo=context_info),
         ),
         Info=SimpleNamespace(MessageSource=SimpleNamespace(Chat="chat-jid")),
     )
@@ -80,6 +89,18 @@ def fake_neonize(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 )
 def test_message_text_extraction(conversation: str, extended: str, expected: str) -> None:
     assert _message_text(_msg(conversation=conversation, extended=extended)) == expected
+
+
+def test_quoted_reply_includes_the_quoted_message() -> None:
+    # Replying to an earlier message must surface that message so God has the context.
+    text = _message_text(_msg(extended="what about this one?", quoted="the original question"))
+
+    assert "the original question" in text
+    assert "what about this one?" in text
+
+
+def test_no_quote_returns_plain_text() -> None:
+    assert _message_text(_msg(conversation="just a normal message")) == "just a normal message"
 
 
 def test_build_client_creates_session_dir(fake_neonize: dict[str, Any], tmp_path: Path) -> None:

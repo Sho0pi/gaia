@@ -28,6 +28,7 @@ class _ActionLocator:
         self.clicked = False
         self.filled: str | None = None
         self.pressed: str | None = None
+        self.screenshot_path: str | None = None
 
     async def click(self) -> None:
         self.clicked = True
@@ -37,6 +38,10 @@ class _ActionLocator:
 
     async def press(self, key: str) -> None:
         self.pressed = key
+
+    async def screenshot(self, path: str) -> None:
+        self.screenshot_path = path
+        Path(path).write_bytes(b"\x89PNG fake")  # noqa: ASYNC240 - test fake, not real I/O
 
 
 class _FakePage:
@@ -51,6 +56,7 @@ class _FakePage:
         self.action_locators: dict[str, _ActionLocator] = {}
         self.goto_url: str | None = None
         self.screenshot_path: str | None = None
+        self.screenshot_full_page: bool | None = None  # None until a page screenshot is taken
 
     async def goto(self, url: str) -> None:
         self.goto_url = url
@@ -201,7 +207,7 @@ async def test_type_fills_and_submits() -> None:
 
     result = await type_tool("e1", "hello", submit=True, tool_context=_FakeToolContext())
 
-    assert result["status"] == "success" and result["submitted"] is True
+    assert result["status"] == "success"
     loc = page.action_locators["e1"]
     assert loc.filled == "hello" and loc.pressed == "Enter"
 
@@ -233,7 +239,6 @@ async def test_screenshot_writes_png_full_page_by_default(
     assert result["status"] == "success"
     assert Path(result["path"]).is_file()  # noqa: ASYNC240 - assertion, not hot-path I/O
     assert result["path"].endswith(".png")
-    assert result["full_page"] is True
     assert page.screenshot_full_page is True  # the whole scrollable page, not just viewport
 
 
@@ -246,8 +251,24 @@ async def test_screenshot_viewport_only_when_requested(
 
     result = await shot(full_page=False, tool_context=_FakeToolContext())
 
-    assert result["full_page"] is False
+    assert result["status"] == "success"
     assert page.screenshot_full_page is False
+
+
+async def test_screenshot_of_a_single_element(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("godpy.constants.AGENTS_DIR", tmp_path / "agents")
+    page = _FakePage()
+    manager = _manager_with(page)
+    await browser.make_browser_snapshot(manager)(tool_context=_FakeToolContext())
+    shot = browser.make_browser_screenshot(manager)
+
+    result = await shot(ref="e2", tool_context=_FakeToolContext())
+
+    assert result["status"] == "success"
+    assert page.action_locators["e2"].screenshot_path == result["path"]  # element, not page
+    assert page.screenshot_full_page is None  # whole-page screenshot not taken
 
 
 # --- session lifecycle ------------------------------------------------------------

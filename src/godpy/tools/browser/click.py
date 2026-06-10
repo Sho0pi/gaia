@@ -26,8 +26,8 @@ def make_browser_click(manager: BrowserSessionManager) -> Callable[..., Awaitabl
             ref (str): The element ref from the last snapshot, like 'e4'.
 
         Returns:
-            dict: On success {'status': 'success', 'ref': str}. On failure
-            {'status': 'error', 'error_message': str}.
+            dict: On success {'status': 'success'}. On failure {'status': 'error',
+            'error_message': str}.
         """
         agent = tool_context.agent_name
 
@@ -44,6 +44,6 @@ def make_browser_click(manager: BrowserSessionManager) -> Callable[..., Awaitabl
         except Exception as exc:
             return done(err(f"click failed: {exc}"))
 
-        return done({"status": "success", "ref": ref})
+        return done({"status": "success"})
 
     return browser_click
