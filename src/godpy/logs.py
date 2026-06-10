@@ -51,6 +51,7 @@ _GENERIC_SECRETS = (
     re.compile(r"\b\d{6,}:[A-Za-z0-9_-]{30,}\b"),  # telegram bot token
     re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"),  # openai-style key
     re.compile(r"\bAIza[0-9A-Za-z_-]{20,}\b"),  # google api key
+    re.compile(r"\bey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"),  # JWT (oauth)
 )
 
 _configured = False

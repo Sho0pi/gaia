@@ -92,8 +92,12 @@ def make_delegate(god: God) -> Callable[..., Awaitable[dict[str, Any]]]:
             return result
 
         model = god.config.llm.model or god.settings.model
+        provider = god.config.llm.provider
+        use_oauth = god.config.llm.openai.use_oauth
         try:
-            decision = await _decide(model, task, _existing_souls(god), tool_context)
+            decision = await _decide(
+                model, provider, use_oauth, task, _existing_souls(god), tool_context
+            )
         except Exception as exc:
             return done({"status": "error", "error_message": f"soul-smith failed: {exc}"})
 
@@ -155,11 +159,13 @@ def make_delegate(god: God) -> Callable[..., Awaitable[dict[str, Any]]]:
     return delegate_to_soul
 
 
-async def _decide(model: str, task: str, existing: str, tool_context: ToolContext) -> SoulDecision:
+async def _decide(
+    model: str, provider: str, use_oauth: bool, task: str, existing: str, tool_context: ToolContext
+) -> SoulDecision:
     """Run the soul-smith via ADK ``AgentTool`` and return its parsed decision."""
     from google.adk.tools.agent_tool import AgentTool
 
-    smith = AgentTool(build_soul_smith(model))
+    smith = AgentTool(build_soul_smith(model, provider, use_oauth))
     request = f"TASK:\n{task}\n\nEXISTING SOULS:\n{existing}"
     raw = await smith.run_async(args={"request": request}, tool_context=tool_context)
     return raw if isinstance(raw, SoulDecision) else SoulDecision.model_validate(raw)

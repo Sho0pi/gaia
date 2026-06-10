@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 from godpy.agents.registry import SoulRegistry
 from godpy.agents.spec import AgentSpec, slugify
 from godpy.communication import DEFAULT_COMMUNICATION_STYLE, apply_communication_style
+from godpy.models import resolve_model
 from godpy.skills import attach_skills, load_skill
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -28,12 +29,16 @@ class AgentFactory:
         registry: SoulRegistry,
         *,
         default_model: str,
+        default_provider: str = "gemini",
+        default_use_oauth: bool = False,
         skills_dir: Path | None = None,
         default_communication_style: str = DEFAULT_COMMUNICATION_STYLE,
         tool_registry: ToolRegistry | None = None,
     ) -> None:
         self._registry = registry
         self._default_model = default_model
+        self._default_provider = default_provider
+        self._default_use_oauth = default_use_oauth
         self._skills_dir = skills_dir
         self._default_communication_style = default_communication_style
         self._tool_registry = tool_registry
@@ -69,7 +74,11 @@ class AgentFactory:
 
         return LlmAgent(
             name=spec.key,
-            model=spec.model or self._default_model,
+            model=resolve_model(
+                spec.model or self._default_model,
+                provider=self._default_provider,
+                use_oauth=self._default_use_oauth,
+            ),
             description=spec.description,
             instruction=instruction,
             tools=tools,

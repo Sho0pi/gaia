@@ -13,6 +13,7 @@ from godpy.agents import AgentFactory, AgentSpec, SoulRegistry
 from godpy.communication import apply_communication_style
 from godpy.config import ConfigSupplier, Settings, configure_adk_env, get_settings
 from godpy.config.schema import AgentBinding
+from godpy.models import resolve_model
 from godpy.skills import attach_skills, resolve_skills_dir
 from godpy.tools import default_registry
 
@@ -35,7 +36,9 @@ class God:
         self.tools = default_registry(self.config)
         self.factory = AgentFactory(
             self.souls,
-            default_model=self.settings.model,
+            default_model=self.config.llm.model or self.settings.model,
+            default_provider=self.config.llm.provider,
+            default_use_oauth=self.config.llm.openai.use_oauth,
             skills_dir=self.skills_dir,
             default_communication_style=self.config.default_communication_style,
             tool_registry=self.tools,
@@ -104,7 +107,11 @@ class God:
         # never receive it, so a soul cannot spawn souls.
         return LlmAgent(
             name="god",
-            model=self.config.llm.model or self.settings.model,
+            model=resolve_model(
+                self.config.llm.model or self.settings.model,
+                provider=self.config.llm.provider,
+                use_oauth=self.config.llm.openai.use_oauth,
+            ),
             description="Root orchestrator that routes tasks to specialized subagents.",
             instruction=instruction,
             tools=[*self.tools.all(), make_delegate(self)],

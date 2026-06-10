@@ -88,6 +88,24 @@ def run_dev(
     serve_dev(god, host=host, port=port)
 
 
+def run_auth(provider: str, *, env_file: Path | None = None) -> None:
+    """Run an interactive provider login and store the credentials.
+
+    Currently supports ``openai`` (Sign in with ChatGPT, device-code flow).
+    """
+    settings = get_settings(env_file)
+    god = God(settings)
+    setup_logging(settings, god.config.logging)
+    if provider in ("openai", "openai-chatgpt", "chatgpt"):
+        from godpy.providers.openai import login
+
+        creds = asyncio.run(login())
+        creds.save()
+        logger.info("ChatGPT credentials saved for account %s", creds.account_id)
+    else:
+        raise SystemExit(f"unknown auth provider: {provider!r} (try: openai)")
+
+
 def run(settings: Settings | None = None, *, env_file: Path | None = None) -> None:
     """Build God and launch the connectors enabled in god.yaml."""
     settings = settings or get_settings(env_file)

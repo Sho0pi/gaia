@@ -36,7 +36,11 @@ class _FakeFactory:
 
 def _god(registry: SoulRegistry) -> Any:
     return SimpleNamespace(
-        config=SimpleNamespace(llm=SimpleNamespace(model="m")),
+        config=SimpleNamespace(
+            llm=SimpleNamespace(
+                model="m", provider="gemini", openai=SimpleNamespace(use_oauth=False)
+            )
+        ),
         settings=SimpleNamespace(model="m"),
         souls=registry,
         factory=_FakeFactory(registry),

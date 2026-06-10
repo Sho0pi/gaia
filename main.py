@@ -5,6 +5,7 @@ Run with ``uv run python main.py``:
 * ``python main.py``                    -> local CLI/TUI chat (default).
 * ``python main.py whatsapp``           -> WhatsApp backend (QR on first run, see app.run).
 * ``python main.py dev``                -> ADK web UI on God (see tool calls + LLM requests).
+* ``python main.py auth openai``        -> sign in with ChatGPT (device-code OAuth).
 * ``python main.py --env-file ./.env``  -> read secrets from a specific .env file.
 
 Secrets are read from ``~/.godpy/.env`` by default; ``--env-file`` overrides that
@@ -17,7 +18,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from godpy.app import run, run_cli, run_dev
+from godpy.app import run, run_auth, run_cli, run_dev
 
 
 def main() -> None:
@@ -26,8 +27,15 @@ def main() -> None:
         "mode",
         nargs="?",
         default="cli",
-        choices=("cli", "whatsapp", "dev"),
-        help="cli (default) terminal TUI, whatsapp backend, or dev for the ADK web UI.",
+        choices=("cli", "whatsapp", "dev", "auth"),
+        help="cli (default) terminal TUI, whatsapp backend, dev for the ADK web UI, "
+        "or auth to sign in to a provider.",
+    )
+    parser.add_argument(
+        "provider",
+        nargs="?",
+        default=None,
+        help="auth mode: the provider to sign in to (e.g. openai).",
     )
     parser.add_argument(
         "--env-file",
@@ -47,6 +55,8 @@ def main() -> None:
         run(env_file=args.env_file)
     elif args.mode == "dev":
         run_dev(env_file=args.env_file, host=args.host, port=args.port)
+    elif args.mode == "auth":
+        run_auth(args.provider or "openai", env_file=args.env_file)
     else:
         run_cli(env_file=args.env_file)
 
