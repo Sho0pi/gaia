@@ -9,7 +9,6 @@ from typing import Any
 
 from google.adk.tools.tool_context import ToolContext
 
-from godpy.logs import log_event
 from godpy.tools.fs.base import SandboxError, err, sandbox_for
 
 NAME = "fs_write"
@@ -46,26 +45,22 @@ def make_fs_write(agents_dir: Path) -> Callable[..., dict[str, Any]]:
         agent = tool_context.agent_name
         sandbox = sandbox_for(agents_dir, agent)
 
-        def done(result: dict[str, Any]) -> dict[str, Any]:
-            log_event("tool_used", tool=NAME, agent=agent, path=path, status=result["status"])
-            return result
-
         if mode not in _WRITE_MODES:
-            return done(err(f"mode must be one of: {', '.join(sorted(_WRITE_MODES))}"))
+            return err(f"mode must be one of: {', '.join(sorted(_WRITE_MODES))}")
         try:
             target = sandbox.resolve(path)
         except SandboxError as exc:
-            return done(err(str(exc)))
+            return err(str(exc))
         if target.is_dir():
-            return done(err(f"path is a directory: {path}"))
+            return err(f"path is a directory: {path}")
 
         existed = target.exists()
         if mode == "create" and existed:
-            return done(err(f"file already exists: {path}"))
+            return err(f"file already exists: {path}")
         if create_dirs:
             target.parent.mkdir(parents=True, exist_ok=True)
         if not target.parent.is_dir():
-            return done(err(f"parent directory does not exist: {path}"))
+            return err(f"parent directory does not exist: {path}")
         if backup and existed:
             shutil.copy2(target, target.with_name(target.name + ".bak"))
 
@@ -74,14 +69,12 @@ def make_fs_write(agents_dir: Path) -> Callable[..., dict[str, Any]]:
                 handle.write(content)
         else:
             target.write_text(content, encoding="utf-8")
-        return done(
-            {
-                "status": "success",
-                "path": str(target),
-                "bytes": len(content.encode("utf-8")),
-                "mode": mode,
-                "created": not existed,
-            }
-        )
+        return {
+            "status": "success",
+            "path": str(target),
+            "bytes": len(content.encode("utf-8")),
+            "mode": mode,
+            "created": not existed,
+        }
 
     return fs_write

@@ -8,7 +8,6 @@ from typing import Any
 from google.adk.tools.tool_context import ToolContext
 
 from godpy import constants
-from godpy.logs import log_event
 from godpy.tools.fs.base import SandboxError, sandbox_for
 from godpy.tools.shell.base import (
     ProcessManager,
@@ -65,49 +64,35 @@ def make_exec(
         """
         agent = tool_context.agent_name
 
-        def done(result: dict[str, Any]) -> dict[str, Any]:
-            # Log only the head of the command (may carry secrets); redaction is best-effort.
-            log_event(
-                "tool_used",
-                tool=NAME,
-                agent=agent,
-                command=command[:120],
-                background=background,
-                status=result["status"],
-            )
-            return result
-
         policy_error = check_command(command, security=security, allowlist=allowlist)
         if policy_error is not None:
-            return done(err(policy_error))
+            return err(policy_error)
 
         sandbox = sandbox_for(constants.AGENTS_DIR, agent)
         try:
             cwd = sandbox.resolve(workdir) if workdir else sandbox.primary
         except SandboxError as exc:
-            return done(err(str(exc)))
+            return err(str(exc))
 
         if background:
             try:
                 managed = await manager.spawn(agent, command, cwd)
             except Exception as exc:
-                return done(err(f"failed to start process: {exc}"))
-            return done(
-                {
-                    "status": "running",
-                    "process_id": managed.process_id,
-                    "command": command,
-                    "log": str(managed.log_path),
-                }
-            )
+                return err(f"failed to start process: {exc}")
+            return {
+                "status": "running",
+                "process_id": managed.process_id,
+                "command": command,
+                "log": str(managed.log_path),
+            }
 
         timeout = max(MIN_TIMEOUT, min(timeout_seconds, MAX_TIMEOUT))
         try:
             output, exit_code, timed_out = await run_foreground(spawner, command, cwd, timeout)
         except Exception as exc:
-            return done(err(f"exec failed: {exc}"))
+            return err(f"exec failed: {exc}")
         if timed_out:
-            return done(err(f"command timed out after {timeout:.0f}s and was killed"))
+            return err(f"command timed out after {timeout:.0f}s and was killed")
 
         stdout, was_truncated = truncate(output)
         status = "success" if exit_code == 0 else "error"
@@ -119,6 +104,6 @@ def make_exec(
         }
         if status == "error":
             result["error_message"] = f"command exited with code {exit_code}"
-        return done(result)
+        return result
 
     return exec

@@ -7,7 +7,6 @@ from typing import Any
 
 from google.adk.tools.tool_context import ToolContext
 
-from godpy.logs import log_event
 from godpy.tools.browser.base import BrowserSessionManager, err
 from godpy.tools.web_fetch import validate_url
 
@@ -36,16 +35,12 @@ def make_browser_navigate(
         cleaned = url.strip()
         agent = tool_context.agent_name
 
-        def done(result: dict[str, Any]) -> dict[str, Any]:
-            log_event("tool_used", tool=NAME, agent=agent, url=cleaned, status=result["status"])
-            return result
-
         if not cleaned:
-            return done(err("url must not be empty"))
+            return err("url must not be empty")
         # Same SSRF guard web_fetch uses: reject loopback/private/metadata hosts.
         error = validate_url(cleaned)
         if error is not None:
-            return done(err(error))
+            return err(error)
 
         try:
             session = await manager.get(agent)
@@ -55,11 +50,11 @@ def make_browser_navigate(
             redirected = validate_url(final_url)
             if redirected is not None:
                 await manager.close(agent)
-                return done(err(f"redirected to a blocked address: {redirected}"))
+                return err(f"redirected to a blocked address: {redirected}")
             title = str(await session.page.title())
         except Exception as exc:
-            return done(err(f"navigation failed: {exc}"))
+            return err(f"navigation failed: {exc}")
 
-        return done({"status": "success", "url": final_url, "title": title})
+        return {"status": "success", "url": final_url, "title": title}
 
     return browser_navigate

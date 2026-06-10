@@ -49,9 +49,10 @@ def _god(registry: SoulRegistry) -> Any:
 
 @pytest.fixture
 def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Any, list[Any]]:
+    # Tool-call logging now lives in ToolLoggingPlugin (tested in test_tool_logging_plugin);
+    # delegate_to_soul no longer self-logs. ``events`` stays empty for signature stability.
     monkeypatch.setattr(constants, "AGENTS_DIR", tmp_path / "agents")
     events: list[Any] = []
-    monkeypatch.setattr(delegate, "log_event", lambda a, **k: events.append((a, k)))
     god = _god(SoulRegistry(tmp_path / "reg"))
     return god, events
 
@@ -74,7 +75,7 @@ def _stub_run_writing(monkeypatch: pytest.MonkeyPatch, filename: str) -> None:
 async def test_forge_path_persists_runs_and_lists_only_new_files(
     env: tuple[Any, list[Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    god, events = env
+    god, _ = env
     # An unrelated deliverable from a previous task already sits in the workspace.
     old = sandbox_for(constants.AGENTS_DIR, "web_designer").primary / "old_site.html"
     old.write_text("old")
@@ -89,10 +90,6 @@ async def test_forge_path_persists_runs_and_lists_only_new_files(
     assert out["files"] == ["index.html"]  # only this run's file; old_site.html excluded
     assert out["workspace"].endswith("web_designer/workspace")
     assert god.souls.get("web_designer") is not None  # persisted for reuse
-    assert events[0] == (
-        "tool_used",
-        {"tool": "delegate_to_soul", "soul": "Web Designer", "forged": True, "status": "success"},
-    )
 
 
 async def test_passes_invocation_user_id_to_the_soul(

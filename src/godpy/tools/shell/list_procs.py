@@ -7,7 +7,6 @@ from typing import Any
 
 from google.adk.tools.tool_context import ToolContext
 
-from godpy.logs import log_event
 from godpy.tools.shell.base import ProcessManager
 
 NAME = "exec_list"
@@ -33,7 +32,6 @@ def make_exec_list(manager: ProcessManager) -> Callable[..., Awaitable[dict[str,
             }
             for p in manager.list(agent)
         ]
-        log_event("tool_used", tool=NAME, agent=agent, count=len(processes), status="success")
         return {"status": "success", "processes": processes}
 
     return exec_list

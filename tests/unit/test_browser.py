@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import Any
 
@@ -210,18 +209,6 @@ async def test_type_fills_and_submits() -> None:
     assert result["status"] == "success"
     loc = page.action_locators["e1"]
     assert loc.filled == "hello" and loc.pressed == "Enter"
-
-
-async def test_type_does_not_log_secret_text(caplog: pytest.LogCaptureFixture) -> None:
-    page = _FakePage()
-    manager = _manager_with(page)
-    await browser.make_browser_snapshot(manager)(tool_context=_FakeToolContext())
-    type_tool = browser.make_browser_type(manager)
-
-    with caplog.at_level(logging.INFO, logger="godpy.events"):
-        await type_tool("e1", "hunter2-secret", tool_context=_FakeToolContext())
-
-    assert "hunter2-secret" not in caplog.text
 
 
 # --- screenshot -------------------------------------------------------------------

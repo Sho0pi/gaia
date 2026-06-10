@@ -16,7 +16,6 @@ from godpy.tools.fs import (
     make_fs_read,
     make_fs_write,
 )
-from godpy.tools.fs import write as fs_write_mod
 
 
 class _Ctx:
@@ -234,21 +233,6 @@ def test_agents_get_separate_workspaces(tmp_path: Path) -> None:
     assert bob_read["status"] == "error"  # bob has his own empty workspace
     assert (tmp_path / "alice" / "workspace" / "a.txt").exists()
     assert not (tmp_path / "bob" / "workspace" / "a.txt").exists()
-
-
-def test_tool_call_logged_success_and_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    events: list[tuple[str, dict[str, object]]] = []
-    monkeypatch.setattr(fs_write_mod, "log_event", lambda action, **f: events.append((action, f)))
-    write = make_fs_write(tmp_path)
-
-    write("ok.txt", "v", tool_context=_Ctx())
-    write("../escape", "v", tool_context=_Ctx())
-
-    assert [e[1]["status"] for e in events] == ["success", "error"]
-    assert all(e[0] == "tool_used" and e[1]["tool"] == "fs_write" for e in events)
-    assert events[0][1]["agent"] == "tester"
 
 
 # --- fs_glob / fs_grep (need fd / rg) -----------------------------------------------

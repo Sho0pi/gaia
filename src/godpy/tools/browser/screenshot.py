@@ -10,7 +10,6 @@ from typing import Any
 from google.adk.tools.tool_context import ToolContext
 
 from godpy import constants
-from godpy.logs import log_event
 from godpy.tools.browser.base import BrowserError, BrowserSessionManager, err, resolve_locator
 from godpy.tools.fs.base import sandbox_for
 
@@ -42,16 +41,6 @@ def make_browser_screenshot(
         """
         agent = tool_context.agent_name
 
-        def done(result: dict[str, Any]) -> dict[str, Any]:
-            log_event(
-                "tool_used",
-                tool=NAME,
-                agent=agent,
-                path=result.get("path"),
-                status=result["status"],
-            )
-            return result
-
         # Land the PNG in the agent's own workspace (same dir the fs tools write to).
         workspace = sandbox_for(constants.AGENTS_DIR, agent).primary
         target: Path = workspace / f"screenshot-{int(time.time() * 1000)}.png"
@@ -65,10 +54,10 @@ def make_browser_screenshot(
                 await session.page.screenshot(path=str(target), full_page=full_page)
             url = str(session.page.url)
         except BrowserError as exc:
-            return done(err(str(exc)))
+            return err(str(exc))
         except Exception as exc:
-            return done(err(f"screenshot failed: {exc}"))
+            return err(f"screenshot failed: {exc}")
 
-        return done({"status": "success", "path": str(target), "url": url})
+        return {"status": "success", "path": str(target), "url": url}
 
     return browser_screenshot

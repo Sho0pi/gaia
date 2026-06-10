@@ -12,8 +12,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Protocol
 
-from godpy.logs import log_event
-
 #: Tool id, used by the registry and as the ADK tool name (matches the closure name).
 NAME = "web_search"
 
@@ -87,39 +85,27 @@ def make_web_search(provider: SearchProvider) -> Callable[..., dict[str, Any]]:
         """
         cleaned = query.strip()
 
-        def done(result: dict[str, Any]) -> dict[str, Any]:
-            log_event(
-                "tool_used",
-                tool=NAME,
-                query=cleaned,
-                status=result["status"],
-                results=len(result.get("results", [])),
-            )
-            return result
-
         if not cleaned:
-            return done({"status": "error", "error_message": "query must not be empty"})
+            return {"status": "error", "error_message": "query must not be empty"}
 
         timelimit: str | None = None
         if time_range:
             timelimit = TIME_RANGES.get(time_range.strip().lower())
             if timelimit is None:
                 allowed = ", ".join(TIME_RANGES)
-                return done(
-                    {
-                        "status": "error",
-                        "error_message": f"time_range must be empty or one of: {allowed}",
-                    }
-                )
+                return {
+                    "status": "error",
+                    "error_message": f"time_range must be empty or one of: {allowed}",
+                }
 
         capped = max(1, min(max_results, MAX_RESULTS_CAP))
         # The provider hits the network (DNS, rate limits, SDK changes); a raised
-        # exception would skip done()'s logging and surface to the model as a fault.
+        # exception would skip ()'s logging and surface to the model as a fault.
         # Match every other tool: return an error dict instead of raising.
         try:
             results = provider(cleaned, capped, timelimit)
         except Exception as exc:
-            return done({"status": "error", "error_message": f"search failed: {exc}"})
-        return done({"status": "success", "results": results})
+            return {"status": "error", "error_message": f"search failed: {exc}"}
+        return {"status": "success", "results": results}
 
     return web_search

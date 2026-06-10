@@ -7,7 +7,6 @@ from typing import Any
 
 from google.adk.tools.tool_context import ToolContext
 
-from godpy.logs import log_event
 from godpy.tools.shell.base import ProcessManager, err
 
 NAME = "exec_kill"
@@ -28,20 +27,14 @@ def make_exec_kill(manager: ProcessManager) -> Callable[..., Awaitable[dict[str,
         """
         agent = tool_context.agent_name
 
-        def done(result: dict[str, Any]) -> dict[str, Any]:
-            log_event(
-                "tool_used", tool=NAME, agent=agent, process=process_id, status=result["status"]
-            )
-            return result
-
         managed = manager.get(agent, process_id.strip())
         if managed is None:
-            return done(err(f"unknown process {process_id!r} (it may belong to another agent)"))
+            return err(f"unknown process {process_id!r} (it may belong to another agent)")
 
         try:
             exit_code = await manager.kill(managed)
         except Exception as exc:
-            return done(err(f"failed to stop process: {exc}"))
-        return done({"status": "success", "process_id": managed.process_id, "exit_code": exit_code})
+            return err(f"failed to stop process: {exc}")
+        return {"status": "success", "process_id": managed.process_id, "exit_code": exit_code}
 
     return exec_kill

@@ -19,7 +19,6 @@ from typing import TYPE_CHECKING, Any
 from google.adk.tools.tool_context import ToolContext
 
 from godpy import constants
-from godpy.logs import log_event
 from godpy.souls.smith import SoulDecision, build_soul_smith
 from godpy.tools.fs.base import sandbox_for
 
@@ -81,16 +80,6 @@ def make_delegate(god: God) -> Callable[..., Awaitable[dict[str, Any]]]:
             'error', 'error_message': str}.
         """
 
-        def done(result: dict[str, Any]) -> dict[str, Any]:
-            log_event(
-                "tool_used",
-                tool=NAME,
-                soul=result.get("soul"),
-                forged=result.get("created"),  # 'created' is a reserved LogRecord field
-                status=result["status"],
-            )
-            return result
-
         model = god.config.llm.model or god.settings.model
         provider = god.config.llm.provider
         use_oauth = god.config.llm.openai.use_oauth
@@ -99,21 +88,19 @@ def make_delegate(god: God) -> Callable[..., Awaitable[dict[str, Any]]]:
                 model, provider, use_oauth, task, _existing_souls(god), tool_context
             )
         except Exception as exc:
-            return done({"status": "error", "error_message": f"soul-smith failed: {exc}"})
+            return {"status": "error", "error_message": f"soul-smith failed: {exc}"}
 
         known = god.souls.list_keys()
         if decision.action == "reuse" and decision.soul_key in known:
             spec = god.souls.get(decision.soul_key)
             if spec is None:  # key vanished between listing and read
-                return done({"status": "error", "error_message": "chosen soul is unavailable"})
+                return {"status": "error", "error_message": "chosen soul is unavailable"}
             created = False
         elif decision.spec is not None:
             spec = decision.spec
             created = spec.key not in known
         else:
-            return done(
-                {"status": "error", "error_message": "soul-smith returned no usable decision"}
-            )
+            return {"status": "error", "error_message": "soul-smith returned no usable decision"}
 
         soul = god.factory.create_or_reuse(spec)  # persist (new) + build the ADK agent
         primary = sandbox_for(constants.AGENTS_DIR, spec.key).primary
@@ -125,36 +112,30 @@ def make_delegate(god: God) -> Callable[..., Awaitable[dict[str, Any]]]:
                 _run_soul(god, soul, spec.key, task, user_id), timeout=SOUL_TIMEOUT
             )
         except TimeoutError:
-            return done(
-                {
-                    "status": "error",
-                    "soul": spec.key,
-                    "created": created,
-                    "error_message": f"soul timed out after {SOUL_TIMEOUT:.0f}s",
-                }
-            )
+            return {
+                "status": "error",
+                "soul": spec.key,
+                "created": created,
+                "error_message": f"soul timed out after {SOUL_TIMEOUT:.0f}s",
+            }
         except Exception as exc:
-            return done(
-                {
-                    "status": "error",
-                    "soul": spec.key,
-                    "created": created,
-                    "error_message": f"soul run failed: {exc}",
-                }
-            )
+            return {
+                "status": "error",
+                "soul": spec.key,
+                "created": created,
+                "error_message": f"soul run failed: {exc}",
+            }
 
         files = _changed(before, _snapshot(primary))
-        return done(
-            {
-                "status": "success",
-                "soul": spec.name,
-                "created": created,
-                "reason": decision.reason,
-                "workspace": str(primary),
-                "files": files,
-                "summary": summary,
-            }
-        )
+        return {
+            "status": "success",
+            "soul": spec.name,
+            "created": created,
+            "reason": decision.reason,
+            "workspace": str(primary),
+            "files": files,
+            "summary": summary,
+        }
 
     return delegate_to_soul
 
@@ -182,7 +163,6 @@ async def _run_soul(god: God, soul: Any, key: str, task: str, user_id: str) -> s
     from google.genai import types
 
     from godpy.god.plugins import ToolLoggingPlugin
-    from godpy.tools import SELF_LOGGING_TOOLS
 
     session_service = InMemorySessionService()  # type: ignore[no-untyped-call]
     session_id = f"soul-{key}"
@@ -194,7 +174,7 @@ async def _run_soul(god: God, soul: Any, key: str, task: str, user_id: str) -> s
         agent=soul,
         session_service=session_service,
         memory_service=god.memory_service,
-        plugins=[ToolLoggingPlugin(SELF_LOGGING_TOOLS)],
+        plugins=[ToolLoggingPlugin()],
     )
     content = types.Content(role="user", parts=[types.Part(text=task)])
     parts: list[str] = []

@@ -9,7 +9,6 @@ from typing import Any
 
 from google.adk.tools.tool_context import ToolContext
 
-from godpy.logs import log_event
 from godpy.tools.fs.base import GLOB_MAX, SandboxError, err, run_search, sandbox_for
 
 NAME = "fs_glob"
@@ -39,16 +38,12 @@ def make_fs_glob(agents_dir: Path) -> Callable[..., dict[str, Any]]:
         agent = tool_context.agent_name
         sandbox = sandbox_for(agents_dir, agent)
 
-        def done(result: dict[str, Any]) -> dict[str, Any]:
-            log_event("tool_used", tool=NAME, agent=agent, pattern=pattern, status=result["status"])
-            return result
-
         try:
             search = sandbox.resolve(root or ".")
         except SandboxError as exc:
-            return done(err(str(exc)))
+            return err(str(exc))
         if not search.is_dir():
-            return done(err(f"not a directory: {root}"))
+            return err(f"not a directory: {root}")
 
         cap = max(1, max_results)
         cmd = [
@@ -65,19 +60,17 @@ def make_fs_glob(agents_dir: Path) -> Callable[..., dict[str, Any]]:
         try:
             proc = run_search(cmd, search)
         except (OSError, subprocess.SubprocessError) as exc:
-            return done(err(f"fd failed: {exc}"))
+            return err(f"fd failed: {exc}")
         if proc.returncode != 0:
-            return done(err(proc.stderr.strip() or "fd failed"))
+            return err(proc.stderr.strip() or "fd failed")
 
         matches = [line for line in proc.stdout.splitlines() if line]
         truncated = len(matches) > cap
-        return done(
-            {
-                "status": "success",
-                "matches": matches[:cap],
-                "count": min(len(matches), cap),
-                "truncated": truncated,
-            }
-        )
+        return {
+            "status": "success",
+            "matches": matches[:cap],
+            "count": min(len(matches), cap),
+            "truncated": truncated,
+        }
 
     return fs_glob
