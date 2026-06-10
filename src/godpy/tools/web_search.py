@@ -113,7 +113,13 @@ def make_web_search(provider: SearchProvider) -> Callable[..., dict[str, Any]]:
                 )
 
         capped = max(1, min(max_results, MAX_RESULTS_CAP))
-        results = provider(cleaned, capped, timelimit)
+        # The provider hits the network (DNS, rate limits, SDK changes); a raised
+        # exception would skip done()'s logging and surface to the model as a fault.
+        # Match every other tool: return an error dict instead of raising.
+        try:
+            results = provider(cleaned, capped, timelimit)
+        except Exception as exc:
+            return done({"status": "error", "error_message": f"search failed: {exc}"})
         return done({"status": "success", "results": results})
 
     return web_search
