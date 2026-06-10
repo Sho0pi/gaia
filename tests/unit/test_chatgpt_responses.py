@@ -36,6 +36,33 @@ def test_tool_schema_types_are_lowercased_json_schema() -> None:
     assert params["properties"]["c"]["type"] == "string"
 
 
+def test_function_response_with_pydantic_payload_is_serializable() -> None:
+    import json
+
+    from pydantic import BaseModel
+
+    class _ToolResult(BaseModel):  # mimics ADK's LoadMemoryResponse
+        memories: list[str] = []
+
+    contents = [
+        types.Content(
+            role="user",
+            parts=[
+                types.Part(
+                    function_response=types.FunctionResponse(
+                        id="c1", name="load_memory", response={"r": _ToolResult(memories=["x"])}
+                    )
+                )
+            ],
+        )
+    ]
+
+    item = _content_to_input(contents)[0]  # must not raise on the pydantic value
+
+    assert item["type"] == "function_call_output"
+    assert json.loads(item["output"]) == {"r": {"memories": ["x"]}}
+
+
 def test_reasoning_part_is_replayed_as_a_reasoning_item() -> None:
     import json
 

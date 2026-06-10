@@ -38,6 +38,22 @@ class ChatGptNotAuthenticatedError(RuntimeError):
     """Raised when no ChatGPT OAuth credentials are stored."""
 
 
+def _jsonable(obj: Any) -> Any:
+    """Fallback for ``json.dumps``: pydantic models (and other objects) -> JSON-safe data.
+
+    ADK tool results are often pydantic objects (e.g. ``load_memory`` returns a
+    ``LoadMemoryResponse``), which plain ``json.dumps`` can't serialize.
+    """
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump(mode="json")
+    return str(obj)
+
+
+def _dumps(value: Any) -> str:
+    """``json.dumps`` that never raises on a tool's pydantic/odd return value."""
+    return json.dumps(value, default=_jsonable)
+
+
 def _content_to_input(contents: list[types.Content]) -> list[dict[str, Any]]:
     """Map ADK contents to Responses ``input`` items (text + function call/result)."""
     items: list[dict[str, Any]] = []
@@ -71,7 +87,7 @@ def _content_to_input(contents: list[types.Content]) -> list[dict[str, Any]]:
                         "type": "function_call",
                         "name": part.function_call.name,
                         "call_id": part.function_call.id or part.function_call.name,
-                        "arguments": json.dumps(dict(part.function_call.args or {})),
+                        "arguments": _dumps(dict(part.function_call.args or {})),
                     }
                 )
             elif part.function_response:
@@ -79,7 +95,7 @@ def _content_to_input(contents: list[types.Content]) -> list[dict[str, Any]]:
                     {
                         "type": "function_call_output",
                         "call_id": part.function_response.id or part.function_response.name,
-                        "output": json.dumps(part.function_response.response or {}),
+                        "output": _dumps(part.function_response.response or {}),
                     }
                 )
     return items
