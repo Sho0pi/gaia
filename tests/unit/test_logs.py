@@ -101,6 +101,40 @@ def test_secrets_are_redacted_before_disk(tmp_path: Path) -> None:
     assert "***REDACTED***" in content
 
 
+def test_openai_key_redacted_even_without_sk_prefix(tmp_path: Path) -> None:
+    # Exact-match redaction must not rely on the generic 'sk-' pattern.
+    key = "legacyOpenAiKeyWithoutPrefix123456"
+    _setup(tmp_path, OPENAI_API_KEY=key)
+
+    logging.getLogger("godpy").error("openai auth failed for key=%s", key)
+
+    content = (tmp_path / "errors.log").read_text()
+    assert key not in content
+    assert "***REDACTED***" in content
+
+
+def test_console_off_keeps_files_but_no_stdout_handlers(tmp_path: Path) -> None:
+    # TUI mode: Textual owns the terminal, so no handler may write to stdout —
+    # yet every stream must still reach its rotating file.
+    setup_logging(Settings(log_dir=tmp_path), LoggingConfig(), force=True, console=False)
+
+    def stream_handlers(logger: logging.Logger) -> list[logging.Handler]:
+        return [
+            h
+            for h in logger.handlers
+            if type(h) is logging.StreamHandler  # RotatingFileHandler subclasses it
+        ]
+
+    assert stream_handlers(logging.getLogger()) == []
+    assert stream_handlers(logging.getLogger("godpy.events")) == []
+
+    logging.getLogger("godpy").warning("tui boom")
+    log_event("tool_used", tool="web_search")
+
+    assert "tui boom" in (tmp_path / "system.log").read_text()
+    assert "tool_used" in (tmp_path / "events.jsonl").read_text()
+
+
 def test_third_party_logs_are_captured_to_file(tmp_path: Path) -> None:
     _setup(tmp_path)
 
