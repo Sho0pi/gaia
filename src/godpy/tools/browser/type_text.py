@@ -7,7 +7,6 @@ from typing import Any
 
 from google.adk.tools.tool_context import ToolContext
 
-from godpy.logs import log_event
 from godpy.tools.browser.base import BrowserError, BrowserSessionManager, err, resolve_locator
 
 NAME = "browser_type"
@@ -35,13 +34,6 @@ def make_browser_type(manager: BrowserSessionManager) -> Callable[..., Awaitable
         """
         agent = tool_context.agent_name
 
-        def done(result: dict[str, Any]) -> dict[str, Any]:
-            # Never log the typed text — it may be a password or other secret. Ref only.
-            log_event(
-                "tool_used", tool=NAME, agent=agent, ref=ref, submit=submit, status=result["status"]
-            )
-            return result
-
         try:
             session = await manager.get(agent)
             locator = resolve_locator(session, ref.strip())
@@ -49,10 +41,10 @@ def make_browser_type(manager: BrowserSessionManager) -> Callable[..., Awaitable
             if submit:
                 await locator.press("Enter")
         except BrowserError as exc:
-            return done(err(str(exc)))
+            return err(str(exc))
         except Exception as exc:
-            return done(err(f"type failed: {exc}"))
+            return err(f"type failed: {exc}")
 
-        return done({"status": "success"})
+        return {"status": "success"}
 
     return browser_type

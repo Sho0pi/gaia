@@ -9,7 +9,6 @@ from typing import Any
 
 from google.adk.tools.tool_context import ToolContext
 
-from godpy.logs import log_event
 from godpy.tools.fs.base import GREP_MAX, SandboxError, err, run_search, sandbox_for
 
 NAME = "fs_grep"
@@ -49,16 +48,12 @@ def make_fs_grep(agents_dir: Path) -> Callable[..., dict[str, Any]]:
         agent = tool_context.agent_name
         sandbox = sandbox_for(agents_dir, agent)
 
-        def done(result: dict[str, Any]) -> dict[str, Any]:
-            log_event("tool_used", tool=NAME, agent=agent, pattern=pattern, status=result["status"])
-            return result
-
         try:
             search = sandbox.resolve(root or ".")
         except SandboxError as exc:
-            return done(err(str(exc)))
+            return err(str(exc))
         if not search.is_dir():
-            return done(err(f"not a directory: {root}"))
+            return err(f"not a directory: {root}")
 
         cmd = ["rg", "--line-number", "--with-filename", "--no-heading", "--color", "never"]
         if not regex:
@@ -73,20 +68,18 @@ def make_fs_grep(agents_dir: Path) -> Callable[..., dict[str, Any]]:
         try:
             proc = run_search(cmd, search)
         except (OSError, subprocess.SubprocessError) as exc:
-            return done(err(f"rg failed: {exc}"))
+            return err(f"rg failed: {exc}")
         if proc.returncode not in (0, 1):  # rg exits 1 when there are simply no matches
-            return done(err(proc.stderr.strip() or "rg failed"))
+            return err(proc.stderr.strip() or "rg failed")
 
         cap = max(1, max_results)
         lines = proc.stdout.splitlines()
         truncated = len(lines) > cap
-        return done(
-            {
-                "status": "success",
-                "matches": lines[:cap],
-                "count": min(len(lines), cap),
-                "truncated": truncated,
-            }
-        )
+        return {
+            "status": "success",
+            "matches": lines[:cap],
+            "count": min(len(lines), cap),
+            "truncated": truncated,
+        }
 
     return fs_grep

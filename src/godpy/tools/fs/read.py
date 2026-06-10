@@ -8,7 +8,6 @@ from typing import Any
 
 from google.adk.tools.tool_context import ToolContext
 
-from godpy.logs import log_event
 from godpy.tools.fs.base import (
     MAX_READ_BYTES,
     SandboxError,
@@ -50,18 +49,14 @@ def make_fs_read(agents_dir: Path) -> Callable[..., dict[str, Any]]:
         agent = tool_context.agent_name
         sandbox = sandbox_for(agents_dir, agent)
 
-        def done(result: dict[str, Any]) -> dict[str, Any]:
-            log_event("tool_used", tool=NAME, agent=agent, path=path, status=result["status"])
-            return result
-
         try:
             target = sandbox.resolve(path)
         except SandboxError as exc:
-            return done(err(str(exc)))
+            return err(str(exc))
         if is_denied(target):
-            return done(err(f"reading {target.name} is not allowed"))
+            return err(f"reading {target.name} is not allowed")
         if not target.is_file():
-            return done(err(f"not a file: {path}"))
+            return err(f"not a file: {path}")
 
         cap = max(1, min(max_bytes, MAX_READ_BYTES))
         with target.open("rb") as handle:
@@ -69,7 +64,7 @@ def make_fs_read(agents_dir: Path) -> Callable[..., dict[str, Any]]:
         truncated = len(data) > cap
         data = data[:cap]
         if is_binary(data):
-            return done(err(f"file looks binary / not UTF-8: {path}"))
+            return err(f"file looks binary / not UTF-8: {path}")
 
         lines = data.decode("utf-8", errors="replace").splitlines()
         total = len(lines)
@@ -78,15 +73,13 @@ def make_fs_read(agents_dir: Path) -> Callable[..., dict[str, Any]]:
         selected = lines[start - 1 : stop] if start <= total else []
         if include_line_numbers:
             selected = [f"{start + i}\t{line}" for i, line in enumerate(selected)]
-        return done(
-            {
-                "status": "success",
-                "content": "\n".join(selected),
-                "total_lines": total,
-                "start_line": start,
-                "end_line": stop,
-                "truncated": truncated,
-            }
-        )
+        return {
+            "status": "success",
+            "content": "\n".join(selected),
+            "total_lines": total,
+            "start_line": start,
+            "end_line": stop,
+            "truncated": truncated,
+        }
 
     return fs_read

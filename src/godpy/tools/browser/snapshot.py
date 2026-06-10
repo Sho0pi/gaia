@@ -7,7 +7,6 @@ from typing import Any
 
 from google.adk.tools.tool_context import ToolContext
 
-from godpy.logs import log_event
 from godpy.tools.browser.base import BrowserSessionManager, aria_snapshot, err, parse_refs, truncate
 
 NAME = "browser_snapshot"
@@ -32,10 +31,6 @@ def make_browser_snapshot(
         """
         agent = tool_context.agent_name
 
-        def done(result: dict[str, Any]) -> dict[str, Any]:
-            log_event("tool_used", tool=NAME, agent=agent, status=result["status"])
-            return result
-
         try:
             session = await manager.get(agent)
             text = await aria_snapshot(session.page)
@@ -43,10 +38,8 @@ def make_browser_snapshot(
             snapshot, was_truncated = truncate(text)
             url = str(session.page.url)
         except Exception as exc:
-            return done(err(f"snapshot failed: {exc}"))
+            return err(f"snapshot failed: {exc}")
 
-        return done(
-            {"status": "success", "snapshot": snapshot, "url": url, "truncated": was_truncated}
-        )
+        return {"status": "success", "snapshot": snapshot, "url": url, "truncated": was_truncated}
 
     return browser_snapshot

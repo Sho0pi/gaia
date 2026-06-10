@@ -18,8 +18,6 @@ from google.adk.memory.memory_entry import MemoryEntry
 from google.adk.tools.tool_context import ToolContext
 from google.genai import types
 
-from godpy.logs import log_event
-
 #: Tool id, used by the registry and as the ADK tool name (matches the closure name).
 NAME = "remember"
 
@@ -46,21 +44,17 @@ def make_remember() -> Callable[..., Any]:
         """
         cleaned = fact.strip()
 
-        def done(result: dict[str, Any]) -> dict[str, Any]:
-            log_event("tool_used", tool=NAME, fact=cleaned, status=result["status"])
-            return result
-
         if not cleaned:
-            return done({"status": "error", "error_message": "fact must not be empty"})
+            return {"status": "error", "error_message": "fact must not be empty"}
 
         ctx = tool_context._invocation_context
         if ctx.memory_service is None:
-            return done({"status": "error", "error_message": "long-term memory is disabled"})
+            return {"status": "error", "error_message": "long-term memory is disabled"}
 
         entry = MemoryEntry(content=types.Content(parts=[types.Part(text=cleaned)]), author="user")
         await ctx.memory_service.add_memory(
             app_name=ctx.app_name, user_id=ctx.user_id, memories=[entry]
         )
-        return done({"status": "success", "fact": cleaned})
+        return {"status": "success", "fact": cleaned}
 
     return remember

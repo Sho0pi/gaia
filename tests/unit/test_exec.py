@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from pathlib import Path
 from typing import Any
 
@@ -172,16 +171,6 @@ async def test_workdir_escape_rejected() -> None:
     result = await tool("ls", workdir="../../etc", tool_context=_Ctx())
 
     assert result["status"] == "error" and "escapes" in result["error_message"]
-
-
-async def test_foreground_logs_one_event(caplog: pytest.LogCaptureFixture) -> None:
-    proc = _FakeProc(communicate_out=b"ok", returncode=0)
-    tool = shell.make_exec(ProcessManager(_spawner(proc)), _spawner(proc), security="off")
-
-    with caplog.at_level(logging.INFO, logger="godpy.events"):
-        await tool("echo ok", tool_context=_Ctx())
-
-    assert caplog.text.count("tool_used") == 1
 
 
 # --- background exec + poll / kill / list -----------------------------------------

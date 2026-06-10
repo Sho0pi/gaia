@@ -23,12 +23,15 @@ markdown). godpy follows ADK's function-tool best practices
 - **Return a dict, never raise to the model, never return a bare string.** Use
   `{"status": "success", ...}` or `{"status": "error", "error_message": "<human text>"}`.
   Validate inputs and return an error dict instead of raising.
-- **Log every call.** A tool call is user activity, so emit one structured event per
-  invocation with `log_event("tool_used", tool=NAME, status=result["status"], …)` from
-  `godpy.logs` (see `web_search.py` / `web_fetch.py`). Funnel every `return` through a
-  small `done(result)` closure so success *and* every error path log exactly once. Add a
-  couple of cheap context fields (e.g. `query`, `url`, result count) — **never secrets**
-  (redaction is best-effort).
+- **Don't log in the tool.** Logging is centralized: `ToolLoggingPlugin`
+  (`god/plugins.py`) emits one `tool_used` event for *every* tool call (ours, ADK
+  built-ins, MCP) via ADK's `after_tool_callback`. A tool just returns its dict — no
+  `done()` closure, no `log_event`, no `SELF_LOGGING_TOOLS`. The call's **arguments are
+  logged automatically** (sanitized: sensitive key names like `*_token`/`api_key`
+  filtered, values truncated); results are never logged, only `status`. Two duties:
+  give secret-bearing params key names the filter catches (`*_token`, `*_key`,
+  `passw*`…), and if a param's *name* can't signal sensitivity (free text that may
+  carry a password or private fact), add it to the plugin's `_DROP` map.
 
 ## Pluggable backend (when the tool wraps an external service)
 - Define a `SearchProvider`-style `Protocol` for the backend and a

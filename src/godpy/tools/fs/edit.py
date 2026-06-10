@@ -9,7 +9,6 @@ from typing import Any
 
 from google.adk.tools.tool_context import ToolContext
 
-from godpy.logs import log_event
 from godpy.tools.fs.base import SandboxError, err, is_binary, sandbox_for
 
 NAME = "fs_edit"
@@ -46,35 +45,29 @@ def make_fs_edit(agents_dir: Path) -> Callable[..., dict[str, Any]]:
         agent = tool_context.agent_name
         sandbox = sandbox_for(agents_dir, agent)
 
-        def done(result: dict[str, Any]) -> dict[str, Any]:
-            log_event("tool_used", tool=NAME, agent=agent, path=path, status=result["status"])
-            return result
-
         if not old_string:
-            return done(err("old_string must not be empty"))
+            return err("old_string must not be empty")
         try:
             target = sandbox.resolve(path)
         except SandboxError as exc:
-            return done(err(str(exc)))
+            return err(str(exc))
         if not target.is_file():
-            return done(err(f"not a file: {path}"))
+            return err(f"not a file: {path}")
 
         data = target.read_bytes()
         if is_binary(data):
-            return done(err(f"file looks binary / not UTF-8: {path}"))
+            return err(f"file looks binary / not UTF-8: {path}")
         text = data.decode("utf-8", errors="replace")
 
         count = text.count(old_string)
         if count != expected_replacements:
-            return done(
-                err(f"old_string matched {count} time(s), expected {expected_replacements}")
-            )
+            return err(f"old_string matched {count} time(s), expected {expected_replacements}")
         if dry_run:
-            return done({"status": "success", "replacements": count, "dry_run": True})
+            return {"status": "success", "replacements": count, "dry_run": True}
 
         if backup:
             shutil.copy2(target, target.with_name(target.name + ".bak"))
         target.write_text(text.replace(old_string, new_string), encoding="utf-8")
-        return done({"status": "success", "replacements": count, "dry_run": False})
+        return {"status": "success", "replacements": count, "dry_run": False}
 
     return fs_edit

@@ -7,7 +7,6 @@ from typing import Any
 
 from google.adk.tools.tool_context import ToolContext
 
-from godpy.logs import log_event
 from godpy.tools.browser.base import BrowserError, BrowserSessionManager, err, resolve_locator
 
 NAME = "browser_click"
@@ -31,19 +30,15 @@ def make_browser_click(manager: BrowserSessionManager) -> Callable[..., Awaitabl
         """
         agent = tool_context.agent_name
 
-        def done(result: dict[str, Any]) -> dict[str, Any]:
-            log_event("tool_used", tool=NAME, agent=agent, ref=ref, status=result["status"])
-            return result
-
         try:
             session = await manager.get(agent)
             locator = resolve_locator(session, ref.strip())
             await locator.click()
         except BrowserError as exc:
-            return done(err(str(exc)))
+            return err(str(exc))
         except Exception as exc:
-            return done(err(f"click failed: {exc}"))
+            return err(f"click failed: {exc}")
 
-        return done({"status": "success"})
+        return {"status": "success"}
 
     return browser_click
