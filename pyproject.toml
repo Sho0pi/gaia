@@ -50,6 +50,13 @@ llm = [
     "litellm>=1.0",
     "httpx>=0.27",
 ]
+# Headless browser automation (the browser_* tools). Playwright drives a real
+# Chromium over CDP; async-native, ships the accessibility snapshot we hand the
+# model. Lazy-imported, so god imports without it. After installing the group, run
+# `uv run playwright install chromium` once to fetch the browser binary.
+browser = [
+    "playwright>=1.40",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -95,3 +102,6 @@ ignore_missing_imports = true
 asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "-ra --cov=src/godpy"
+markers = [
+    "system: needs an external resource (model key, native lib, or browser binary)",
+]

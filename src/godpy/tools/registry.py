@@ -10,18 +10,22 @@ factory.
 
 from __future__ import annotations
 
+import importlib.util
+import logging
 import shutil
 from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Any, Union
 
 from godpy import constants
-from godpy.tools import fs
+from godpy.tools import browser, fs
 from godpy.tools.remember import NAME as REMEMBER
 from godpy.tools.remember import make_remember
 from godpy.tools.web_fetch import NAME as WEB_FETCH
 from godpy.tools.web_fetch import httpx_fetcher, make_web_fetch
 from godpy.tools.web_search import NAME as WEB_SEARCH
 from godpy.tools.web_search import get_search_provider, make_web_search
+
+logger = logging.getLogger(__name__)
 
 #: ADK's built-in memory-fetch tool id (registered as the agent-facing tool name).
 LOAD_MEMORY = "load_memory"
@@ -30,7 +34,21 @@ LOAD_MEMORY = "load_memory"
 #: from their ``done()`` closure. The central ToolLoggingPlugin skips these to avoid
 #: double-logging and covers everything else (ADK built-ins like ``load_memory``).
 SELF_LOGGING_TOOLS = frozenset(
-    {WEB_FETCH, WEB_SEARCH, REMEMBER, fs.READ, fs.WRITE, fs.EDIT, fs.GLOB, fs.GREP}
+    {
+        WEB_FETCH,
+        WEB_SEARCH,
+        REMEMBER,
+        fs.READ,
+        fs.WRITE,
+        fs.EDIT,
+        fs.GLOB,
+        fs.GREP,
+        browser.NAVIGATE,
+        browser.SNAPSHOT,
+        browser.CLICK,
+        browser.TYPE,
+        browser.SCREENSHOT,
+    }
 )
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -96,6 +114,40 @@ def _is_enabled(config: GodConfig | None, name: str) -> bool:
     return True if entry is None else entry.enabled
 
 
+#: The browser tools and their factory builders. They share one session manager so
+#: every tool acts on the same per-agent page.
+_BROWSER_TOOLS = (
+    (browser.NAVIGATE, browser.make_browser_navigate),
+    (browser.SNAPSHOT, browser.make_browser_snapshot),
+    (browser.CLICK, browser.make_browser_click),
+    (browser.TYPE, browser.make_browser_type),
+    (browser.SCREENSHOT, browser.make_browser_screenshot),
+)
+
+
+def _register_browser_tools(registry: ToolRegistry, config: GodConfig | None) -> None:
+    """Attach the browser tools, but only when Playwright is installed.
+
+    Like fs_glob/fs_grep need ``fd``/``rg``, the browser tools need the optional
+    ``browser`` dependency group. When it's absent we skip them and warn (rather than
+    crash), naming the remedy — so a soul's instruction that references the browser
+    just degrades instead of taking the whole app down.
+    """
+    enabled = [name for name, _ in _BROWSER_TOOLS if _is_enabled(config, name)]
+    if not enabled:
+        return
+    if importlib.util.find_spec("playwright") is None:
+        logger.warning(
+            "browser tools disabled: Playwright not installed (run 'uv sync --group "
+            "browser && uv run playwright install chromium')"
+        )
+        return
+    manager = browser.default_manager()
+    for name, make in _BROWSER_TOOLS:
+        if _is_enabled(config, name):
+            registry.register(name, make(manager))
+
+
 def default_registry(config: GodConfig | None = None) -> ToolRegistry:
     """Build the registry with all of godpy's built-in tools, configured from ``config``.
 
@@ -122,6 +174,8 @@ def default_registry(config: GodConfig | None = None) -> ToolRegistry:
         registry.register(fs.GLOB, fs.make_fs_glob(agents_dir))
     if _is_enabled(config, fs.GREP) and shutil.which("rg"):
         registry.register(fs.GREP, fs.make_fs_grep(agents_dir))
+
+    _register_browser_tools(registry, config)
 
     # Memory tools are only useful when long-term memory is on (mem0 wired into the
     # Runner); each is still individually gateable via tools.<name>.enabled.
