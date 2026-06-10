@@ -20,8 +20,18 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class OpenAIConfig(BaseModel):
+    """Provider-specific settings for OpenAI (applied when ``provider`` is ``openai``)."""
+
+    use_oauth: bool = Field(
+        default=False,
+        description="Sign in with ChatGPT (run 'python main.py auth openai') and use the "
+        "subscription, instead of an OPENAI_API_KEY.",
+    )
+
+
 class LLMConfig(BaseModel):
-    """Which model/provider backs an agent."""
+    """Which model/provider backs an agent, plus per-provider settings."""
 
     provider: str = Field(
         default="gemini",
@@ -31,10 +41,10 @@ class LLMConfig(BaseModel):
     model: str = Field(
         default="gemini-2.0-flash", description="Model id, e.g. gemini-2.5-flash or gpt-4o."
     )
-    use_oauth: bool = Field(
-        default=False,
-        description="For provider 'openai': sign in with ChatGPT (run 'python main.py auth "
-        "openai') and use the subscription, instead of an OPENAI_API_KEY.",
+    # Per-provider blocks. Each provider gets its own settings sub-block here as needed
+    # (openai today; anthropic/gemini/… can follow the same shape).
+    openai: OpenAIConfig = Field(
+        default_factory=OpenAIConfig, description="OpenAI-specific settings (e.g. use_oauth)."
     )
 
 

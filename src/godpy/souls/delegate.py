@@ -93,7 +93,7 @@ def make_delegate(god: God) -> Callable[..., Awaitable[dict[str, Any]]]:
 
         model = god.config.llm.model or god.settings.model
         provider = god.config.llm.provider
-        use_oauth = god.config.llm.use_oauth
+        use_oauth = god.config.llm.openai.use_oauth
         try:
             decision = await _decide(
                 model, provider, use_oauth, task, _existing_souls(god), tool_context
