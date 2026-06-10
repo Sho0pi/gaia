@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, ClassVar
 
 from godpy import constants
-from godpy.connectors.base import Handler
+from godpy.connectors.base import Handler, Reply, as_text
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from textual.app import App
@@ -80,8 +80,10 @@ class CLIConnector:
             async def _respond(self, text: str, loading: LoadingIndicator) -> None:
                 log = self.query_one("#log", VerticalScroll)
 
-                async def send(reply: str) -> None:
-                    await log.mount(Markdown(reply, classes="god bubble"))
+                async def send(reply: Reply) -> None:
+                    # The TUI shows media as its caption/path for now (inline image
+                    # rendering is a follow-up).
+                    await log.mount(Markdown(as_text(reply), classes="god bubble"))
                     log.scroll_end(animate=False)
 
                 try:
