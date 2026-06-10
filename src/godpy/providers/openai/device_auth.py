@@ -20,6 +20,10 @@ from godpy.providers.openai.store import Credentials
 if TYPE_CHECKING:  # pragma: no cover - typing only
     import httpx
 
+# The OAuth endpoints + client id are OpenAI's **Codex CLI** ones (the README in this folder
+# explains the full trick). CLIENT_ID is a *public* client identifier — not a secret — and we
+# reuse Codex's because the ChatGPT OAuth server + the Responses backend only grant subscription
+# tokens to that registered client. PKCE (not a client secret) is what secures the device flow.
 AUTH_BASE = "https://auth.openai.com"
 CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 USERCODE_URL = f"{AUTH_BASE}/api/accounts/deviceauth/usercode"
