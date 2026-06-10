@@ -26,11 +26,12 @@ markdown). godpy follows ADK's function-tool best practices
 - **Don't log in the tool.** Logging is centralized: `ToolLoggingPlugin`
   (`god/plugins.py`) emits one `tool_used` event for *every* tool call (ours, ADK
   built-ins, MCP) via ADK's `after_tool_callback`. A tool just returns its dict — no
-  `done()` closure, no `log_event`, no `SELF_LOGGING_TOOLS`. To attach rich context
-  fields (e.g. `query`, `url`, result count), add an entry to the plugin's
-  `_FIELD_POLICY` keyed by your tool id. That map is the single, auditable place secrets
-  are kept out of logs — **never** add a field that could carry a secret (a typed
-  password, a full shell command, a remembered fact); truncate or omit.
+  `done()` closure, no `log_event`, no `SELF_LOGGING_TOOLS`. The call's **arguments are
+  logged automatically** (sanitized: sensitive key names like `*_token`/`api_key`
+  filtered, values truncated); results are never logged, only `status`. Two duties:
+  give secret-bearing params key names the filter catches (`*_token`, `*_key`,
+  `passw*`…), and if a param's *name* can't signal sensitivity (free text that may
+  carry a password or private fact), add it to the plugin's `_DROP` map.
 
 ## Pluggable backend (when the tool wraps an external service)
 - Define a `SearchProvider`-style `Protocol` for the backend and a

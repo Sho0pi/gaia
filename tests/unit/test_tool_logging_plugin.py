@@ -32,7 +32,7 @@ async def test_logs_every_tool_with_base_fields(logged: list[tuple[str, dict[str
         tool=_tool("load_memory"), tool_args={}, tool_context=_ctx("god"), result={"memories": []}
     )
 
-    # Built-ins (no policy entry) get tool/agent/status — status defaults to 'ok'.
+    # Empty args ⇒ tool/agent/status only — status defaults to 'ok'.
     assert logged == [("tool_used", {"tool": "load_memory", "agent": "god", "status": "ok"})]
 
 
@@ -47,21 +47,49 @@ async def test_status_from_result_dict(logged: list[tuple[str, dict[str, Any]]])
     assert "agent" not in logged[0][1]  # omitted when unknown
 
 
-async def test_field_policy_adds_rich_fields(logged: list[tuple[str, dict[str, Any]]]) -> None:
+async def test_args_logged_for_any_tool(logged: list[tuple[str, dict[str, Any]]]) -> None:
+    plugin = ToolLoggingPlugin()
+
+    # An MCP/never-seen tool: its args are still captured — no per-tool code needed.
+    await plugin.after_tool_callback(
+        tool=_tool("github_search_repositories"),
+        tool_args={"query": "adk agents", "per_page": 5, "archived": False},
+        tool_context=_ctx("god"),
+        result={"status": "success"},
+    )
+
+    assert logged[0][1]["args"] == {"query": "adk agents", "per_page": 5, "archived": False}
+
+
+async def test_sensitive_key_names_are_filtered(logged: list[tuple[str, dict[str, Any]]]) -> None:
     plugin = ToolLoggingPlugin()
 
     await plugin.after_tool_callback(
-        tool=_tool("web_search"),
-        tool_args={"query": "  adk  "},
+        tool=_tool("some_api_tool"),
+        tool_args={
+            "url": "https://api.example.com",
+            "api_key": "sk-12345",
+            "password": "hunter2",
+            "authorization": "Bearer abc",
+            "client_secret": "shhh",
+        },
         tool_context=_ctx("god"),
-        result={"status": "success", "results": [{}, {}]},
+        result={"status": "success"},
     )
 
-    fields = logged[0][1]
-    assert fields["query"] == "adk" and fields["results"] == 2
+    args = logged[0][1]["args"]
+    assert args["url"] == "https://api.example.com"
+    assert args["api_key"] == "[filtered]"
+    assert args["password"] == "[filtered]"
+    assert args["authorization"] == "[filtered]"
+    assert args["client_secret"] == "[filtered]"
+    for secret in ("sk-12345", "hunter2", "Bearer abc", "shhh"):
+        assert secret not in str(logged)
 
 
-async def test_secret_args_are_never_logged(logged: list[tuple[str, dict[str, Any]]]) -> None:
+async def test_drop_list_filters_unnameable_secrets(
+    logged: list[tuple[str, dict[str, Any]]],
+) -> None:
     plugin = ToolLoggingPlugin()
 
     # browser_type: the typed text may be a password — must not appear.
@@ -71,27 +99,7 @@ async def test_secret_args_are_never_logged(logged: list[tuple[str, dict[str, An
         tool_context=_ctx("god"),
         result={"status": "success"},
     )
-    # exec: the command is truncated, never logged whole.
-    await plugin.after_tool_callback(
-        tool=_tool("exec"),
-        tool_args={"command": "x" * 500},
-        tool_context=_ctx("god"),
-        result={"status": "success", "exit_code": 0},
-    )
-
-    type_fields = logged[0][1]
-    assert type_fields["ref"] == "e2" and "text" not in type_fields
-    assert "hunter2-secret" not in str(logged)
-
-    exec_fields = logged[1][1]
-    assert len(exec_fields["command"]) <= 120 and exec_fields["exit_code"] == 0
-
-
-async def test_remember_logs_nothing_about_the_fact(
-    logged: list[tuple[str, dict[str, Any]]],
-) -> None:
-    plugin = ToolLoggingPlugin()
-
+    # remember: the fact is private by definition.
     await plugin.after_tool_callback(
         tool=_tool("remember"),
         tool_args={"fact": "the user's bank pin is 1234"},
@@ -99,54 +107,74 @@ async def test_remember_logs_nothing_about_the_fact(
         result={"status": "success"},
     )
 
+    type_args = logged[0][1]["args"]
+    assert type_args == {"ref": "e2", "text": "[filtered]", "submit": True}
+    assert "hunter2-secret" not in str(logged)
+    assert logged[1][1]["args"] == {"fact": "[filtered]"}
     assert "1234" not in str(logged)
-    assert set(logged[0][1]) == {"tool", "agent", "status"}
 
 
-async def test_non_dict_result_defaults_status_ok(logged: list[tuple[str, dict[str, Any]]]) -> None:
+async def test_long_values_are_truncated(logged: list[tuple[str, dict[str, Any]]]) -> None:
+    plugin = ToolLoggingPlugin()
+
+    await plugin.after_tool_callback(
+        tool=_tool("exec"),
+        tool_args={"command": "x" * 500, "background": False},
+        tool_context=_ctx("god"),
+        result={"status": "success"},
+    )
+
+    args = logged[0][1]["args"]
+    assert len(args["command"]) == 151 and args["command"].endswith("…")
+    assert args["background"] is False  # scalars pass through untouched
+    assert "x" * 500 not in str(logged)
+
+
+async def test_non_string_values_are_stringified(logged: list[tuple[str, dict[str, Any]]]) -> None:
+    plugin = ToolLoggingPlugin()
+
+    await plugin.after_tool_callback(
+        tool=_tool("fs_edit"),
+        tool_args={"edits": [{"line": 3, "text": "new"}], "count": 2, "ratio": 0.5, "opt": None},
+        tool_context=_ctx("god"),
+        result={"status": "success"},
+    )
+
+    args = logged[0][1]["args"]
+    assert isinstance(args["edits"], str)  # nested structures become (truncated) text
+    assert args["count"] == 2 and args["ratio"] == 0.5 and args["opt"] is None
+
+
+async def test_non_dict_result_and_args_never_break(
+    logged: list[tuple[str, dict[str, Any]]],
+) -> None:
     plugin = ToolLoggingPlugin()
 
     await plugin.after_tool_callback(
         tool=_tool("weird"),
-        tool_args={},
+        tool_args="not a dict",  # type: ignore[arg-type]
         tool_context=_ctx(),
         result="not a dict",  # type: ignore[arg-type]
     )
 
     assert logged[0][1]["status"] == "ok"
+    assert "args" not in logged[0][1]
 
 
-async def test_raising_policy_falls_back_to_base(
-    logged: list[tuple[str, dict[str, Any]]], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # A misbehaving policy must never break logging — fall back to base fields.
-    def boom(_a: dict[str, Any], _r: dict[str, Any]) -> dict[str, Any]:
-        raise RuntimeError("policy bug")
-
-    monkeypatch.setitem(
-        __import__("godpy.god.plugins", fromlist=["_FIELD_POLICY"])._FIELD_POLICY,
-        "web_search",
-        boom,
-    )
-    plugin = ToolLoggingPlugin()
-
-    await plugin.after_tool_callback(
-        tool=_tool("web_search"), tool_args={}, tool_context=_ctx("god"), result={"status": "ok"}
-    )
-
-    assert logged[0][1] == {"tool": "web_search", "agent": "god", "status": "ok"}
-
-
-async def test_logs_tool_error(logged: list[tuple[str, dict[str, Any]]]) -> None:
+async def test_logs_tool_error_with_args(logged: list[tuple[str, dict[str, Any]]]) -> None:
     plugin = ToolLoggingPlugin()
 
     await plugin.on_tool_error_callback(
-        tool=_tool("exec"), tool_args={}, tool_context=_ctx("god"), error=ValueError("nope")
+        tool=_tool("exec"),
+        tool_args={"command": "rm -rf /tmp/x", "api_key": "sk-9"},
+        tool_context=_ctx("god"),
+        error=ValueError("nope"),
     )
 
-    assert logged == [
-        ("tool_used", {"tool": "exec", "agent": "god", "status": "error", "error": "ValueError"})
-    ]
+    fields = logged[0][1]
+    assert fields["tool"] == "exec" and fields["status"] == "error"
+    assert fields["error"] == "ValueError"
+    assert fields["args"] == {"command": "rm -rf /tmp/x", "api_key": "[filtered]"}
 
 
 def test_no_tool_self_logs_anymore() -> None:
