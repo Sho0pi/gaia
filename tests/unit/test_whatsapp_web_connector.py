@@ -44,6 +44,7 @@ class _FakeClient:
         self.name = name
         self.handlers: dict[Any, Any] = {}
         self.replies: list[tuple[str, Any]] = []
+        self.images: list[tuple[Any, str, str | None]] = []
 
     def event(self, event_type: Any) -> Any:
         def register(fn: Any) -> Any:
@@ -54,6 +55,9 @@ class _FakeClient:
 
     async def reply_message(self, text: str, message: Any) -> None:
         self.replies.append((text, message))
+
+    async def send_image(self, to: Any, file: str, caption: str | None = None) -> None:
+        self.images.append((to, file, caption))
 
 
 @pytest.fixture
@@ -128,6 +132,20 @@ async def test_inbound_message_routed_to_handler(
 
     assert seen == ["ping"]
     assert client.replies == [("echo:ping", message), ("again", message)]
+
+
+async def test_media_reply_sent_as_image(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
+    from godpy.connectors.base import Media
+
+    async def handler(_text: str, send: Send) -> None:
+        await send("here:")  # a text reply, then the image
+        await send(Media(Path("/tmp/shot.png"), caption="screenshot"))
+
+    client = WhatsAppWebConnector(tmp_path / "wa.db", handler).build_client()
+    await client.handlers[fake_neonize["MessageEv"]](client, _msg(conversation="shot"))
+
+    assert [text for text, _ in client.replies] == ["here:"]  # text reply still sent
+    assert client.images == [("chat-jid", "/tmp/shot.png", "screenshot")]  # image via send_image
 
 
 async def test_empty_message_is_ignored(fake_neonize: dict[str, Any], tmp_path: Path) -> None:

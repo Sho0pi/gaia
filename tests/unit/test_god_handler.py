@@ -178,3 +178,49 @@ async def test_auto_ingest_off_never_buffers() -> None:
     assert handler._buffer == []
     await handler.flush()
     assert god.memory_service.calls == []
+
+
+def _screenshot_event(path: str, status: str = "success") -> SimpleNamespace:
+    """A fake event whose tool response is a browser_screenshot result."""
+    resp = SimpleNamespace(name="browser_screenshot", response={"status": status, "path": path})
+    return SimpleNamespace(
+        content=SimpleNamespace(parts=[SimpleNamespace(text=None)]),
+        is_final_response=lambda: False,
+        get_function_responses=lambda: [resp],
+    )
+
+
+async def _collect_replies(handler: GodHandler, text: str) -> list[Any]:
+    """Like _collect but keeps Reply objects (str or Media), not just text."""
+    sent: list[Any] = []
+
+    async def send(reply: Any) -> None:
+        sent.append(reply)
+
+    await handler(text, send)
+    return sent
+
+
+async def test_screenshot_result_is_sent_as_media() -> None:
+    from godpy.connectors.base import Media
+
+    handler = GodHandler(SimpleNamespace(memory_service=None))
+    handler._runner = _FakeRunner([_screenshot_event("/tmp/shot.png"), _event("here it is")])
+
+    sent = await _collect_replies(handler, "screenshot google")
+
+    assert "here it is" in sent  # the text reply still streams
+    media = [r for r in sent if isinstance(r, Media)]
+    assert len(media) == 1
+    assert str(media[0].path) == "/tmp/shot.png" and media[0].caption == "screenshot"
+
+
+async def test_failed_screenshot_is_not_sent() -> None:
+    from godpy.connectors.base import Media
+
+    handler = GodHandler(SimpleNamespace(memory_service=None))
+    handler._runner = _FakeRunner([_screenshot_event("/tmp/x.png", status="error"), _event("done")])
+
+    sent = await _collect_replies(handler, "shot")
+
+    assert not [r for r in sent if isinstance(r, Media)]
