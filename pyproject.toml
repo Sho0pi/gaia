@@ -57,6 +57,13 @@ llm = [
 browser = [
     "playwright>=1.40",
 ]
+# External MCP (Model Context Protocol) servers, consumed via ADK's McpToolset.
+# `mcp` is the Python SDK ADK's mcp_tool imports. Lazy-imported and only touched when
+# god.yaml configures an mcp.server, so god imports without it. stdio servers also need
+# their own runtime on PATH (e.g. `npx` for node servers).
+mcp = [
+    "mcp>=1.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -95,6 +102,7 @@ module = [
     "ddgs.*",
     "trafilatura.*",
     "binaryornot.*",
+    "mcp.*",
 ]
 ignore_missing_imports = true
 

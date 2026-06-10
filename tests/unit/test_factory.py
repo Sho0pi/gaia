@@ -170,6 +170,18 @@ def test_factory_resolves_and_passes_tools(
     assert kwargs["tools"] == [_search]
 
 
+def test_factory_appends_mcp_toolsets(
+    registry: SoulRegistry, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sentinel = object()  # stands in for an McpToolset
+    spec = AgentSpec(name="Soul", description="d", instruction="i", model="m")
+    factory = AgentFactory(registry, default_model="m", mcp_toolsets_provider=lambda: [sentinel])
+
+    kwargs = _capture_kwargs(factory, spec, monkeypatch)
+
+    assert sentinel in kwargs["tools"]  # type: ignore[operator]  # souls get the MCP toolsets too
+
+
 def test_factory_defaults_to_all_tools(
     registry: SoulRegistry, sample_spec: AgentSpec, monkeypatch: pytest.MonkeyPatch
 ) -> None:

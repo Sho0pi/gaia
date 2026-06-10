@@ -7,7 +7,7 @@ root-agent wiring is built lazily in :meth:`God.build_root_agent`.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from godpy.agents import AgentFactory, AgentSpec, SoulRegistry
 from godpy.communication import apply_communication_style
@@ -42,8 +42,22 @@ class God:
             skills_dir=self.skills_dir,
             default_communication_style=self.config.default_communication_style,
             tool_registry=self.tools,
+            mcp_toolsets_provider=self.mcp_toolsets,
         )
         self._memory_service: Mem0MemoryService | None = None
+        self._mcp: list[Any] | None = None
+
+    def mcp_toolsets(self) -> list[Any]:
+        """The configured external MCP toolsets, built once and shared by root + souls.
+
+        Built lazily (the ADK/``mcp`` imports are deferred) so constructing God needs
+        neither; ``[]`` when no MCP server is configured.
+        """
+        if self._mcp is None:
+            from godpy.mcp import build_mcp_toolsets
+
+            self._mcp = build_mcp_toolsets(self.config.mcp)
+        return self._mcp
 
     @property
     def config(self) -> GodConfig:
@@ -114,6 +128,6 @@ class God:
             ),
             description="Root orchestrator that routes tasks to specialized subagents.",
             instruction=instruction,
-            tools=[*self.tools.all(), make_delegate(self)],
+            tools=[*self.tools.all(), make_delegate(self), *self.mcp_toolsets()],
             sub_agents=sub_agents,
         )
