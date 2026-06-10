@@ -65,13 +65,15 @@ Always set reason to a short justification. Return only the structured decision.
 """
 
 
-def build_soul_smith(model: str) -> LlmAgent:
-    """Build the soul-smith ADK agent, bound to ``model`` for the forged specs."""
+def build_soul_smith(model: str, provider: str = "gemini") -> LlmAgent:
+    """Build the soul-smith ADK agent, bound to ``model``/``provider`` for the forged specs."""
     from google.adk.agents import LlmAgent
+
+    from godpy.models import resolve_model
 
     return LlmAgent(
         name=NAME,
-        model=model,
+        model=resolve_model(model, provider=provider),
         description="Designs or selects the right specialist soul for a task.",
         instruction=_INSTRUCTION.format(model=model),
         output_schema=SoulDecision,
