@@ -1,0 +1,47 @@
+"""The ``exec_kill`` tool: stop a background process."""
+
+from __future__ import annotations
+
+from collections.abc import Awaitable, Callable
+from typing import Any
+
+from google.adk.tools.tool_context import ToolContext
+
+from godpy.logs import log_event
+from godpy.tools.shell.base import ProcessManager, err
+
+NAME = "exec_kill"
+
+
+def make_exec_kill(manager: ProcessManager) -> Callable[..., Awaitable[dict[str, Any]]]:
+    """Return the ADK ``exec_kill`` tool bound to ``manager``."""
+
+    async def exec_kill(process_id: str, *, tool_context: ToolContext) -> dict[str, Any]:
+        """Stop a background process you started with exec(..., background=True).
+
+        Args:
+            process_id (str): The id returned by the background exec.
+
+        Returns:
+            dict: On success {'status': 'success', 'process_id': str, 'exit_code':
+            int|None}. On failure {'status': 'error', 'error_message': str}.
+        """
+        agent = tool_context.agent_name
+
+        def done(result: dict[str, Any]) -> dict[str, Any]:
+            log_event(
+                "tool_used", tool=NAME, agent=agent, process=process_id, status=result["status"]
+            )
+            return result
+
+        managed = manager.get(agent, process_id.strip())
+        if managed is None:
+            return done(err(f"unknown process {process_id!r} (it may belong to another agent)"))
+
+        try:
+            exit_code = await manager.kill(managed)
+        except Exception as exc:
+            return done(err(f"failed to stop process: {exc}"))
+        return done({"status": "success", "process_id": managed.process_id, "exit_code": exit_code})
+
+    return exec_kill
