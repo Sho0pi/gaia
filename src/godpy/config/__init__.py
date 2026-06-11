@@ -12,6 +12,7 @@ module became a package.
 
 from godpy.config.scaffold import render_default_yaml, write_default_config
 from godpy.config.schema import (
+    BACKGROUND_CONNECTORS,
     BrowserConfig,
     CLIConnectorConfig,
     CommandConfig,
@@ -33,6 +34,7 @@ from godpy.config.settings import Settings, configure_adk_env, get_settings
 from godpy.config.store import ConfigSupplier
 
 __all__ = [
+    "BACKGROUND_CONNECTORS",
     "BrowserConfig",
     "CLIConnectorConfig",
     "CommandConfig",

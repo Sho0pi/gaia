@@ -4,7 +4,7 @@ Lazy-import rule (repo convention): only typer + stdlib (+ cli siblings) at modu
 level. Everything heavy (``godpy.app`` → God → ADK/connectors) is imported inside
 command bodies so ``godpy --help`` never pays for it.
 
-Exit codes: 0 ok · 1 runtime error · 2 usage (click default).
+Exit codes: 0 ok · 1 runtime error · 2 usage (click default) · 3 daemon state.
 """
 
 from __future__ import annotations
@@ -83,14 +83,6 @@ def root(
 def chat(ctx: typer.Context) -> None:
     """Chat with God in the local terminal TUI."""
     _chat(state(ctx))
-
-
-@app.command()
-def serve(ctx: typer.Context) -> None:
-    """Run the connectors enabled in god.yaml in the foreground."""
-    from godpy.app import run
-
-    run(env_file=state(ctx).env_file)
 
 
 @app.command()

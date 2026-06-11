@@ -38,6 +38,19 @@ def test_cli_with_background_is_rejected() -> None:
         plan_launch(config)
 
 
+@pytest.mark.parametrize(
+    ("enabled", "expected"),
+    [
+        ({}, []),
+        ({"cli": True}, []),  # cli is foreground-only: silently excluded in daemon mode
+        ({"cli": True, "telegram": True}, ["telegram"]),  # no ValueError in daemon mode
+        ({"whatsapp": True, "telegram": True}, ["whatsapp", "telegram"]),
+    ],
+)
+def test_plan_launch_daemon_mode(enabled: dict[str, bool], expected: list[str]) -> None:
+    assert plan_launch(_config(**enabled), daemon=True) == expected
+
+
 class _FakeConnector:
     """Stands in for CLIConnector: accepts the handler, run() returns immediately."""
 

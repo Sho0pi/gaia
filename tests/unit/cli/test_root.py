@@ -23,7 +23,8 @@ runner = CliRunner()
 def test_help_lists_command_tree() -> None:
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
-    for command in ("chat", "serve", "dev", "llm", "version"):
+    commands = ("chat", "dev", "llm", "version", "serve", "start", "stop", "restart", "status")
+    for command in commands:
         assert command in result.output
 
 
@@ -69,17 +70,6 @@ def test_chat_forwards_env_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     result = runner.invoke(app, ["--env-file", str(env), "chat"])
     assert result.exit_code == 0
     assert called == {"env_file": env}
-
-
-def test_serve_calls_run(monkeypatch: pytest.MonkeyPatch) -> None:
-    called: dict[str, Any] = {}
-    monkeypatch.setattr(
-        "godpy.app.run",
-        lambda settings=None, *, env_file=None: called.update(env_file=env_file),
-    )
-    result = runner.invoke(app, ["serve"])
-    assert result.exit_code == 0
-    assert called == {"env_file": None}
 
 
 def test_dev_forwards_host_port(monkeypatch: pytest.MonkeyPatch) -> None:
