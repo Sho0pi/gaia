@@ -6,6 +6,7 @@ and reuse logic stay unit-testable without a configured model backend.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -34,6 +35,7 @@ class AgentFactory:
         skills_dir: Path | None = None,
         default_communication_style: str = DEFAULT_COMMUNICATION_STYLE,
         tool_registry: ToolRegistry | None = None,
+        mcp_toolsets_provider: Callable[[], list[Any]] | None = None,
     ) -> None:
         self._registry = registry
         self._default_model = default_model
@@ -42,6 +44,9 @@ class AgentFactory:
         self._skills_dir = skills_dir
         self._default_communication_style = default_communication_style
         self._tool_registry = tool_registry
+        # Built lazily at agent-build time (where ADK is already imported); souls get the
+        # same configured MCP toolsets as the root agent. Default: none.
+        self._mcp_toolsets_provider = mcp_toolsets_provider or (lambda: [])
 
     def create_or_reuse(self, spec: AgentSpec) -> LlmAgent:
         """Return an ADK agent for ``spec``, loading from the registry if present.
@@ -71,6 +76,9 @@ class AgentFactory:
             tools = (
                 self._tool_registry.resolve(spec.tools) if spec.tools else self._tool_registry.all()
             )
+        # Configured external MCP servers attach to every soul too (not in the registry,
+        # so AgentSpec.tools can't pin them — they're all-or-nothing per server config).
+        tools = [*tools, *self._mcp_toolsets_provider()]
 
         return LlmAgent(
             name=spec.key,

@@ -19,6 +19,7 @@ from godpy.tools import default_registry
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from google.adk.agents import LlmAgent
+    from google.adk.tools.mcp_tool import McpToolset
 
     from godpy.config import GodConfig
     from godpy.memory import Mem0MemoryService
@@ -42,8 +43,29 @@ class God:
             skills_dir=self.skills_dir,
             default_communication_style=self.config.default_communication_style,
             tool_registry=self.tools,
+            mcp_toolsets_provider=self.mcp_toolsets,
         )
         self._memory_service: Mem0MemoryService | None = None
+        self._mcp: list[McpToolset] | None = None
+
+    def mcp_toolsets(self) -> list[McpToolset]:
+        """The configured external MCP toolsets, built once and shared by root + souls.
+
+        Built lazily (the ADK/``mcp`` imports are deferred) so constructing God needs
+        neither; ``[]`` when no MCP server is configured.
+        """
+        if self._mcp is None:
+            from godpy.mcp import build_mcp_toolsets
+
+            self._mcp = build_mcp_toolsets(self.config.mcp)
+        return self._mcp
+
+    async def close(self) -> None:
+        """Shut down any open MCP toolsets (terminates stdio child processes)."""
+        if self._mcp:
+            from godpy.mcp import close_mcp_toolsets
+
+            await close_mcp_toolsets(self._mcp)
 
     @property
     def config(self) -> GodConfig:
@@ -114,6 +136,6 @@ class God:
             ),
             description="Root orchestrator that routes tasks to specialized subagents.",
             instruction=instruction,
-            tools=[*self.tools.all(), make_delegate(self)],
+            tools=[*self.tools.all(), make_delegate(self), *self.mcp_toolsets()],
             sub_agents=sub_agents,
         )

@@ -122,6 +122,7 @@ def run(settings: Settings | None = None, *, env_file: Path | None = None) -> No
 
     if selected == ["cli"]:
         CLIConnector(build_handler(god)).run()
+        asyncio.run(god.close())
         return
 
     asyncio.run(_run_background(settings, god, selected))
@@ -164,3 +165,4 @@ async def _run_background(settings: Settings, god: God, selected: list[str]) -> 
         flush = getattr(handler, "flush", None)
         if flush is not None:
             await flush()
+        await god.close()

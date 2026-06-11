@@ -15,7 +15,7 @@ so future work has a stable shape to build on.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -45,6 +45,56 @@ class LLMConfig(BaseModel):
     # (openai today; anthropic/gemini/… can follow the same shape).
     openai: OpenAIConfig = Field(
         default_factory=OpenAIConfig, description="OpenAI-specific settings (e.g. use_oauth)."
+    )
+
+
+class MCPServerConfig(BaseModel):
+    """One external MCP (Model Context Protocol) server to attach as tools.
+
+    **Trust:** an MCP server is third-party code — a ``stdio`` server spawns a local
+    process (e.g. via ``npx``). Only configure servers you trust. **Secrets:** never put
+    api keys in this file; list the env var names in ``env_passthrough`` and export them
+    in the environment instead (they're copied into the server's process env).
+    """
+
+    name: str = Field(description="A short id for this server (used in logs / tool prefix).")
+    enabled: bool = Field(default=True, description="Attach this server's tools.")
+    transport: Literal["stdio", "sse", "http"] = Field(
+        default="stdio", description="How to reach the server: stdio (local process), sse, or http."
+    )
+    # stdio transport
+    command: str | None = Field(default=None, description="stdio: the executable (e.g. 'npx').")
+    args: list[str] = Field(default_factory=list, description="stdio: arguments to the command.")
+    env: dict[str, str] = Field(
+        default_factory=dict, description="stdio: literal (NON-secret) env vars for the server."
+    )
+    env_passthrough: list[str] = Field(
+        default_factory=list,
+        description="stdio: env var names to copy from godpy's environment into the server "
+        "(keep secrets like API tokens here, not in 'env').",
+    )
+    # sse / http transports
+    url: str | None = Field(default=None, description="sse/http: the server URL.")
+    headers: dict[str, str] = Field(
+        default_factory=dict, description="sse/http: request headers (e.g. an auth header)."
+    )
+    # selection
+    tool_filter: list[str] = Field(
+        default_factory=list,
+        description="Only load these tool names from the server; empty = all of them. Use this "
+        "to keep a chatty server from bloating the model's tool list.",
+    )
+    tool_prefix: str | None = Field(
+        default=None, description="Prefix the server's tool names (avoid collisions / readability)."
+    )
+
+
+class MCPConfig(BaseModel):
+    """External MCP servers whose tools are attached to God and its souls."""
+
+    servers: list[MCPServerConfig] = Field(
+        default_factory=list,
+        description="MCP servers to attach. Empty = no MCP (needs the 'mcp' dep group when set).",
     )
 
 
@@ -216,6 +266,7 @@ class GodConfig(BaseModel):
     )
     connectors: ConnectorsConfig = Field(default_factory=ConnectorsConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
+    mcp: MCPConfig = Field(default_factory=MCPConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     default_communication_style: str = Field(
         default="human", description="Fallback voice for agents (human/caveman/ai)."
