@@ -60,7 +60,10 @@ browser = [
 # External MCP (Model Context Protocol) servers, consumed via ADK's McpToolset.
 # `mcp` is the Python SDK ADK's mcp_tool imports. Lazy-imported and only touched when
 # god.yaml configures an mcp.server, so god imports without it. stdio servers also need
-# their own runtime on PATH (e.g. `npx` for node servers).
+# their own runtime on PATH (e.g. `bunx` for node servers). NOTE: the DEFAULT browser
+# backend (browser.backend: mcp) is Microsoft's playwright-mcp launched via `bunx`, so it
+# needs this group AND bun on PATH (`brew install bun` / https://bun.sh). Without either,
+# the backend falls back to the native browser tools (the 'browser' group).
 mcp = [
     "mcp>=1.0",
 ]

@@ -10,6 +10,7 @@ through ``GodConfig`` to guarantee it stays valid and in sync.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -21,6 +22,20 @@ _HEADER = """\
 # Edit and save; changes are picked up without a restart.
 # Secrets (tokens, api keys) belong in env / .env, NOT here.
 """
+
+#: A string safe to emit as a bare YAML scalar: starts alphanumeric, then word chars /
+#: space / dot / dash / slash. Anything else (e.g. '@playwright/mcp@latest') is quoted.
+_PLAIN_SAFE = re.compile(r"^[A-Za-z0-9][\w .\-/]*$")
+#: Bare words YAML would read as a bool/null rather than the literal string.
+_YAML_RESERVED = {"true", "false", "null", "yes", "no", "on", "off", "none", "~"}
+
+
+def _yaml_str(value: str) -> str:
+    """Render a string as a bare scalar when safe, else a double-quoted one."""
+    if value and _PLAIN_SAFE.match(value) and value.lower() not in _YAML_RESERVED:
+        return value
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
 
 
 def _scalar(value: object) -> str:
@@ -35,6 +50,8 @@ def _scalar(value: object) -> str:
         return "{}"
     if isinstance(value, Path):
         return f'"{value}"' if str(value) else '""'
+    if isinstance(value, str):
+        return _yaml_str(value)
     return str(value)
 
 

@@ -17,7 +17,9 @@ import importlib.util
 import logging
 import os
 import shutil
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
+
+from godpy.config.schema import MCPServerConfig
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from google.adk.tools.mcp_tool import (
@@ -27,7 +29,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
         StreamableHTTPConnectionParams,
     )
 
-    from godpy.config.schema import MCPConfig, MCPServerConfig
+    from godpy.config.schema import BrowserConfig, MCPConfig
 
 logger = logging.getLogger(__name__)
 
@@ -132,3 +134,50 @@ async def close_mcp_toolsets(toolsets: list[McpToolset]) -> None:
             await close()
         except Exception:  # pragma: no cover - shutdown best-effort
             logger.debug("mcp toolset close failed", exc_info=True)
+
+
+# --- Browser backend: Microsoft playwright-mcp as a synthesized MCP server ---------------
+
+
+def resolve_browser_backend(config: BrowserConfig) -> Literal["native", "mcp"]:
+    """The effective browser backend: ``mcp`` only if requested AND its runtime is on PATH.
+
+    Single source of truth consulted by both the tool registry (native-tool gating) and
+    :meth:`God.mcp_toolsets` (playwright-mcp attach), so the two never double-register the
+    browser. When ``backend == "mcp"`` but the runtime is missing, warns once and falls
+    back to ``native`` — the same graceful degradation as the fd/rg/playwright gates.
+    """
+    if config.backend != "mcp":
+        return "native"
+    if shutil.which(config.runtime) is None:
+        logger.warning(
+            "browser backend 'mcp' requested but %r is not on PATH; falling back to the "
+            "native browser tools (install bun: https://bun.sh)",
+            config.runtime,
+        )
+        return "native"
+    return "mcp"
+
+
+def playwright_mcp_server(config: BrowserConfig) -> MCPServerConfig:
+    """Synthesize the :class:`MCPServerConfig` for Microsoft's playwright-mcp.
+
+    Runs over stdio with the configured runtime (``bunx``). No ``tool_prefix``: the
+    server's tools are already named ``browser_*`` (the design godpy's native bundle
+    ports), so a prefix would only double it up. The caller attaches this only when
+    :func:`resolve_browser_backend` returns ``"mcp"``.
+    """
+    args = [config.package, "--browser", config.browser]
+    if config.headless:
+        args.append("--headless")
+    if config.isolated:
+        args.append("--isolated")
+    if config.allowed_origins:
+        args += ["--allowed-origins", ";".join(config.allowed_origins)]
+    return MCPServerConfig(
+        name="playwright",
+        transport="stdio",
+        command=config.runtime,
+        args=args,
+        tool_filter=config.tool_filter,
+    )
