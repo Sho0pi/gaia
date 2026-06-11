@@ -20,7 +20,13 @@ dependencies = [
     "pyyaml>=6.0",
     "textual>=8.2.7",
     "python-json-logger>=4.1.0",
+    # The godpy console command (Typer = click + rich help + shell completion).
+    "typer>=0.12",
+    "rich>=13.0",
 ]
+
+[project.scripts]
+godpy = "godpy.cli:main"
 
 [dependency-groups]
 dev = [

@@ -1,64 +1,56 @@
-"""Entry point: launch godpy.
+"""DEPRECATED entry point — use the ``godpy`` command instead (``uv run godpy --help``).
 
-Run with ``uv run python main.py``:
-
-* ``python main.py``                    -> local CLI/TUI chat (default).
-* ``python main.py whatsapp``           -> WhatsApp backend (QR on first run, see app.run).
-* ``python main.py dev``                -> ADK web UI on God (see tool calls + LLM requests).
-* ``python main.py auth openai``        -> sign in with ChatGPT (device-code OAuth).
-* ``python main.py --env-file ./.env``  -> read secrets from a specific .env file.
-
-Secrets are read from ``~/.godpy/.env`` by default; ``--env-file`` overrides that
-(e.g. point at a repo-local ``.env`` during development). The CLI needs
-``GEMINI_API_KEY`` to get real answers from God.
+Maps the old argparse modes onto the new Typer CLI and delegates:
+``cli`` → ``chat``, ``whatsapp`` → ``serve``, ``dev`` → ``dev`` (with --host/--port),
+``auth <provider>`` → ``llm auth <provider>``; ``--env-file`` is forwarded.
 """
 
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
-from godpy.app import run, run_auth, run_cli, run_dev
+_DEPRECATION = (
+    "main.py is deprecated; use the `godpy` command instead (uv run godpy --help). "
+    "This shim will be removed in a future release."
+)
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="godpy", description="Launch godpy (deprecated shim).")
+    parser.add_argument(
+        "mode", nargs="?", default="cli", choices=("cli", "whatsapp", "dev", "auth")
+    )
+    parser.add_argument("provider", nargs="?", default=None)
+    parser.add_argument("--env-file", type=Path, default=None)
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8000)
+    return parser
+
+
+def translate(argv: list[str]) -> list[str]:
+    """Map old ``main.py`` argv onto the new ``godpy`` CLI argv."""
+    args = _build_parser().parse_args(argv)
+    new: list[str] = []
+    if args.env_file is not None:  # global flag: must precede the subcommand
+        new += ["--env-file", str(args.env_file)]
+    if args.mode == "whatsapp":
+        new.append("serve")
+    elif args.mode == "dev":
+        new += ["dev", "--host", args.host, "--port", str(args.port)]
+    elif args.mode == "auth":
+        new += ["llm", "auth", args.provider or "openai"]
+    else:
+        new.append("chat")
+    return new
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="godpy", description="Launch godpy.")
-    parser.add_argument(
-        "mode",
-        nargs="?",
-        default="cli",
-        choices=("cli", "whatsapp", "dev", "auth"),
-        help="cli (default) terminal TUI, whatsapp backend, dev for the ADK web UI, "
-        "or auth to sign in to a provider.",
-    )
-    parser.add_argument(
-        "provider",
-        nargs="?",
-        default=None,
-        help="auth mode: the provider to sign in to (e.g. openai).",
-    )
-    parser.add_argument(
-        "--env-file",
-        type=Path,
-        default=None,
-        help="Path to a .env file with secrets (default: ~/.godpy/.env).",
-    )
-    parser.add_argument(
-        "--host", default="127.0.0.1", help="dev mode: web UI host (default: 127.0.0.1)."
-    )
-    parser.add_argument(
-        "--port", type=int, default=8000, help="dev mode: web UI port (default: 8000)."
-    )
-    args = parser.parse_args()
+    print(_DEPRECATION, file=sys.stderr)
+    from godpy.cli import main as cli_main
 
-    if args.mode == "whatsapp":
-        run(env_file=args.env_file)
-    elif args.mode == "dev":
-        run_dev(env_file=args.env_file, host=args.host, port=args.port)
-    elif args.mode == "auth":
-        run_auth(args.provider or "openai", env_file=args.env_file)
-    else:
-        run_cli(env_file=args.env_file)
+    cli_main(translate(sys.argv[1:]))
 
 
 if __name__ == "__main__":
