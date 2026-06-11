@@ -5,6 +5,11 @@ simple things itself and delegates complex tasks to **souls** — specialist
 subagents it forges once, **stores, and reuses** (never recreate). Two-tier
 memory: short-term (ADK session) + long-term (mem0, grows day by day).
 
+> **Renamed `godpy`/`God` → `gaia`/`Gaia` (PR #111).** Older issues, PRs, commit
+> messages and branch names still say "godpy" or "God" — they mean this project /
+> the root agent. The package is `gaia`, the CLI is `gaia`, config is `~/.gaia/gaia.yaml`,
+> env vars are `GAIA_*`, and the root orchestrator lives in `src/gaia/core/` (class `Gaia`).
+
 ## Core rule: reuse, don't rebuild
 Before writing anything custom, check for a proven library (many stars / used by
 similar agent projects / official). Prefer integrating over reinventing. When
