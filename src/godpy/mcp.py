@@ -17,7 +17,7 @@ import importlib.util
 import logging
 import os
 import shutil
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from google.adk.tools.mcp_tool import (
@@ -44,7 +44,7 @@ def _stdio_env(server: MCPServerConfig) -> dict[str, str]:
 
 def server_to_params(
     server: MCPServerConfig,
-) -> Union[StdioConnectionParams, SseConnectionParams, StreamableHTTPConnectionParams]:
+) -> StdioConnectionParams | SseConnectionParams | StreamableHTTPConnectionParams:
     """Map a :class:`MCPServerConfig` to the matching ADK connection-params object.
 
     Imports ADK's mcp_tool lazily (it needs the ``mcp`` package). Raises ``ValueError``
