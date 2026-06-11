@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from godpy.config import GodConfig, MemoryConfig, ToolConfig
+from godpy.config import BrowserConfig, GodConfig, MemoryConfig, ToolConfig
 from godpy.tools import ToolRegistry, default_registry
 
 
@@ -80,6 +80,35 @@ def test_fs_glob_grep_absent_without_binaries(monkeypatch: pytest.MonkeyPatch) -
     assert "fs_glob" not in names
     assert "fs_grep" not in names
     assert "fs_read" in names  # pure-python fs tools unaffected
+
+
+def test_native_browser_registered_when_backend_native() -> None:
+    pytest.importorskip("playwright", reason="native browser tools need the 'browser' group")
+    # Backend is explicitly native, so the native tools register regardless of bunx.
+    config = GodConfig(browser=BrowserConfig(backend="native"))
+
+    assert "browser_navigate" in default_registry(config).names()
+
+
+def test_native_browser_skipped_when_backend_mcp_and_runtime_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # resolve_browser_backend reads godpy.mcp.shutil.which — pretend bunx is on PATH.
+    monkeypatch.setattr("godpy.mcp.shutil.which", lambda cmd: "/usr/bin/bunx")
+    config = GodConfig(browser=BrowserConfig(backend="mcp"))  # the default
+
+    # Provided by playwright-mcp (God.mcp_toolsets), not the native registry.
+    assert "browser_navigate" not in default_registry(config).names()
+
+
+def test_native_browser_used_when_mcp_requested_but_runtime_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("playwright", reason="native browser tools need the 'browser' group")
+    monkeypatch.setattr("godpy.mcp.shutil.which", lambda cmd: None)  # no bunx → fall back
+    config = GodConfig(browser=BrowserConfig(backend="mcp"))
+
+    assert "browser_navigate" in default_registry(config).names()  # graceful native fallback
 
 
 def test_web_search_not_installed_without_engine() -> None:

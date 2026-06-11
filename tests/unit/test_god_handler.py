@@ -8,9 +8,13 @@ dep (via google-adk) and constructs offline, so no key is needed.
 
 from __future__ import annotations
 
+import base64
 from collections.abc import AsyncIterator
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+
+import pytest
 
 from godpy.god.handler import GodHandler
 
@@ -220,6 +224,74 @@ async def test_failed_screenshot_is_not_sent() -> None:
 
     handler = GodHandler(SimpleNamespace(memory_service=None))
     handler._runner = _FakeRunner([_screenshot_event("/tmp/x.png", status="error"), _event("done")])
+
+    sent = await _collect_replies(handler, "shot")
+
+    assert not [r for r in sent if isinstance(r, Media)]
+
+
+def _mcp_screenshot_event(content: list[dict[str, Any]], is_error: bool = False) -> SimpleNamespace:
+    """A fake event whose tool response is a playwright-mcp browser_take_screenshot result."""
+    resp = SimpleNamespace(
+        name="browser_take_screenshot", response={"content": content, "isError": is_error}
+    )
+    return SimpleNamespace(
+        content=SimpleNamespace(parts=[SimpleNamespace(text=None)]),
+        is_final_response=lambda: False,
+        get_function_responses=lambda: [resp],
+    )
+
+
+async def test_mcp_screenshot_path_in_text_is_sent_as_media(tmp_path: Path) -> None:
+    from godpy.connectors.base import Media
+
+    shot = tmp_path / "page-123.png"
+    shot.write_bytes(b"\x89PNG fake")
+    handler = GodHandler(SimpleNamespace(memory_service=None))
+    handler._runner = _FakeRunner(
+        [
+            _mcp_screenshot_event([{"type": "text", "text": f"Saved screenshot as {shot}"}]),
+            _event("done"),
+        ]
+    )
+
+    sent = await _collect_replies(handler, "shot")
+
+    media = [r for r in sent if isinstance(r, Media)]
+    assert len(media) == 1
+    assert media[0].path == shot
+
+
+async def test_mcp_screenshot_inline_image_is_written_and_sent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from godpy.connectors.base import Media
+
+    monkeypatch.setattr("godpy.mcp.browser_output_dir", lambda: tmp_path)
+    data = base64.b64encode(b"\x89PNG inline").decode()
+    handler = GodHandler(SimpleNamespace(memory_service=None))
+    handler._runner = _FakeRunner(
+        [
+            _mcp_screenshot_event([{"type": "image", "mimeType": "image/png", "data": data}]),
+            _event("done"),
+        ]
+    )
+
+    sent = await _collect_replies(handler, "shot")
+
+    media = [r for r in sent if isinstance(r, Media)]
+    assert len(media) == 1
+    assert media[0].path.parent == tmp_path
+    assert media[0].path.read_bytes() == b"\x89PNG inline"
+
+
+async def test_mcp_screenshot_error_is_not_sent() -> None:
+    from godpy.connectors.base import Media
+
+    handler = GodHandler(SimpleNamespace(memory_service=None))
+    handler._runner = _FakeRunner(
+        [_mcp_screenshot_event([{"type": "text", "text": "boom"}], is_error=True), _event("done")]
+    )
 
     sent = await _collect_replies(handler, "shot")
 

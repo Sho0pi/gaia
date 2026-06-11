@@ -98,6 +98,69 @@ class MCPConfig(BaseModel):
     )
 
 
+class BrowserConfig(BaseModel):
+    """How God drives a browser: Microsoft's playwright-mcp (default) or the native tools.
+
+    The default ``mcp`` backend hands the browser to Microsoft's playwright-mcp server
+    (launched via ``bunx``), exposing its full tool surface with no godpy code to keep.
+    Its tradeoffs vs ``native`` (so the choice is informed):
+
+    * **Runtime**: launched with ``bunx @playwright/mcp`` — needs bun on PATH. When the
+      runtime is missing the backend falls back to ``native`` (with a warning) instead
+      of crashing, like the fd/rg/playwright gates.
+    * **URL safety**: ``native`` runs godpy's per-request SSRF guard (``validate_url``).
+      ``mcp`` only enforces ``allowed_origins`` coarsely at the server; empty means **no
+      restriction** (the browser can reach internal IPs). This is NOT equivalent to the
+      native guard's per-redirect private-IP blocking.
+    * **Isolation**: playwright-mcp drives ONE shared browser for the whole process; all
+      souls share its tabs/cookies (``native`` gives each agent its own page).
+      ``isolated`` keeps that profile in memory only.
+    * **Observability**: ``mcp`` tool calls are logged only by ADK's generic
+      after_tool_callback plugin, not godpy's per-tool ``done()``/``tool_used`` path.
+    * **Hot-reload**: the backend and flags are read once at startup; editing them in
+      god.yaml takes effect on the next restart.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    backend: Literal["native", "mcp"] = Field(
+        default="mcp",
+        description="Browser backend: 'mcp' (Microsoft playwright-mcp via bunx, default) "
+        "or 'native' (godpy's built-in browser_* Playwright tools). 'mcp' falls back to "
+        "'native' when the runtime isn't on PATH.",
+    )
+    runtime: str = Field(
+        default="bunx",
+        description="Executable that runs playwright-mcp (mcp backend). Default 'bunx' "
+        "(bun). Must be on PATH or the backend falls back to native.",
+    )
+    package: str = Field(
+        default="@playwright/mcp@latest",
+        description="The playwright-mcp package spec passed to the runtime.",
+    )
+    headless: bool = Field(default=True, description="mcp backend: run the browser headless.")
+    isolated: bool = Field(
+        default=True,
+        description="mcp backend: keep the browser profile in memory (no on-disk profile).",
+    )
+    browser: str = Field(
+        default="chrome",
+        description="mcp backend: which engine playwright-mcp drives "
+        "(chrome/firefox/webkit/msedge).",
+    )
+    allowed_origins: list[str] = Field(
+        default_factory=list,
+        description="mcp backend: restrict navigation to these origins (semicolon-joined "
+        "and passed to --allowed-origins). Empty = no restriction (note: COARSER than the "
+        "native SSRF guard).",
+    )
+    tool_filter: list[str] = Field(
+        default_factory=list,
+        description="mcp backend: only load these playwright-mcp tool names; empty = all "
+        "(~25-60). Trim to keep the model's tool list lean.",
+    )
+
+
 class GroupTrigger(BaseModel):
     """When God should respond inside a group chat."""
 
@@ -267,6 +330,7 @@ class GodConfig(BaseModel):
     connectors: ConnectorsConfig = Field(default_factory=ConnectorsConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
+    browser: BrowserConfig = Field(default_factory=BrowserConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     default_communication_style: str = Field(
         default="human", description="Fallback voice for agents (human/caveman/ai)."

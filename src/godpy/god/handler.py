@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 import time
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from godpy import constants
@@ -111,32 +110,12 @@ class GodHandler:
         await self._buffer_turn(turn_events)
 
     async def _emit_screenshots(self, events: list[Any], send: Send) -> None:
-        """Deliver any screenshots taken this turn as media replies.
+        """Deliver any screenshots taken this turn as media replies (see god.screenshots)."""
+        from godpy.god.screenshots import media_for_screenshots
 
-        The model only streams text; a ``browser_screenshot`` call writes a PNG and
-        returns its path in the tool result. We scan this turn's tool responses for
-        those paths and push each file through ``send`` as a :class:`Media` reply, so a
-        connector that supports images (WhatsApp) delivers the actual picture. Only
-        screenshots God itself takes are seen here — files a delegated soul produces
-        come back via delegate_to_soul and are a follow-up.
-        """
-        from godpy.connectors.base import Media
-        from godpy.tools.browser import SCREENSHOT
-
-        for event in events:
-            get_responses = getattr(event, "get_function_responses", None)
-            if get_responses is None:
-                continue
-            for resp in get_responses() or []:
-                result = resp.response
-                if (
-                    resp.name == SCREENSHOT
-                    and isinstance(result, dict)
-                    and result.get("status") == "success"
-                    and result.get("path")
-                ):
-                    log_event("media_out", user=self._user_id, tool=SCREENSHOT)
-                    await send(Media(Path(result["path"]), caption="screenshot"))
+        for media in media_for_screenshots(events):
+            log_event("media_out", user=self._user_id, tool="screenshot")
+            await send(media)
 
     def reset_session(self) -> None:
         """Drop the live ADK session and pending memory buffer (used by ``/reset``).

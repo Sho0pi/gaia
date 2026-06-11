@@ -7,8 +7,13 @@ from typing import Any
 
 import pytest
 
-from godpy.config.schema import MCPConfig, MCPServerConfig
-from godpy.mcp import build_mcp_toolsets, server_to_params
+from godpy.config.schema import BrowserConfig, MCPConfig, MCPServerConfig
+from godpy.mcp import (
+    build_mcp_toolsets,
+    playwright_mcp_server,
+    resolve_browser_backend,
+    server_to_params,
+)
 
 pytest.importorskip("mcp", reason="needs the optional 'mcp' dep group")
 
@@ -131,3 +136,77 @@ def test_valid_server_builds_toolset_with_filter_and_prefix(
     assert ts.tool_filter == ["read_file", "list_dir"]
     assert ts.tool_name_prefix == "fs"
     assert ts.connection_params.server_params.command == "echo"
+
+
+# --- browser backend: resolver + playwright-mcp synthesizer -----------------------
+
+
+def test_resolve_backend_native_when_requested() -> None:
+    assert resolve_browser_backend(BrowserConfig(backend="native")) == "native"
+
+
+def test_resolve_backend_mcp_when_runtime_present(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("godpy.mcp.shutil.which", lambda cmd: "/usr/bin/bunx")
+    assert resolve_browser_backend(BrowserConfig(backend="mcp")) == "mcp"
+
+
+def test_resolve_backend_falls_back_when_runtime_missing(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setattr("godpy.mcp.shutil.which", lambda cmd: None)
+
+    with caplog.at_level(logging.WARNING, logger="godpy.mcp"):
+        backend = resolve_browser_backend(BrowserConfig(backend="mcp", runtime="bunx"))
+
+    assert backend == "native"
+    assert "bunx" in caplog.text
+
+
+def test_playwright_mcp_server_maps_flags() -> None:
+    server = playwright_mcp_server(
+        BrowserConfig(
+            runtime="bunx",
+            headless=True,
+            isolated=True,
+            browser="chrome",
+            allowed_origins=["https://a.com", "https://b.com"],
+            tool_filter=["browser_navigate"],
+        )
+    )
+
+    assert server.name == "playwright"
+    assert server.command == "bunx"
+    assert server.args[0] == "@playwright/mcp@latest"
+    assert "--headless" in server.args
+    assert "--isolated" in server.args
+    assert server.args[server.args.index("--browser") + 1] == "chrome"
+    assert server.args[server.args.index("--allowed-origins") + 1] == "https://a.com;https://b.com"
+    assert "--output-dir" in server.args  # files land in the workspace, not the project
+    assert server.tool_filter == ["browser_navigate"]
+    assert server.tool_prefix is None  # names already browser_* — no double-prefix
+
+
+def test_playwright_mcp_server_pins_output_dir(tmp_path: Any) -> None:
+    server = playwright_mcp_server(BrowserConfig(), output_dir=tmp_path)
+
+    assert server.args[server.args.index("--output-dir") + 1] == str(tmp_path)
+
+
+def test_playwright_mcp_server_defaults_output_dir_to_god_workspace() -> None:
+    from godpy.mcp import browser_output_dir
+
+    server = playwright_mcp_server(BrowserConfig())
+
+    out = server.args[server.args.index("--output-dir") + 1]
+    assert out == str(browser_output_dir())
+    assert out.endswith("/agents/god/workspace")  # under .godpy, not the project tree
+
+
+def test_playwright_mcp_server_omits_flags_when_off() -> None:
+    server = playwright_mcp_server(
+        BrowserConfig(headless=False, isolated=False, allowed_origins=[])
+    )
+
+    assert "--headless" not in server.args
+    assert "--isolated" not in server.args
+    assert "--allowed-origins" not in server.args

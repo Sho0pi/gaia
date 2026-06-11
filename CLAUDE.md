@@ -27,6 +27,10 @@ unsure which library, delegate to the `lib-researcher` subagent.
   souls persisted as JSON → reuse, don't recreate.
 - `tools/` — LLM-callable tools; `registry.py` name→callable, **on by default**,
   gated by `tools.<id>.enabled`. `fs/` is sandboxed per agent. → `new-tool` skill.
+  Browser is dual-backend: `browser.backend` (default `mcp`) drives Microsoft's
+  playwright-mcp via `bunx` (full tool surface, attached in `God.mcp_toolsets`); set
+  `native` for the built-in `browser_*` tools. Missing bun falls back to native. See
+  `BrowserConfig` in `config/schema.py` for the SSRF/isolation/observability tradeoffs.
 - `commands/` — in-chat slash commands (`/help`, `/reset`, …): one class per file,
   handled out-of-band, never reach the model. → `new-command` skill.
 - `memory/` — `backend.py` builds mem0, `service.py` adapts it to ADK's

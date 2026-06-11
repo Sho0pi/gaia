@@ -225,3 +225,7 @@ __marimo__/
 
 # JetBrains IDE
 .idea/
+
+# playwright-mcp's default output dir (only appears if a run can't write to the
+# configured --output-dir); godpy pins output into ~/.godpy/agents, not the repo.
+.playwright-mcp/

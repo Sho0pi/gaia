@@ -115,6 +115,15 @@ def _register_browser_tools(registry: ToolRegistry, config: GodConfig | None) ->
     enabled = [name for name, _ in _BROWSER_TOOLS if _is_enabled(config, name)]
     if not enabled:
         return
+    # When the mcp backend is effective (playwright-mcp via bunx), the browser is provided
+    # by God.mcp_toolsets — don't also register the native tools. The resolver falls back
+    # to "native" when the runtime is missing, so that case still registers them here.
+    from godpy.config.schema import BrowserConfig
+    from godpy.mcp import resolve_browser_backend
+
+    browser_cfg = config.browser if config is not None else BrowserConfig()
+    if resolve_browser_backend(browser_cfg) == "mcp":
+        return
     if importlib.util.find_spec("playwright") is None:
         logger.warning(
             "browser tools disabled: Playwright not installed (run 'uv sync --group "

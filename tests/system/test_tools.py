@@ -20,9 +20,14 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+# backend: native keeps souls free of the default playwright-mcp toolset, so these
+# build tests assert exactly the declared tool regardless of whether bun is installed.
+_NATIVE_BROWSER = "browser:\n  backend: native\n"
+
+
 def test_subagent_with_web_search_builds(tmp_path: Path) -> None:
     config_path = tmp_path / "god.yaml"
-    config_path.write_text("tools:\n  web_search:\n    engine: duckduckgo\n")
+    config_path.write_text(_NATIVE_BROWSER + "tools:\n  web_search:\n    engine: duckduckgo\n")
     settings = Settings(agent_registry_dir=tmp_path, config_path=config_path)
     god = God(settings)
     spec = AgentSpec(
@@ -41,7 +46,9 @@ def test_subagent_with_web_search_builds(tmp_path: Path) -> None:
 
 def test_subagent_with_web_fetch_builds(tmp_path: Path) -> None:
     # web_fetch needs no config; it is on by default.
-    settings = Settings(agent_registry_dir=tmp_path, config_path=tmp_path / "god.yaml")
+    config_path = tmp_path / "god.yaml"
+    config_path.write_text(_NATIVE_BROWSER)
+    settings = Settings(agent_registry_dir=tmp_path, config_path=config_path)
     god = God(settings)
     spec = AgentSpec(
         name="Reader",
@@ -59,7 +66,9 @@ def test_subagent_with_web_fetch_builds(tmp_path: Path) -> None:
 
 def test_subagent_with_fs_read_builds(tmp_path: Path) -> None:
     # fs_read needs no config; it is on by default.
-    settings = Settings(agent_registry_dir=tmp_path, config_path=tmp_path / "god.yaml")
+    config_path = tmp_path / "god.yaml"
+    config_path.write_text(_NATIVE_BROWSER)
+    settings = Settings(agent_registry_dir=tmp_path, config_path=config_path)
     god = God(settings)
     spec = AgentSpec(
         name="Filer",

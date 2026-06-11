@@ -52,12 +52,24 @@ class God:
         """The configured external MCP toolsets, built once and shared by root + souls.
 
         Built lazily (the ADK/``mcp`` imports are deferred) so constructing God needs
-        neither; ``[]`` when no MCP server is configured.
+        neither; ``[]`` when no MCP server is configured. When the browser backend
+        resolves to ``mcp``, Microsoft's playwright-mcp is appended as one more server
+        (deduped if the user already configured one named ``playwright``).
         """
         if self._mcp is None:
-            from godpy.mcp import build_mcp_toolsets
+            from godpy.config.schema import MCPConfig
+            from godpy.mcp import (
+                build_mcp_toolsets,
+                playwright_mcp_server,
+                resolve_browser_backend,
+            )
 
-            self._mcp = build_mcp_toolsets(self.config.mcp)
+            servers = list(self.config.mcp.servers)
+            if resolve_browser_backend(self.config.browser) == "mcp" and not any(
+                s.name == "playwright" for s in servers
+            ):
+                servers.append(playwright_mcp_server(self.config.browser))
+            self._mcp = build_mcp_toolsets(MCPConfig(servers=servers))
         return self._mcp
 
     async def close(self) -> None:

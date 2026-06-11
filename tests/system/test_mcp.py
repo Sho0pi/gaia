@@ -16,8 +16,8 @@ import pytest
 
 pytest.importorskip("mcp", reason="needs the optional 'mcp' dep group")
 
-from godpy.config.schema import MCPConfig, MCPServerConfig
-from godpy.mcp import build_mcp_toolsets, close_mcp_toolsets
+from godpy.config.schema import BrowserConfig, MCPConfig, MCPServerConfig
+from godpy.mcp import build_mcp_toolsets, close_mcp_toolsets, playwright_mcp_server
 
 pytestmark = pytest.mark.system
 
@@ -47,3 +47,22 @@ async def test_real_stdio_server_lists_tools() -> None:
         assert tools, "the reference server should expose at least one tool"
     finally:
         await close_mcp_toolsets(toolsets)  # no orphaned npx process
+
+
+@pytest.mark.skipif(
+    not os.environ.get("GODPY_BROWSER_MCP_RUN_LIVE"),
+    reason="spawns bunx + downloads @playwright/mcp; set GODPY_BROWSER_MCP_RUN_LIVE to run",
+)
+async def test_playwright_mcp_lists_tools() -> None:
+    if shutil.which("bunx") is None:
+        pytest.skip("bunx not on PATH (bun runtime needed for playwright-mcp)")
+
+    cfg = MCPConfig(servers=[playwright_mcp_server(BrowserConfig())])
+
+    toolsets = build_mcp_toolsets(cfg)
+    assert len(toolsets) == 1
+    try:
+        tools = await toolsets[0].get_tools()
+        assert tools, "playwright-mcp should expose at least one tool"
+    finally:
+        await close_mcp_toolsets(toolsets)  # no orphaned bunx process
