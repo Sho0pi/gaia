@@ -9,7 +9,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-from godpy.tools.remember import make_remember
+from gaia.tools.remember import make_remember
 
 
 class _FakeMemoryService:
@@ -21,7 +21,7 @@ class _FakeMemoryService:
 
 
 def _tool_context(memory_service: Any) -> SimpleNamespace:
-    invocation = SimpleNamespace(memory_service=memory_service, app_name="godpy", user_id="u1")
+    invocation = SimpleNamespace(memory_service=memory_service, app_name="gaia", user_id="u1")
     return SimpleNamespace(_invocation_context=invocation)
 
 
@@ -33,7 +33,7 @@ async def test_remembers_fact() -> None:
 
     assert result == {"status": "success", "fact": "timezone is IST"}
     call = service.calls[0]
-    assert call["user_id"] == "u1" and call["app_name"] == "godpy"
+    assert call["user_id"] == "u1" and call["app_name"] == "gaia"
     assert call["memories"][0].content.parts[0].text == "timezone is IST"
 
 

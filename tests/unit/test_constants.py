@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from godpy import constants
+from gaia import constants
 
 
 def test_home_dir_derives_from_app_name() -> None:

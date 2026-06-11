@@ -1,14 +1,14 @@
 ---
 name: new-tool
-description: Create a new godpy runtime tool (a callable the LLM invokes) the right way — ADK function-tool idiom, dict return, pluggable backend, registry wiring, tests. Use when adding any tool under src/godpy/tools/.
+description: Create a new gaia runtime tool (a callable the LLM invokes) the right way — ADK function-tool idiom, dict return, pluggable backend, registry wiring, tests. Use when adding any tool under src/gaia/tools/.
 ---
 
-# Adding a godpy tool
+# Adding a gaia tool
 
 A **tool** is a callable the LLM invokes (distinct from a **skill**, which is prompt
-markdown). godpy follows ADK's function-tool best practices
+markdown). gaia follows ADK's function-tool best practices
 (https://adk.dev/tools-custom/function-tools/#python). The canonical example is
-`src/godpy/tools/web_search.py` — copy its shape.
+`src/gaia/tools/web_search.py` — copy its shape.
 
 ## Rules (ADK idiom — non-negotiable)
 - **Plain function, not a class.** ADK auto-generates the schema from the function's
@@ -24,7 +24,7 @@ markdown). godpy follows ADK's function-tool best practices
   `{"status": "success", ...}` or `{"status": "error", "error_message": "<human text>"}`.
   Validate inputs and return an error dict instead of raising.
 - **Don't log in the tool.** Logging is centralized: `ToolLoggingPlugin`
-  (`god/plugins.py`) emits one `tool_used` event for *every* tool call (ours, ADK
+  (`core/plugins.py`) emits one `tool_used` event for *every* tool call (ours, ADK
   built-ins, MCP) via ADK's `after_tool_callback`. A tool just returns its dict — no
   `done()` closure, no `log_event`, no `SELF_LOGGING_TOOLS`. The call's **arguments are
   logged automatically** (sanitized: sensitive key names like `*_token`/`api_key`
@@ -44,14 +44,14 @@ markdown). godpy follows ADK's function-tool best practices
 
 ## Tool bundle (several related tools sharing helpers)
 When a capability is several tools, not one (e.g. the `fs_*` family), make a
-**package** `src/godpy/tools/<area>/` — one file per tool + a `base.py` for shared
+**package** `src/gaia/tools/<area>/` — one file per tool + a `base.py` for shared
 helpers (sandbox, path safety, a Protocol, a session manager). Copy `tools/fs/`:
 - `base.py` holds the shared machinery; each tool file owns one `NAME` + one
   `make_<tool>(...)` builder.
 - `__init__.py` re-exports the `make_*` builders and `NAME` constants only (lean
   exports — no logic).
 - `default_registry` registers each tool individually (still gated per-id by
-  `_is_enabled`), so any one of the bundle can be disabled alone in `god.yaml`.
+  `_is_enabled`), so any one of the bundle can be disabled alone in `gaia.yaml`.
 
 ## Stateful tools (a session that persists across calls)
 Some tools must keep live state between invocations (an open browser, a running
@@ -67,9 +67,9 @@ shell). Don't put a global mutable singleton in the closure:
   tools — see `remember` / `delegate_to_soul`.
 
 ## Wire it
-- Register in `default_registry` (`src/godpy/tools/registry.py`), gated by `_is_enabled`
+- Register in `default_registry` (`src/gaia/tools/registry.py`), gated by `_is_enabled`
   — **tools are on by default**; config only *disables* (`enabled: false`) or tunes them.
-  Do NOT add a per-agent `tools:` list in `god.yaml`; agents get every registered tool
+  Do NOT add a per-agent `tools:` list in `gaia.yaml`; agents get every registered tool
   (`registry.all()`), and `AgentSpec.tools` is only an optional pin.
 - The registry `Tool` type is ADK's own union `Callable | BaseTool | BaseToolset`
   (imported under `TYPE_CHECKING`), so resolved lists drop into `LlmAgent(tools=...)`.

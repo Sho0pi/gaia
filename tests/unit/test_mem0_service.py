@@ -14,7 +14,7 @@ import pytest
 from google.adk.memory.memory_entry import MemoryEntry
 from google.genai import types
 
-from godpy.memory.service import Mem0MemoryService
+from gaia.memory.service import Mem0MemoryService
 
 
 class _FakeMem0:
@@ -48,7 +48,7 @@ def _event(text: str, role: str) -> SimpleNamespace:
 
 async def test_add_session_maps_events_and_logs(monkeypatch: pytest.MonkeyPatch) -> None:
     events: list[dict[str, Any]] = []
-    monkeypatch.setattr("godpy.memory.service.log_event", lambda a, **k: events.append((a, k)))
+    monkeypatch.setattr("gaia.memory.service.log_event", lambda a, **k: events.append((a, k)))
     backend = _FakeMem0()
     service = Mem0MemoryService(backend)
     session = SimpleNamespace(
@@ -74,7 +74,7 @@ async def test_search_maps_hits_to_memory_entries() -> None:
     )
     service = Mem0MemoryService(backend, recall_limit=3)
 
-    response = await service.search_memory(app_name="godpy", user_id="u1", query="tz")
+    response = await service.search_memory(app_name="gaia", user_id="u1", query="tz")
 
     assert backend.last_search == ("tz", {"filters": {"user_id": "u1"}, "top_k": 3})
     (entry,) = response.memories
@@ -86,7 +86,7 @@ async def test_search_accepts_bare_list_payload() -> None:
     backend = _FakeMem0([{"id": "m1", "memory": "likes tea"}])
     service = Mem0MemoryService(backend)
 
-    response = await service.search_memory(app_name="godpy", user_id="u1", query="drink")
+    response = await service.search_memory(app_name="gaia", user_id="u1", query="drink")
 
     assert response.memories[0].content.parts[0].text == "likes tea"
 
@@ -96,7 +96,7 @@ async def test_add_memory_stores_verbatim() -> None:
     service = Mem0MemoryService(backend)
     entry = MemoryEntry(content=types.Content(parts=[types.Part(text="uses vim")]))
 
-    await service.add_memory(app_name="godpy", user_id="u1", memories=[entry])
+    await service.add_memory(app_name="gaia", user_id="u1", memories=[entry])
 
     messages, kwargs = backend.added[0]
     assert messages == [{"role": "user", "content": "uses vim"}]
@@ -117,7 +117,7 @@ async def test_list_memories_returns_texts() -> None:
 
 async def test_forget_counts_then_deletes(monkeypatch: pytest.MonkeyPatch) -> None:
     logged: list[Any] = []
-    monkeypatch.setattr("godpy.memory.service.log_event", lambda a, **k: logged.append((a, k)))
+    monkeypatch.setattr("gaia.memory.service.log_event", lambda a, **k: logged.append((a, k)))
     backend = _FakeMem0(all_result={"results": [{"memory": "a"}, {"memory": "b"}]})
     service = Mem0MemoryService(backend)
 
@@ -130,10 +130,10 @@ async def test_forget_counts_then_deletes(monkeypatch: pytest.MonkeyPatch) -> No
 
 async def test_empty_events_are_a_noop(monkeypatch: pytest.MonkeyPatch) -> None:
     logged: list[Any] = []
-    monkeypatch.setattr("godpy.memory.service.log_event", lambda a, **k: logged.append(a))
+    monkeypatch.setattr("gaia.memory.service.log_event", lambda a, **k: logged.append(a))
     backend = _FakeMem0()
     service = Mem0MemoryService(backend)
 
-    await service.add_events_to_memory(app_name="godpy", user_id="u1", events=[])
+    await service.add_events_to_memory(app_name="gaia", user_id="u1", events=[])
 
     assert backend.added == [] and logged == []

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from godpy.commands import default_registry
-from godpy.commands.registry import _is_enabled
-from godpy.config import CommandConfig, GodConfig
+from gaia.commands import default_registry
+from gaia.commands.registry import _is_enabled
+from gaia.config import CommandConfig, GaiaConfig
 
 
 def test_default_registry_has_every_builtin() -> None:
@@ -46,7 +46,7 @@ def test_all_is_distinct_and_sorted() -> None:
 
 
 def test_disabled_command_is_dropped() -> None:
-    config = GodConfig(commands={"forget": CommandConfig(enabled=False)})
+    config = GaiaConfig(commands={"forget": CommandConfig(enabled=False)})
 
     registry = default_registry(config)
 
@@ -56,7 +56,8 @@ def test_disabled_command_is_dropped() -> None:
 
 def test_is_enabled_defaults_true() -> None:
     assert _is_enabled(None, "forget") is True
-    assert _is_enabled(GodConfig(), "forget") is True
+    assert _is_enabled(GaiaConfig(), "forget") is True
     assert (
-        _is_enabled(GodConfig(commands={"forget": CommandConfig(enabled=False)}), "forget") is False
+        _is_enabled(GaiaConfig(commands={"forget": CommandConfig(enabled=False)}), "forget")
+        is False
     )

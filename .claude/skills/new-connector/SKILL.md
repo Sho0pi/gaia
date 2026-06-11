@@ -1,13 +1,13 @@
 ---
 name: new-connector
-description: Add a chat connector (new messaging platform) — Handler/Send contract, lazy SDK imports, lifecycle (run vs start), config wiring, message limits, tests. Use when touching src/godpy/connectors/.
+description: Add a chat connector (new messaging platform) — Handler/Send contract, lazy SDK imports, lifecycle (run vs start), config wiring, message limits, tests. Use when touching src/gaia/connectors/.
 ---
 
 # Adding a connector
 
 A **connector is a dumb pipe**: it hands inbound text to the shared `Handler`
 coroutine with a `Send` callback and pushes each reply back through `Send`.
-No business logic, no godpy imports beyond `connectors/base.py` and `constants`.
+No business logic, no gaia imports beyond `connectors/base.py` and `constants`.
 Canonical examples: `connectors/telegram.py` (async lifecycle done by hand),
 `connectors/whatsapp_web.py` (native lib + event callbacks).
 
@@ -34,11 +34,11 @@ class FooConnector:
 ## Wire it
 - Export from `connectors/__init__.py`.
 - Add a `<Foo>ConnectorConfig` block (with `enabled: bool = False` + descriptions)
-  to `ConnectorsConfig` in `config/schema.py` — the god.yaml scaffold regenerates
+  to `ConnectorsConfig` in `config/schema.py` — the gaia.yaml scaffold regenerates
   from the schema; don't hand-edit a default file.
 - Add the launch branch in `app.py`: `plan_launch` (policy, pure, unit-testable)
   and `_run_background` (task creation). Credentials come from `Settings` (env),
-  never from god.yaml.
+  never from gaia.yaml.
 
 ## Test
 - **Unit** (`tests/unit/`): fake SDK module/objects; assert inbound text reaches a
@@ -46,4 +46,4 @@ class FooConnector:
   order (see test_connector_launch.py / the telegram tests).
 - **System** (`tests/system/`): `pytest.importorskip` the real SDK; build a real
   client offline. Anything needing live credentials/pairing is additionally gated
-  behind an explicit env var (see test_whatsapp_web.py's `GODPY_WHATSAPP_RUN_LIVE`).
+  behind an explicit env var (see test_whatsapp_web.py's `GAIA_WHATSAPP_RUN_LIVE`).

@@ -6,7 +6,7 @@ import logging
 
 import pytest
 
-from godpy.communication import (
+from gaia.communication import (
     CAVEMAN_PROMPT,
     HUMAN_PROMPT,
     apply_communication_style,

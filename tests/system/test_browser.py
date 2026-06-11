@@ -15,8 +15,8 @@ import pytest
 
 pytest.importorskip("playwright.async_api", reason="needs the optional 'browser' dep group")
 
-from godpy.tools import browser
-from godpy.tools.browser.base import BrowserSessionManager
+from gaia.tools import browser
+from gaia.tools.browser.base import BrowserSessionManager
 
 pytestmark = pytest.mark.system
 
@@ -49,7 +49,7 @@ async def test_navigate_snapshot_screenshot_then_close(
     if not await _chromium_available():
         pytest.skip("chromium not installed (run: uv run playwright install chromium)")
 
-    monkeypatch.setattr("godpy.constants.AGENTS_DIR", tmp_path / "agents")
+    monkeypatch.setattr("gaia.constants.AGENTS_DIR", tmp_path / "agents")
     page_file = tmp_path / "fixture.html"
     page_file.write_text(_FIXTURE)
     file_url = page_file.as_uri()

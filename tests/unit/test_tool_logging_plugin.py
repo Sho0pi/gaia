@@ -7,13 +7,13 @@ from typing import Any
 
 import pytest
 
-from godpy.god.plugins import ToolLoggingPlugin
+from gaia.core.plugins import ToolLoggingPlugin
 
 
 @pytest.fixture
 def logged(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, dict[str, Any]]]:
     events: list[tuple[str, dict[str, Any]]] = []
-    monkeypatch.setattr("godpy.god.plugins.log_event", lambda a, **k: events.append((a, k)))
+    monkeypatch.setattr("gaia.core.plugins.log_event", lambda a, **k: events.append((a, k)))
     return events
 
 
@@ -29,11 +29,11 @@ async def test_logs_every_tool_with_base_fields(logged: list[tuple[str, dict[str
     plugin = ToolLoggingPlugin()
 
     await plugin.after_tool_callback(
-        tool=_tool("load_memory"), tool_args={}, tool_context=_ctx("god"), result={"memories": []}
+        tool=_tool("load_memory"), tool_args={}, tool_context=_ctx("gaia"), result={"memories": []}
     )
 
     # Empty args ⇒ tool/agent/status only — status defaults to 'ok'.
-    assert logged == [("tool_used", {"tool": "load_memory", "agent": "god", "status": "ok"})]
+    assert logged == [("tool_used", {"tool": "load_memory", "agent": "gaia", "status": "ok"})]
 
 
 async def test_status_from_result_dict(logged: list[tuple[str, dict[str, Any]]]) -> None:
@@ -54,7 +54,7 @@ async def test_args_logged_for_any_tool(logged: list[tuple[str, dict[str, Any]]]
     await plugin.after_tool_callback(
         tool=_tool("github_search_repositories"),
         tool_args={"query": "adk agents", "per_page": 5, "archived": False},
-        tool_context=_ctx("god"),
+        tool_context=_ctx("gaia"),
         result={"status": "success"},
     )
 
@@ -73,7 +73,7 @@ async def test_sensitive_key_names_are_filtered(logged: list[tuple[str, dict[str
             "authorization": "Bearer abc",
             "client_secret": "shhh",
         },
-        tool_context=_ctx("god"),
+        tool_context=_ctx("gaia"),
         result={"status": "success"},
     )
 
@@ -96,14 +96,14 @@ async def test_drop_list_filters_unnameable_secrets(
     await plugin.after_tool_callback(
         tool=_tool("browser_type"),
         tool_args={"ref": "e2", "text": "hunter2-secret", "submit": True},
-        tool_context=_ctx("god"),
+        tool_context=_ctx("gaia"),
         result={"status": "success"},
     )
     # remember: the fact is private by definition.
     await plugin.after_tool_callback(
         tool=_tool("remember"),
         tool_args={"fact": "the user's bank pin is 1234"},
-        tool_context=_ctx("god"),
+        tool_context=_ctx("gaia"),
         result={"status": "success"},
     )
 
@@ -120,7 +120,7 @@ async def test_long_values_are_truncated(logged: list[tuple[str, dict[str, Any]]
     await plugin.after_tool_callback(
         tool=_tool("exec"),
         tool_args={"command": "x" * 500, "background": False},
-        tool_context=_ctx("god"),
+        tool_context=_ctx("gaia"),
         result={"status": "success"},
     )
 
@@ -136,7 +136,7 @@ async def test_non_string_values_are_stringified(logged: list[tuple[str, dict[st
     await plugin.after_tool_callback(
         tool=_tool("fs_edit"),
         tool_args={"edits": [{"line": 3, "text": "new"}], "count": 2, "ratio": 0.5, "opt": None},
-        tool_context=_ctx("god"),
+        tool_context=_ctx("gaia"),
         result={"status": "success"},
     )
 
@@ -167,7 +167,7 @@ async def test_logs_tool_error_with_args(logged: list[tuple[str, dict[str, Any]]
     await plugin.on_tool_error_callback(
         tool=_tool("exec"),
         tool_args={"command": "rm -rf /tmp/x", "api_key": "sk-9"},
-        tool_context=_ctx("god"),
+        tool_context=_ctx("gaia"),
         error=ValueError("nope"),
     )
 
@@ -181,7 +181,7 @@ def test_no_tool_self_logs_anymore() -> None:
     """Guard: tools must not re-introduce per-tool logging (it lives in this plugin)."""
     import pathlib
 
-    tools_dir = pathlib.Path("src/godpy/tools")
+    tools_dir = pathlib.Path("src/gaia/tools")
     offenders = [
         str(p)
         for p in tools_dir.rglob("*.py")

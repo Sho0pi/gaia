@@ -6,19 +6,19 @@ from pathlib import Path
 
 import pytest
 
-import godpy.app as app
-from godpy.app import plan_launch
-from godpy.config import GodConfig, Settings
+import gaia.app as app
+from gaia.app import plan_launch
+from gaia.config import GaiaConfig, Settings
 
 
-def _config(**enabled: bool) -> GodConfig:
-    return GodConfig.model_validate(
+def _config(**enabled: bool) -> GaiaConfig:
+    return GaiaConfig.model_validate(
         {"connectors": {name: {"enabled": on} for name, on in enabled.items()}}
     )
 
 
 def test_nothing_enabled_launches_nothing() -> None:
-    assert plan_launch(GodConfig()) == []
+    assert plan_launch(GaiaConfig()) == []
 
 
 def test_background_connectors_selected() -> None:
@@ -76,7 +76,7 @@ def _capture_setup_logging(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> d
 def _settings(tmp_path: Path) -> Settings:
     return Settings(
         agent_registry_dir=tmp_path / "reg",
-        config_path=tmp_path / "god.yaml",
+        config_path=tmp_path / "gaia.yaml",
         log_dir=tmp_path / "logs",
     )
 

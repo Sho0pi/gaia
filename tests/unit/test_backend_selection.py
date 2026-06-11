@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from godpy.app import select_connector
-from godpy.config import Settings
-from godpy.connectors import WhatsAppConnector, WhatsAppWebConnector
-from godpy.connectors.base import Send
+from gaia.app import select_connector
+from gaia.config import Settings
+from gaia.connectors import WhatsAppConnector, WhatsAppWebConnector
+from gaia.connectors.base import Send
 
 
 async def _handler(_text: str, _send: Send) -> None:  # pragma: no cover - never invoked here

@@ -11,8 +11,8 @@ from typing import Any
 
 import pytest
 
-from godpy.tools import shell
-from godpy.tools.shell.base import ProcessManager, local_spawner
+from gaia.tools import shell
+from gaia.tools.shell.base import ProcessManager, local_spawner
 
 pytestmark = pytest.mark.system
 
@@ -23,7 +23,7 @@ class _Ctx:
 
 @pytest.fixture(autouse=True)
 def _workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("godpy.constants.AGENTS_DIR", tmp_path / "agents")
+    monkeypatch.setattr("gaia.constants.AGENTS_DIR", tmp_path / "agents")
 
 
 async def test_foreground_echo_runs_for_real() -> None:

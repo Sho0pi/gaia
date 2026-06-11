@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from godpy.agents import AgentFactory, AgentSpec, SoulRegistry
-from godpy.agents.factory import to_agent_card
-from godpy.communication import CAVEMAN_PROMPT
+from gaia.agents import AgentFactory, AgentSpec, SoulRegistry
+from gaia.agents.factory import to_agent_card
+from gaia.communication import CAVEMAN_PROMPT
 
 
 class _RecordingFactory(AgentFactory):
@@ -76,7 +76,7 @@ def test_skills_dir_injects_instruction(registry: SoulRegistry, tmp_path: Path) 
 
     class _Factory(AgentFactory):
         def _build_llm_agent(self, s: AgentSpec) -> object:  # type: ignore[override]
-            from godpy.skills import attach_skills
+            from gaia.skills import attach_skills
 
             captured["instruction"] = attach_skills(s.instruction, s.skills, tmp_path)
             return object()
@@ -153,7 +153,7 @@ def _capture_kwargs(
 def test_factory_resolves_and_passes_tools(
     registry: SoulRegistry, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from godpy.tools import ToolRegistry
+    from gaia.tools import ToolRegistry
 
     def _search() -> str:
         return "x"
@@ -185,7 +185,7 @@ def test_factory_appends_mcp_toolsets(
 def test_factory_defaults_to_all_tools(
     registry: SoulRegistry, sample_spec: AgentSpec, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from godpy.tools import ToolRegistry
+    from gaia.tools import ToolRegistry
 
     a, b = (lambda: "a"), (lambda: "b")
     tool_registry = ToolRegistry()

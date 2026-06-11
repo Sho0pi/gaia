@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from godpy import constants
-from godpy.config import GodConfig
-from godpy.skills import attach_skills, load_skill, resolve_skills_dir
+from gaia import constants
+from gaia.config import GaiaConfig
+from gaia.skills import attach_skills, load_skill, resolve_skills_dir
 
 
 def _make_skill(skills_dir: Path, name: str, body: str, description: str = "A test skill.") -> None:
@@ -66,5 +66,5 @@ def test_attach_skills_no_ids_returns_base(tmp_path: Path) -> None:
 
 
 def test_resolve_skills_dir_default_and_override(tmp_path: Path) -> None:
-    assert resolve_skills_dir(GodConfig()) == constants.SKILLS_DIR
-    assert resolve_skills_dir(GodConfig(skills_dir=tmp_path)) == tmp_path
+    assert resolve_skills_dir(GaiaConfig()) == constants.SKILLS_DIR
+    assert resolve_skills_dir(GaiaConfig(skills_dir=tmp_path)) == tmp_path

@@ -1,15 +1,15 @@
 """System test: communication style resolves onto the built agent (no model call).
 
 Builds real ADK ``LlmAgent``s (construction is offline) and asserts the configured
-voice lands in the instruction. God -> caveman; an unstyled subagent -> default human.
+voice lands in the instruction. Gaia -> caveman; an unstyled subagent -> default human.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from godpy.agents import AgentFactory, AgentSpec, SoulRegistry
-from godpy.communication import CAVEMAN_PROMPT, HUMAN_PROMPT
+from gaia.agents import AgentFactory, AgentSpec, SoulRegistry
+from gaia.communication import CAVEMAN_PROMPT, HUMAN_PROMPT
 
 
 def test_default_human_and_override_caveman(tmp_path: Path) -> None:

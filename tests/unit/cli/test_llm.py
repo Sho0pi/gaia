@@ -1,4 +1,4 @@
-"""``godpy llm`` group: auth delegation and group help."""
+"""``gaia llm`` group: auth delegation and group help."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from godpy.cli import app
+from gaia.cli import app
 
 runner = CliRunner()
 
@@ -16,7 +16,7 @@ runner = CliRunner()
 def test_auth_openai_delegates(monkeypatch: pytest.MonkeyPatch) -> None:
     called: dict[str, Any] = {}
     monkeypatch.setattr(
-        "godpy.app.run_auth",
+        "gaia.app.run_auth",
         lambda provider, *, env_file=None: called.update(provider=provider, env_file=env_file),
     )
     result = runner.invoke(app, ["llm", "auth", "openai"])
@@ -27,7 +27,7 @@ def test_auth_openai_delegates(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_auth_forwards_env_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     called: dict[str, Any] = {}
     monkeypatch.setattr(
-        "godpy.app.run_auth",
+        "gaia.app.run_auth",
         lambda provider, *, env_file=None: called.update(provider=provider, env_file=env_file),
     )
     env = tmp_path / ".env"

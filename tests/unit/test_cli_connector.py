@@ -1,14 +1,14 @@
 """Unit tests for the Textual CLI connector.
 
 The app is driven headlessly via Textual's ``run_test`` Pilot with a fake handler
-(no God/ADK), so we verify the wiring — inbound text reaches the handler and each
+(no Gaia/ADK), so we verify the wiring — inbound text reaches the handler and each
 streamed reply becomes a bubble — without a model backend.
 """
 
 from __future__ import annotations
 
-from godpy.connectors.base import Send
-from godpy.connectors.cli import CLIConnector
+from gaia.connectors.base import Send
+from gaia.connectors.cli import CLIConnector
 
 
 async def _type(pilot: object, app: object, text: str) -> None:
@@ -37,7 +37,7 @@ async def test_streams_replies_into_chat() -> None:
 
         assert seen == ["hi"]  # inbound text reached the handler
         assert len(app.query("Static.user")) == 1  # the user's bubble
-        assert len(app.query(Markdown)) == 2  # one god bubble per streamed reply part
+        assert len(app.query(Markdown)) == 2  # one gaia bubble per streamed reply part
         assert app.query_one("#prompt", Input).value == ""  # input cleared after submit
 
 

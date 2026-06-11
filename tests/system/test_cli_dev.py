@@ -1,4 +1,4 @@
-"""System: ``godpy dev`` boots and serves the ADK web UI on a port."""
+"""System: ``gaia dev`` boots and serves the ADK web UI on a port."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ def _free_port() -> int:
 def test_dev_serves_http() -> None:
     port = _free_port()
     proc = subprocess.Popen(
-        [sys.executable, "-m", "godpy.cli", "dev", "--port", str(port)],
+        [sys.executable, "-m", "gaia.cli", "dev", "--port", str(port)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -39,7 +39,7 @@ def test_dev_serves_http() -> None:
         last_err: Exception | None = None
         while time.monotonic() < deadline:
             if proc.poll() is not None:
-                pytest.fail(f"godpy dev exited early with code {proc.returncode}")
+                pytest.fail(f"gaia dev exited early with code {proc.returncode}")
             try:
                 with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=2) as resp:
                     assert resp.status < 500

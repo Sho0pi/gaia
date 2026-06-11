@@ -1,10 +1,10 @@
 """System test: build a real MCP toolset from a reference server and list its tools.
 
 Triple-gated so CI stays green without the optional bits: skip if the ``mcp`` package
-isn't installed, skip if ``npx`` isn't on PATH, and skip unless ``GODPY_MCP_RUN_LIVE``
+isn't installed, skip if ``npx`` isn't on PATH, and skip unless ``GAIA_MCP_RUN_LIVE``
 is set (npx downloads packages from the npm registry, which requires network access and
 may be flaky in CI). Spawns ``@modelcontextprotocol/server-everything`` over stdio —
-no godpy code.
+no gaia code.
 """
 
 from __future__ import annotations
@@ -16,15 +16,15 @@ import pytest
 
 pytest.importorskip("mcp", reason="needs the optional 'mcp' dep group")
 
-from godpy.config.schema import BrowserConfig, MCPConfig, MCPServerConfig
-from godpy.mcp import build_mcp_toolsets, close_mcp_toolsets, playwright_mcp_server
+from gaia.config.schema import BrowserConfig, MCPConfig, MCPServerConfig
+from gaia.mcp import build_mcp_toolsets, close_mcp_toolsets, playwright_mcp_server
 
 pytestmark = pytest.mark.system
 
 
 @pytest.mark.skipif(
-    not os.environ.get("GODPY_MCP_RUN_LIVE"),
-    reason="spawns npx + downloads from npm; set GODPY_MCP_RUN_LIVE to run",
+    not os.environ.get("GAIA_MCP_RUN_LIVE"),
+    reason="spawns npx + downloads from npm; set GAIA_MCP_RUN_LIVE to run",
 )
 async def test_real_stdio_server_lists_tools() -> None:
     if shutil.which("npx") is None:
@@ -50,8 +50,8 @@ async def test_real_stdio_server_lists_tools() -> None:
 
 
 @pytest.mark.skipif(
-    not os.environ.get("GODPY_BROWSER_MCP_RUN_LIVE"),
-    reason="spawns bunx + downloads @playwright/mcp; set GODPY_BROWSER_MCP_RUN_LIVE to run",
+    not os.environ.get("GAIA_BROWSER_MCP_RUN_LIVE"),
+    reason="spawns bunx + downloads @playwright/mcp; set GAIA_BROWSER_MCP_RUN_LIVE to run",
 )
 async def test_playwright_mcp_lists_tools() -> None:
     if shutil.which("bunx") is None:

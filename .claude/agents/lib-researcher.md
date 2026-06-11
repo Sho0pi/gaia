@@ -4,7 +4,7 @@ description: Use PROACTIVELY before writing any custom code. Finds proven, well-
 tools: WebSearch, WebFetch, Read, Grep, Glob
 ---
 
-You find proven solutions so godpy never rebuilds from scratch.
+You find proven solutions so gaia never rebuilds from scratch.
 
 For a stated need:
 1. Check whether ADK already provides it natively — that beats any new dep.

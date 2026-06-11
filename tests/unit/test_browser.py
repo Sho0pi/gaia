@@ -7,8 +7,8 @@ from typing import Any
 
 import pytest
 
-from godpy.tools import browser
-from godpy.tools.browser.base import BrowserSessionManager, normalize_ref, parse_refs, truncate
+from gaia.tools import browser
+from gaia.tools.browser.base import BrowserSessionManager, normalize_ref, parse_refs, truncate
 
 # A canned AI-mode aria snapshot: a textbox (e1) and a button (e2).
 _SNAPSHOT = '- generic [ref=e3]:\n  - textbox "q" [ref=e1]\n  - button "Go" [ref=e2]'
@@ -129,7 +129,7 @@ async def test_navigate_returns_title() -> None:
 
 async def test_navigate_rejects_blocked_host(monkeypatch: pytest.MonkeyPatch) -> None:
     # SSRF guard reuses web_fetch.validate_url; force the metadata IP to resolve there.
-    monkeypatch.setattr("godpy.tools.web_fetch._resolve_ips", lambda host: ["169.254.169.254"])
+    monkeypatch.setattr("gaia.tools.web_fetch._resolve_ips", lambda host: ["169.254.169.254"])
     page = _FakePage()
     tool = browser.make_browser_navigate(_manager_with(page))
 
@@ -163,7 +163,7 @@ async def test_snapshot_returns_text_and_stores_refs() -> None:
 
 
 async def test_snapshot_truncates(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("godpy.tools.browser.snapshot.truncate", lambda t: (t[:5], True))
+    monkeypatch.setattr("gaia.tools.browser.snapshot.truncate", lambda t: (t[:5], True))
     snap = browser.make_browser_snapshot(_manager_with(_FakePage()))
 
     result = await snap(tool_context=_FakeToolContext())
@@ -217,7 +217,7 @@ async def test_type_fills_and_submits() -> None:
 async def test_screenshot_writes_png_full_page_by_default(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("godpy.constants.AGENTS_DIR", tmp_path / "agents")
+    monkeypatch.setattr("gaia.constants.AGENTS_DIR", tmp_path / "agents")
     page = _FakePage()
     shot = browser.make_browser_screenshot(_manager_with(page))
 
@@ -232,7 +232,7 @@ async def test_screenshot_writes_png_full_page_by_default(
 async def test_screenshot_viewport_only_when_requested(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("godpy.constants.AGENTS_DIR", tmp_path / "agents")
+    monkeypatch.setattr("gaia.constants.AGENTS_DIR", tmp_path / "agents")
     page = _FakePage()
     shot = browser.make_browser_screenshot(_manager_with(page))
 
@@ -245,7 +245,7 @@ async def test_screenshot_viewport_only_when_requested(
 async def test_screenshot_of_a_single_element(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("godpy.constants.AGENTS_DIR", tmp_path / "agents")
+    monkeypatch.setattr("gaia.constants.AGENTS_DIR", tmp_path / "agents")
     page = _FakePage()
     manager = _manager_with(page)
     await browser.make_browser_snapshot(manager)(tool_context=_FakeToolContext())

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from godpy.tools.fs import (
+from gaia.tools.fs import (
     Sandbox,
     SandboxError,
     make_fs_edit,
@@ -61,8 +61,8 @@ def test_symlink_escape_rejected(tmp_path: Path, workspace: Path) -> None:
 
 
 def test_scoped_tmp_is_allowed(tmp_path: Path) -> None:
-    # The agent's scoped scratch dir (/tmp/godpy/<agent>) is a second allowed root.
-    target = Path("/tmp/godpy/tester") / "scratch.txt"
+    # The agent's scoped scratch dir (/tmp/gaia/<agent>) is a second allowed root.
+    target = Path("/tmp/gaia/tester") / "scratch.txt"
     try:
         make_fs_write(tmp_path)(str(target), "hi", mode="overwrite", tool_context=_Ctx())
         out = make_fs_read(tmp_path)(str(target), tool_context=_Ctx())

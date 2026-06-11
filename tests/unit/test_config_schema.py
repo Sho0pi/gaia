@@ -1,8 +1,8 @@
-"""Unit tests for the god.yaml schema parsing + defaults."""
+"""Unit tests for the gaia.yaml schema parsing + defaults."""
 
 from __future__ import annotations
 
-from godpy.config import GodConfig
+from gaia.config import GaiaConfig
 
 # Trimmed version of the prior-art POC from issue #10.
 _POC = {
@@ -20,15 +20,15 @@ _POC = {
     "logging": {"level": "DEBUG", "max_size_mb": 10},
     "default_communication_style": "human",
     "skills_dir": "/custom/skills",
-    "agents": {"god": {"communication_style": "caveman", "skills": ["caveman"]}},
+    "agents": {"gaia": {"communication_style": "caveman", "skills": ["caveman"]}},
     "roles": {"guest": {"tools": ["web_search"]}},
     "tools": {"web_extract": {"enabled": True, "max_chars": 8000}},
-    "souls": {"god": None},
+    "souls": {"gaia": None},
 }
 
 
 def test_parses_poc_sample() -> None:
-    config = GodConfig.model_validate(_POC)
+    config = GaiaConfig.model_validate(_POC)
 
     assert config.llm.model == "gemini-3.1-flash-lite"
     assert config.admin == ["123456789"]
@@ -41,15 +41,15 @@ def test_parses_poc_sample() -> None:
     assert config.logging.backup_count == 5  # default kept
     assert config.default_communication_style == "human"
     assert str(config.skills_dir) == "/custom/skills"
-    assert config.agents["god"].communication_style == "caveman"
-    assert config.agents["god"].skills == ["caveman"]
+    assert config.agents["gaia"].communication_style == "caveman"
+    assert config.agents["gaia"].skills == ["caveman"]
     assert config.roles["guest"].tools == ["web_search"]
     # ToolConfig keeps unknown tool-specific keys verbatim (extra="allow").
     assert config.tools["web_extract"].model_extra == {"max_chars": 8000}
 
 
 def test_empty_config_is_all_defaults() -> None:
-    config = GodConfig.model_validate({})
+    config = GaiaConfig.model_validate({})
 
     assert config.llm.model == "gemini-2.0-flash"
     assert config.admin == []

@@ -1,6 +1,6 @@
-"""Lazy-import contract: ``godpy --help`` must not pull ADK or the app stack.
+"""Lazy-import contract: ``gaia --help`` must not pull ADK or the app stack.
 
-Runs in a subprocess — the pytest process itself imports godpy.app / google.adk
+Runs in a subprocess — the pytest process itself imports gaia.app / google.adk
 through other tests, so an in-process ``sys.modules`` assertion would be polluted.
 Offline and fast (one interpreter start + typer import).
 """
@@ -13,11 +13,11 @@ import sys
 _SNIPPET = """
 import sys
 from typer.testing import CliRunner
-from godpy.cli import app
+from gaia.cli import app
 
 result = CliRunner().invoke(app, ["--help"])
 assert result.exit_code == 0, result.output
-for heavy in ("google.adk", "godpy.app", "godpy.god", "godpy.connectors", "textual"):
+for heavy in ("google.adk", "gaia.app", "gaia.core", "gaia.connectors", "textual"):
     assert heavy not in sys.modules, heavy + " imported by --help"
 print("ok")
 """

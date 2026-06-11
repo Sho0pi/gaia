@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from godpy.models import resolve_model
+from gaia.models import resolve_model
 
 
 @pytest.fixture
@@ -47,7 +47,7 @@ def test_openai_api_key_default_uses_litellm(lite: dict[str, Any]) -> None:
 
 
 def test_openai_with_use_oauth_uses_chatgpt_backend() -> None:
-    from godpy.providers.openai.responses_llm import ChatGptOAuthLlm
+    from gaia.providers.openai.responses_llm import ChatGptOAuthLlm
 
     out = resolve_model("gpt-5.5", "openai", use_oauth=True)
     assert isinstance(out, ChatGptOAuthLlm)

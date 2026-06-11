@@ -10,11 +10,11 @@ from pathlib import Path
 
 import pytest
 
-from godpy import constants
-from godpy.agents import AgentSpec
-from godpy.config import Settings
-from godpy.god import God
-from godpy.souls.delegate import _run_soul
+from gaia import constants
+from gaia.agents import AgentSpec
+from gaia.config import Settings
+from gaia.core import Gaia
+from gaia.souls.delegate import _run_soul
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("GEMINI_API_KEY"),
@@ -22,18 +22,18 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _god(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> God:
-    # fs tools bind to constants.AGENTS_DIR at God() build, so patch it first.
+def _gaia(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Gaia:
+    # fs tools bind to constants.AGENTS_DIR at Gaia() build, so patch it first.
     monkeypatch.setattr(constants, "AGENTS_DIR", tmp_path / "agents")
-    config_path = tmp_path / "god.yaml"
+    config_path = tmp_path / "gaia.yaml"
     config_path.write_text("memory:\n  enabled: false\n")
-    return God(Settings(agent_registry_dir=tmp_path / "reg", config_path=config_path))
+    return Gaia(Settings(agent_registry_dir=tmp_path / "reg", config_path=config_path))
 
 
 async def test_soul_writes_html_into_its_workspace(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    god = _god(tmp_path, monkeypatch)
+    gaia = _gaia(tmp_path, monkeypatch)
     spec = AgentSpec(
         name="Web Designer",
         description="Builds small static websites.",
@@ -41,12 +41,12 @@ async def test_soul_writes_html_into_its_workspace(
             "You build websites. Use the fs_write tool to write the requested files into your "
             "workspace. Always actually write the files; do not just describe them."
         ),
-        model=god.settings.model,
+        model=gaia.settings.model,
     )
-    soul = god.factory.create_or_reuse(spec)
+    soul = gaia.factory.create_or_reuse(spec)
 
     summary = await _run_soul(
-        god, soul, spec.key, "Create index.html containing an <h1>Hello</h1>.", "tester"
+        gaia, soul, spec.key, "Create index.html containing an <h1>Hello</h1>.", "tester"
     )
 
     workspace = tmp_path / "agents" / "web_designer" / "workspace"
@@ -55,5 +55,5 @@ async def test_soul_writes_html_into_its_workspace(
     assert "<h1>" in html[0].read_text().lower() or "hello" in html[0].read_text().lower()
 
 
-# The full God→soul-smith→soul loop is a 3+ LLM-call flow — exercised as a manual demo
+# The full Gaia→soul-smith→soul loop is a 3+ LLM-call flow — exercised as a manual demo
 # (see the PR), not an automated test, to avoid free-tier rate-limit flakiness in CI.
