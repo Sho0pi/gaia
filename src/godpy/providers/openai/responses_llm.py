@@ -161,7 +161,7 @@ class ChatGptOAuthLlm(BaseLlm):
 
         creds = load_credentials()
         if creds is None:
-            raise ChatGptNotAuthenticatedError("no ChatGPT login — run: python main.py auth openai")
+            raise ChatGptNotAuthenticatedError("no ChatGPT login — run: godpy llm auth openai")
 
         # Body shape matches openclaw's working Codex request (buildRequestBody): the
         # backend 400s without text/include/tool_choice/parallel_tool_calls/prompt_cache_key,

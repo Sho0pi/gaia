@@ -7,22 +7,19 @@ stdlib+typer only — part of the ``godpy --help`` < 150 ms contract.
 from __future__ import annotations
 
 import json
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from rich.console import Console
 
-_console: Console | None = None
 
-
+@lru_cache(maxsize=1)
 def console() -> Console:
     """The process-wide rich console (honors NO_COLOR, set early by ``--no-color``)."""
-    global _console
-    if _console is None:
-        from rich.console import Console
+    from rich.console import Console
 
-        _console = Console()
-    return _console
+    return Console()
 
 
 def emit_json(data: dict[str, Any]) -> None:

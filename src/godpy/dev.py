@@ -1,6 +1,6 @@
 """Developer web UI: serve God through ADK's bundled dev console.
 
-``python main.py dev`` starts ADK's web UI (``get_fast_api_app(web=True)``) with God as the
+``godpy dev`` starts ADK's web UI (``get_fast_api_app(web=True)``) with God as the
 agent. Unlike the chat connectors — which only show the final reply — the UI exposes the
 whole turn: every tool/function call + response, the LLM request/response, and a trace view.
 The best surface for seeing *which* tools actually fire and *what* gets sent to the model.
