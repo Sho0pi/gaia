@@ -6,10 +6,11 @@ siblings) at module level, so ``godpy --help`` never imports ADK or the connecto
 
 from __future__ import annotations
 
-from godpy.cli import llm, root
+from godpy.cli import daemon, llm, root
 
 app = root.app
 app.add_typer(llm.app, name="llm")
+daemon.register(app)
 
 __all__ = ["app", "main"]
 

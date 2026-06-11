@@ -204,6 +204,11 @@ class TelegramConnectorConfig(BaseModel):
     )
 
 
+# Connector names that run as background (asyncio) services — the daemon set.
+# The cli connector is foreground-only (owns the terminal) and is never part of it.
+BACKGROUND_CONNECTORS: tuple[str, ...] = ("whatsapp", "telegram")
+
+
 class ConnectorsConfig(BaseModel):
     """All connectors God can speak through."""
 

@@ -32,6 +32,8 @@ LOG_DIR = HOME_DIR / "logs"
 SKILLS_DIR = HOME_DIR / "skills"
 SESSION_DB = HOME_DIR / "whatsapp.db"
 AGENT_REGISTRY_DIR = HOME_DIR / "agent_registry"
+# Pidfile for the background daemon (godpy start/stop/status).
+PID_FILE = HOME_DIR / f"{APP_NAME}.pid"
 # Per-agent state. Each agent's sandboxed filesystem workspace lives at
 # AGENTS_DIR / <agent_name> / "workspace" (see tools/filesystem.py).
 AGENTS_DIR = HOME_DIR / "agents"

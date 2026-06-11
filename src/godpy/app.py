@@ -15,9 +15,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import signal
 from pathlib import Path
 
-from godpy.config import GodConfig, Settings, get_settings, write_default_config
+from godpy.config import (
+    BACKGROUND_CONNECTORS,
+    GodConfig,
+    Settings,
+    get_settings,
+    write_default_config,
+)
 from godpy.connectors import (
     CLIConnector,
     TelegramConnector,
@@ -42,17 +49,18 @@ def select_connector(
     return WhatsAppWebConnector(settings.whatsapp_session_db, handler)
 
 
-def plan_launch(config: GodConfig) -> list[str]:
+def plan_launch(config: GodConfig, *, daemon: bool = False) -> list[str]:
     """Return the names of connectors to launch, or raise on an invalid combo.
 
     Pure: no I/O, so the policy (CLI-exclusivity, enabled set) is unit-testable.
+    ``daemon=True`` is the background-service mode: the cli connector is foreground-only
+    and silently excluded, so the default config works for both ``godpy chat`` and
+    ``godpy start`` without yaml surgery.
     """
     connectors = config.connectors
-    background = [
-        name
-        for name, conf in (("whatsapp", connectors.whatsapp), ("telegram", connectors.telegram))
-        if conf.enabled
-    ]
+    background = [name for name in BACKGROUND_CONNECTORS if getattr(connectors, name).enabled]
+    if daemon:
+        return background
     if connectors.cli.enabled:
         if background:
             raise ValueError(
@@ -126,6 +134,74 @@ def run(settings: Settings | None = None, *, env_file: Path | None = None) -> No
         return
 
     asyncio.run(_run_background(settings, god, selected))
+
+
+def run_daemon(
+    settings: Settings | None = None, *, env_file: Path | None = None, hold: bool = False
+) -> int:
+    """Foreground daemon runner (``godpy serve``): background connectors only.
+
+    Daemon planning mode excludes the cli connector (it owns a terminal a daemon does
+    not have). Writes the pidfile once startup is committed — its appearance is the
+    "made it to the run loop" signal ``godpy start`` polls for — and removes it on
+    exit. SIGTERM and SIGINT both take the graceful path (memory flush +
+    ``god.close()``). Returns the process exit code instead of raising, so the CLI
+    maps it onto ``typer.Exit``. ``hold=True`` keeps the loop open with zero
+    connectors (tests, service debugging, the future socket gateway).
+    """
+    from godpy.cli import _pidfile  # lazy: no module-level app -> cli edge
+
+    settings = settings or get_settings(env_file)
+    write_default_config(settings.config_path)
+    god = God(settings)
+    selected = plan_launch(god.config, daemon=True)
+    # Console handlers stay on: when spawned by `godpy start`, stdout IS daemon.log
+    # (the color check is isatty-gated, so no ANSI lands in the file).
+    setup_logging(settings, god.config.logging)
+    if not selected and not hold:
+        logger.error(
+            "no background channels enabled in god.yaml — enable connectors.telegram "
+            "or connectors.whatsapp and retry"
+        )
+        return 1
+    _pidfile.write()
+    try:
+        asyncio.run(_serve(settings, god, selected, hold=hold))
+    finally:
+        _pidfile.remove()
+    return 0
+
+
+async def _serve(settings: Settings, god: God, selected: list[str], *, hold: bool) -> None:
+    """Run connectors until SIGTERM/SIGINT, then exit through the graceful path.
+
+    ``asyncio.run`` only converts SIGINT into KeyboardInterrupt; a plain SIGTERM would
+    kill the process without ``_run_background``'s finally (memory flush +
+    ``god.close()``). Installing loop signal handlers that cancel this task routes both
+    signals through that cleanup; our own ``CancelledError`` is swallowed (and
+    ``uncancel()``-ed) so ``asyncio.run`` returns cleanly.
+    """
+    loop = asyncio.get_running_loop()
+    task = asyncio.current_task()
+    assert task is not None  # always inside asyncio.run
+
+    def _request_stop(sig: signal.Signals) -> None:
+        logger.info("received %s — shutting down", sig.name)
+        task.cancel()
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, _request_stop, sig)
+    try:
+        if selected:
+            await _run_background(settings, god, selected)
+        if hold:
+            logger.info("no connector tasks — holding the loop open (--hold)")
+            await asyncio.Event().wait()
+    except asyncio.CancelledError:
+        task.uncancel()  # our own cancel: swallow it so asyncio.run() returns cleanly
+    finally:
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.remove_signal_handler(sig)
 
 
 async def _run_background(settings: Settings, god: God, selected: list[str]) -> None:
