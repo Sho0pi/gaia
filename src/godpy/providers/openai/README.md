@@ -13,7 +13,7 @@ llm:
     use_oauth: true        # use the subscription; false = OPENAI_API_KEY via LiteLLM
 ```
 
-…then `python main.py auth openai` once to log in.
+…then `godpy llm auth openai` once to log in.
 
 ## The trick (why this isn't the normal API)
 

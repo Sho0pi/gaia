@@ -1,8 +1,7 @@
-"""Dev web mode: agent loader, run_dev wiring, and main dispatch."""
+"""Dev web mode: agent loader and run_dev wiring."""
 
 from __future__ import annotations
 
-import sys
 from types import SimpleNamespace
 from typing import Any
 
@@ -46,15 +45,3 @@ def test_run_dev_builds_god_and_serves(monkeypatch: pytest.MonkeyPatch) -> None:
     run_dev(settings=SimpleNamespace(), host="0.0.0.0", port=9001)
 
     assert captured == {"god": fake_god, "host": "0.0.0.0", "port": 9001}
-
-
-def test_main_dispatches_dev_with_host_port(monkeypatch: pytest.MonkeyPatch) -> None:
-    import main
-
-    called: dict[str, Any] = {}
-    monkeypatch.setattr(main, "run_dev", lambda **kwargs: called.update(kwargs))
-    monkeypatch.setattr(sys, "argv", ["main.py", "dev", "--port", "9001"])
-
-    main.main()
-
-    assert called == {"env_file": None, "host": "127.0.0.1", "port": 9001}

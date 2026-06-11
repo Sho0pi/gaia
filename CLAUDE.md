@@ -41,7 +41,8 @@ unsure which library, delegate to the `lib-researcher` subagent.
   by `store.py`); the commented default file is **generated from the schema**
   (`scaffold.py`) — never hand-maintain a second copy.
 - `providers/openai/` — Sign in with ChatGPT (OAuth device flow + Responses backend).
-- Entry: `main.py` → `app.py` (`run_cli` / `run` / `run_dev` / `run_auth`).
+- Entry: the `godpy` CLI (`cli/`, Typer; `[project.scripts]`) → `app.py`
+  (`run_cli` / `run` / `run_dev` / `run_auth`).
 - `src/godpy/agents|souls` = godpy's RUNTIME agents. `.claude/agents/` = Claude Code
   DEV agents that help build godpy. Do not confuse them.
 
@@ -50,7 +51,7 @@ unsure which library, delegate to the `lib-researcher` subagent.
 - Lint + fix: `uv run ruff check --fix . && uv run ruff format .`
 - Types: `uv run mypy src`
 - Test: `uv run pytest`
-- Run: `uv run python main.py` (TUI) / `dev` (ADK web UI) / `auth openai`
+- Run: `uv run godpy` (TUI) / `godpy dev` (ADK web UI) / `godpy llm auth openai`
 Do NOT `cd` into subdirs to run tools.
 
 ## Tests — what goes in which tier
