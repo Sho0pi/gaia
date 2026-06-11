@@ -8,9 +8,14 @@ from __future__ import annotations
 
 from godpy.cli import daemon, llm, root
 
+# The full command tree, composed explicitly in one place.
 app = root.app
 app.add_typer(llm.app, name="llm")
-daemon.register(app)
+app.command()(daemon.serve)
+app.command()(daemon.start)
+app.command()(daemon.stop)
+app.command()(daemon.restart)
+app.command()(daemon.status)
 
 __all__ = ["app", "main"]
 

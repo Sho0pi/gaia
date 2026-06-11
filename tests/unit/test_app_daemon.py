@@ -10,14 +10,14 @@ import pytest
 import yaml
 
 import godpy.app as app
-from godpy.cli import _pidfile
+from godpy.cli._pidfile import PidFile
 from godpy.config import GodConfig, Settings
 
 
 @pytest.fixture(autouse=True)
 def pid_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     path = tmp_path / "godpy.pid"
-    monkeypatch.setattr(_pidfile, "PID_FILE", path)
+    monkeypatch.setattr("godpy.constants.PID_FILE", path)  # PidFile() default
     return path
 
 
@@ -34,7 +34,7 @@ def quiet_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]
     async def fake_serve(settings: Settings, god: Any, selected: list[str], *, hold: bool) -> None:
         seen["selected"] = selected
         seen["hold"] = hold
-        seen["pidfile_during_serve"] = _pidfile.read()
+        seen["pidfile_during_serve"] = PidFile().read()
 
     monkeypatch.setattr(app, "God", fake_god)
     monkeypatch.setattr(app, "write_default_config", lambda path: None)

@@ -22,9 +22,9 @@ from typing import Annotated
 
 import typer
 
-from godpy.cli import _pidfile
 from godpy.cli._console import console, emit_json
 from godpy.cli._options import CliState, state
+from godpy.cli._pidfile import PidFile
 
 #: Exit code for daemon-state errors (already running / not running).
 EXIT_DAEMON = 3
@@ -46,7 +46,7 @@ def serve(
     ] = False,
 ) -> None:
     """Run the background connectors in the foreground (what the daemon executes)."""
-    pid = _pidfile.read_live()
+    pid = PidFile().read_live()
     if pid is not None:
         console().print(f"already running (pid {pid}) — use 'godpy stop' first")
         raise typer.Exit(EXIT_DAEMON)
@@ -87,10 +87,11 @@ def status(ctx: typer.Context) -> None:
     from godpy.config import BACKGROUND_CONNECTORS, ConfigSupplier, get_settings
 
     st = state(ctx)
-    pid = _pidfile.read_live()  # also cleans a stale pidfile
+    pidfile = PidFile()
+    pid = pidfile.read_live()  # also cleans a stale pidfile
     settings = get_settings(st.env_file)
     cfg = ConfigSupplier(settings.config_path).current
-    uptime = int(time.time() - _pidfile.PID_FILE.stat().st_mtime) if pid is not None else None
+    uptime = int(time.time() - pidfile.path.stat().st_mtime) if pid is not None else None
     connectors = [name for name in BACKGROUND_CONNECTORS if getattr(cfg.connectors, name).enabled]
     data = {
         "running": pid is not None,
@@ -104,7 +105,7 @@ def status(ctx: typer.Context) -> None:
             "errors": str(settings.log_dir / "errors.log"),
             "events": str(settings.log_dir / "events.jsonl"),
         },
-        "pidfile": str(_pidfile.PID_FILE),
+        "pidfile": str(pidfile.path),
     }
     if st.json:
         emit_json(data)
@@ -124,7 +125,8 @@ def _start(st: CliState) -> int:
     """Spawn the detached serve process; poll for its pidfile or early death."""
     from godpy.config import BACKGROUND_CONNECTORS, ConfigSupplier, get_settings
 
-    pid = _pidfile.read_live()
+    pidfile = PidFile()
+    pid = pidfile.read_live()
     if pid is not None:
         console().print(f"already running (pid {pid})")
         return EXIT_DAEMON
@@ -165,7 +167,7 @@ def _start(st: CliState) -> int:
             for line in _tail(log_path, 15):
                 console().print(f"  {line}")
             return 1
-        if _pidfile.read() == proc.pid:  # serve writes its pidfile once startup committed
+        if pidfile.read() == proc.pid:  # serve writes its pidfile once startup committed
             console().print(f"started (pid {proc.pid}) — logs: {log_path}")
             return 0
         time.sleep(_POLL)
@@ -175,15 +177,16 @@ def _start(st: CliState) -> int:
 
 def _stop(timeout: int) -> int:
     """SIGTERM the daemon, wait up to ``timeout``, SIGKILL as a last resort."""
-    pid = _pidfile.read_live()  # stale file auto-removed here
+    pidfile = PidFile()
+    pid = pidfile.read_live()  # stale file auto-removed here
     if pid is None:
         console().print("not running")
         return EXIT_DAEMON
     os.kill(pid, signal.SIGTERM)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if not _pidfile.alive(pid):
-            _pidfile.remove()
+        if not pidfile.alive(pid):
+            pidfile.remove()
             console().print(f"stopped (pid {pid})")
             return 0
         time.sleep(_POLL)
@@ -192,7 +195,7 @@ def _stop(timeout: int) -> int:
         os.kill(pid, signal.SIGKILL)
     except ProcessLookupError:  # died between the poll and the kill
         pass
-    _pidfile.remove()  # the killed child cannot remove its own file
+    pidfile.remove()  # the killed child cannot remove its own file
     return 0
 
 
@@ -217,9 +220,3 @@ def _fmt_duration(seconds: int) -> str:
         return f"{hours}h {minutes}m"
     days, hours = divmod(hours, 24)
     return f"{days}d {hours}h"
-
-
-def register(app: typer.Typer) -> None:
-    """Attach the daemon commands as flat (top-level) commands on ``app``."""
-    for command in (serve, start, stop, restart, status):
-        app.command()(command)

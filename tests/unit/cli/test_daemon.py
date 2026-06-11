@@ -16,8 +16,9 @@ from typing import Any, ClassVar
 import pytest
 from typer.testing import CliRunner
 
-from godpy.cli import _pidfile, daemon
 from godpy.cli import app as cli_app
+from godpy.cli import daemon
+from godpy.cli._pidfile import PidFile
 from godpy.config import Settings
 
 runner = CliRunner()
@@ -26,7 +27,7 @@ runner = CliRunner()
 @pytest.fixture(autouse=True)
 def pid_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     path = tmp_path / "godpy.pid"
-    monkeypatch.setattr(_pidfile, "PID_FILE", path)
+    monkeypatch.setattr("godpy.constants.PID_FILE", path)  # PidFile() default
     return path
 
 
@@ -57,7 +58,7 @@ class _FakePopen:
         self.returncode: int | None = None
         _FakePopen.instances.append(self)
         if _FakePopen.write_pidfile:
-            _pidfile.write(self.pid)
+            PidFile().write(self.pid)
 
     def poll(self) -> int | None:
         return self.returncode
@@ -75,7 +76,7 @@ def fake_popen(monkeypatch: pytest.MonkeyPatch) -> type[_FakePopen]:
 
 
 def test_serve_refuses_when_already_running(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(_pidfile, "read_live", lambda: 1234)
+    monkeypatch.setattr(PidFile, "read_live", lambda self: 1234)
     called: list[Any] = []
     monkeypatch.setattr("godpy.app.run_daemon", lambda **kw: called.append(kw) or 0)
 
@@ -121,7 +122,7 @@ def test_serve_forwards_hold(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_start_refuses_when_already_running(
     settings: Settings, fake_popen: type[_FakePopen], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(_pidfile, "read_live", lambda: 1234)
+    monkeypatch.setattr(PidFile, "read_live", lambda self: 1234)
 
     result = runner.invoke(cli_app, ["start"])
 
@@ -190,11 +191,11 @@ def test_stop_not_running(settings: Settings) -> None:
 def test_stop_graceful_sigterm(
     settings: Settings, pid_file: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _pidfile.write(4242)
+    PidFile().write(4242)
     sent: list[tuple[int, int]] = []
     monkeypatch.setattr(daemon.os, "kill", lambda pid, sig: sent.append((pid, sig)))
     alive_polls = iter([True, False])  # read_live sees it alive, first wait-poll sees it dead
-    monkeypatch.setattr(_pidfile, "alive", lambda pid: next(alive_polls))
+    monkeypatch.setattr(PidFile, "alive", staticmethod(lambda pid: next(alive_polls)))
 
     result = runner.invoke(cli_app, ["stop"])
 
@@ -206,10 +207,10 @@ def test_stop_graceful_sigterm(
 def test_stop_falls_back_to_sigkill(
     settings: Settings, pid_file: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _pidfile.write(4242)
+    PidFile().write(4242)
     sent: list[tuple[int, int]] = []
     monkeypatch.setattr(daemon.os, "kill", lambda pid, sig: sent.append((pid, sig)))
-    monkeypatch.setattr(_pidfile, "alive", lambda pid: True)  # never dies on its own
+    monkeypatch.setattr(PidFile, "alive", staticmethod(lambda pid: True))  # never dies on its own
 
     result = runner.invoke(cli_app, ["stop", "--timeout", "0"])
 
@@ -231,8 +232,8 @@ def test_restart_tolerates_not_running(settings: Settings, fake_popen: type[_Fak
 
 
 def test_status_running_json(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
-    _pidfile.write(4242)
-    monkeypatch.setattr(_pidfile, "alive", lambda pid: True)
+    PidFile().write(4242)
+    monkeypatch.setattr(PidFile, "alive", staticmethod(lambda pid: True))
 
     result = runner.invoke(cli_app, ["--json", "status"])
 
@@ -255,8 +256,8 @@ def test_status_not_running(settings: Settings) -> None:
 def test_status_cleans_stale_pidfile(
     settings: Settings, pid_file: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _pidfile.write(99999)
-    monkeypatch.setattr(_pidfile, "alive", lambda pid: False)
+    PidFile().write(99999)
+    monkeypatch.setattr(PidFile, "alive", staticmethod(lambda pid: False))
 
     result = runner.invoke(cli_app, ["status"])
 

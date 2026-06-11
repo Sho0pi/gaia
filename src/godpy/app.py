@@ -149,7 +149,7 @@ def run_daemon(
     maps it onto ``typer.Exit``. ``hold=True`` keeps the loop open with zero
     connectors (tests, service debugging, the future socket gateway).
     """
-    from godpy.cli import _pidfile  # lazy: no module-level app -> cli edge
+    from godpy.cli._pidfile import PidFile  # lazy: no module-level app -> cli edge
 
     settings = settings or get_settings(env_file)
     write_default_config(settings.config_path)
@@ -164,11 +164,12 @@ def run_daemon(
             "or connectors.whatsapp and retry"
         )
         return 1
-    _pidfile.write()
+    pidfile = PidFile()
+    pidfile.write()
     try:
         asyncio.run(_serve(settings, god, selected, hold=hold))
     finally:
-        _pidfile.remove()
+        pidfile.remove()
     return 0
 
 

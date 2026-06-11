@@ -204,8 +204,11 @@ class TelegramConnectorConfig(BaseModel):
     )
 
 
-# Connector names that run as background (asyncio) services — the daemon set.
-# The cli connector is foreground-only (owns the terminal) and is never part of it.
+# Connector names the daemon runs as background (asyncio) services. Target model
+# (issue #107): the daemon is THE God process — `godpy` (chat) attaches to it as a
+# client over a local socket and errors out when the daemon isn't running, like every
+# other channel. Until #107 lands, chat runs its own embedded God as an interim step,
+# which is why the cli connector isn't in this tuple.
 BACKGROUND_CONNECTORS: tuple[str, ...] = ("whatsapp", "telegram")
 
 
