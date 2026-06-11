@@ -7,7 +7,7 @@ root-agent wiring is built lazily in :meth:`God.build_root_agent`.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from godpy.agents import AgentFactory, AgentSpec, SoulRegistry
 from godpy.communication import apply_communication_style
@@ -19,6 +19,7 @@ from godpy.tools import default_registry
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from google.adk.agents import LlmAgent
+    from google.adk.tools.mcp_tool import McpToolset
 
     from godpy.config import GodConfig
     from godpy.memory import Mem0MemoryService
@@ -45,9 +46,9 @@ class God:
             mcp_toolsets_provider=self.mcp_toolsets,
         )
         self._memory_service: Mem0MemoryService | None = None
-        self._mcp: list[Any] | None = None
+        self._mcp: list[McpToolset] | None = None
 
-    def mcp_toolsets(self) -> list[Any]:
+    def mcp_toolsets(self) -> list[McpToolset]:
         """The configured external MCP toolsets, built once and shared by root + souls.
 
         Built lazily (the ADK/``mcp`` imports are deferred) so constructing God needs
@@ -58,6 +59,13 @@ class God:
 
             self._mcp = build_mcp_toolsets(self.config.mcp)
         return self._mcp
+
+    async def close(self) -> None:
+        """Shut down any open MCP toolsets (terminates stdio child processes)."""
+        if self._mcp:
+            from godpy.mcp import close_mcp_toolsets
+
+            await close_mcp_toolsets(self._mcp)
 
     @property
     def config(self) -> GodConfig:

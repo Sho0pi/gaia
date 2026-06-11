@@ -17,9 +17,16 @@ import importlib.util
 import logging
 import os
 import shutil
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Union
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
+    from google.adk.tools.mcp_tool import (
+        McpToolset,
+        SseConnectionParams,
+        StdioConnectionParams,
+        StreamableHTTPConnectionParams,
+    )
+
     from godpy.config.schema import MCPConfig, MCPServerConfig
 
 logger = logging.getLogger(__name__)
@@ -35,7 +42,9 @@ def _stdio_env(server: MCPServerConfig) -> dict[str, str]:
     return {**server.env, **passed}
 
 
-def server_to_params(server: MCPServerConfig) -> Any:
+def server_to_params(
+    server: MCPServerConfig,
+) -> Union[StdioConnectionParams, SseConnectionParams, StreamableHTTPConnectionParams]:
     """Map a :class:`MCPServerConfig` to the matching ADK connection-params object.
 
     Imports ADK's mcp_tool lazily (it needs the ``mcp`` package). Raises ``ValueError``
@@ -77,7 +86,7 @@ def _runtime_available(server: MCPServerConfig) -> bool:
     return True
 
 
-def build_mcp_toolsets(config: MCPConfig) -> list[Any]:
+def build_mcp_toolsets(config: MCPConfig) -> list[McpToolset]:
     """Build one ``McpToolset`` per enabled, reachable server in ``config``.
 
     Returns ``[]`` (no import) when nothing is configured. If servers are configured but
@@ -96,7 +105,7 @@ def build_mcp_toolsets(config: MCPConfig) -> list[Any]:
 
     from google.adk.tools.mcp_tool import McpToolset
 
-    toolsets: list[Any] = []
+    toolsets: list[McpToolset] = []
     for server in servers:
         if not _runtime_available(server):
             continue
@@ -113,7 +122,7 @@ def build_mcp_toolsets(config: MCPConfig) -> list[Any]:
     return toolsets
 
 
-async def close_mcp_toolsets(toolsets: list[Any]) -> None:
+async def close_mcp_toolsets(toolsets: list[McpToolset]) -> None:
     """Close each toolset (terminates stdio subprocesses). Best-effort, for shutdown."""
     for toolset in toolsets:
         close = getattr(toolset, "close", None)
