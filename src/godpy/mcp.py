@@ -169,6 +169,8 @@ def browser_output_dir() -> Path:
     ``.godpy/agents/`` (matching ``sandbox_for(AGENTS_DIR, "god")``). Without this,
     playwright-mcp defaults to a ``.playwright-mcp`` dir in the current working
     directory (i.e. the project tree).
+
+    Per-agent isolation (shared browser/cookies/output) is tracked in issue #94.
     """
     return constants.AGENTS_DIR / "god" / "workspace"
 
