@@ -8,7 +8,9 @@ unit-testable without a model backend.
 
 from __future__ import annotations
 
+import base64
 import logging
+import re
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -18,7 +20,14 @@ from godpy.connectors.base import Handler, Send
 from godpy.logs import log_event
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
+    from godpy.connectors.base import Media
     from godpy.god.agent import God
+
+#: playwright-mcp's screenshot tool (the mcp browser backend). Its result is an MCP
+#: ``CallToolResult`` dict (content blocks), not the native tool's ``{"path": ...}``.
+_MCP_SCREENSHOT = "browser_take_screenshot"
+#: Matches a saved image path inside playwright-mcp's text response.
+_IMAGE_PATH_RE = re.compile(r"\S+\.(?:png|jpe?g)", re.IGNORECASE)
 
 
 def _friendly_error(exc: Exception) -> str:
@@ -113,30 +122,24 @@ class GodHandler:
     async def _emit_screenshots(self, events: list[Any], send: Send) -> None:
         """Deliver any screenshots taken this turn as media replies.
 
-        The model only streams text; a ``browser_screenshot`` call writes a PNG and
-        returns its path in the tool result. We scan this turn's tool responses for
-        those paths and push each file through ``send`` as a :class:`Media` reply, so a
-        connector that supports images (WhatsApp) delivers the actual picture. Only
+        The model only streams text; a screenshot tool writes a PNG and reports it in
+        the tool result. We scan this turn's tool responses for those files and push
+        each through ``send`` as a :class:`Media` reply, so a connector that supports
+        images (WhatsApp) delivers the actual picture instead of just a path. Both
+        backends are handled: the native ``browser_screenshot`` (``{"path": ...}``) and
+        playwright-mcp's ``browser_take_screenshot`` (an MCP content-block dict). Only
         screenshots God itself takes are seen here — files a delegated soul produces
         come back via delegate_to_soul and are a follow-up.
         """
-        from godpy.connectors.base import Media
-        from godpy.tools.browser import SCREENSHOT
-
         for event in events:
             get_responses = getattr(event, "get_function_responses", None)
             if get_responses is None:
                 continue
             for resp in get_responses() or []:
-                result = resp.response
-                if (
-                    resp.name == SCREENSHOT
-                    and isinstance(result, dict)
-                    and result.get("status") == "success"
-                    and result.get("path")
-                ):
-                    log_event("media_out", user=self._user_id, tool=SCREENSHOT)
-                    await send(Media(Path(result["path"]), caption="screenshot"))
+                media = _screenshot_media(resp.name, resp.response)
+                if media is not None:
+                    log_event("media_out", user=self._user_id, tool=resp.name)
+                    await send(media)
 
     def reset_session(self) -> None:
         """Drop the live ADK session and pending memory buffer (used by ``/reset``).
@@ -216,6 +219,60 @@ class GodHandler:
             )
         except Exception:
             logging.getLogger(constants.LOGGER_NAME).warning("auto-ingest to memory failed")
+
+
+def _screenshot_media(name: str, result: Any) -> Media | None:
+    """A :class:`Media` reply for a screenshot tool result, or ``None`` if it isn't one.
+
+    Handles both browser backends: the native ``browser_screenshot`` (returns a
+    ``{"status": "success", "path": ...}`` dict) and playwright-mcp's
+    ``browser_take_screenshot`` (returns an MCP ``CallToolResult`` dict of content
+    blocks — a text block naming the saved file and/or an inline base64 image).
+    """
+    from godpy.connectors.base import Media
+    from godpy.tools.browser import SCREENSHOT
+
+    if not isinstance(result, dict):
+        return None
+    if name == SCREENSHOT and result.get("status") == "success" and result.get("path"):
+        return Media(Path(result["path"]), caption="screenshot")
+    if name == _MCP_SCREENSHOT and not result.get("isError"):
+        path = _mcp_screenshot_path(result)
+        if path is not None:
+            return Media(path, caption="screenshot")
+    return None
+
+
+def _mcp_screenshot_path(result: dict[str, Any]) -> Path | None:
+    """Extract the saved image file from a playwright-mcp screenshot result.
+
+    Prefers a real file path named in a text block (playwright-mcp saves into the
+    ``--output-dir`` we pin); falls back to decoding an inline base64 image block into
+    the browser workspace so we still deliver the picture if no path is reported.
+    """
+    content = result.get("content")
+    if not isinstance(content, list):
+        return None
+    for item in content:
+        if isinstance(item, dict) and item.get("type") == "text":
+            for token in _IMAGE_PATH_RE.findall(str(item.get("text", ""))):
+                candidate = Path(token.strip("'\"`.,"))
+                if candidate.is_file():
+                    return candidate
+    for item in content:
+        if isinstance(item, dict) and item.get("type") == "image" and item.get("data"):
+            from godpy.mcp import browser_output_dir
+
+            try:
+                blob = base64.b64decode(item["data"])
+            except (ValueError, TypeError):
+                continue
+            out = browser_output_dir()
+            out.mkdir(parents=True, exist_ok=True)
+            target = out / f"screenshot-{int(time.time() * 1000)}.png"
+            target.write_bytes(blob)
+            return target
+    return None
 
 
 def build_handler(

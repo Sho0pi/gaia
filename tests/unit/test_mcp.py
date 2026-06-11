@@ -181,8 +181,25 @@ def test_playwright_mcp_server_maps_flags() -> None:
     assert "--isolated" in server.args
     assert server.args[server.args.index("--browser") + 1] == "chrome"
     assert server.args[server.args.index("--allowed-origins") + 1] == "https://a.com;https://b.com"
+    assert "--output-dir" in server.args  # files land in the workspace, not the project
     assert server.tool_filter == ["browser_navigate"]
     assert server.tool_prefix is None  # names already browser_* — no double-prefix
+
+
+def test_playwright_mcp_server_pins_output_dir(tmp_path: Any) -> None:
+    server = playwright_mcp_server(BrowserConfig(), output_dir=tmp_path)
+
+    assert server.args[server.args.index("--output-dir") + 1] == str(tmp_path)
+
+
+def test_playwright_mcp_server_defaults_output_dir_to_god_workspace() -> None:
+    from godpy.mcp import browser_output_dir
+
+    server = playwright_mcp_server(BrowserConfig())
+
+    out = server.args[server.args.index("--output-dir") + 1]
+    assert out == str(browser_output_dir())
+    assert out.endswith("/agents/god/workspace")  # under .godpy, not the project tree
 
 
 def test_playwright_mcp_server_omits_flags_when_off() -> None:

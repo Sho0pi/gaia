@@ -17,8 +17,10 @@ import importlib.util
 import logging
 import os
 import shutil
+from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+from godpy import constants
 from godpy.config.schema import MCPServerConfig
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -159,15 +161,31 @@ def resolve_browser_backend(config: BrowserConfig) -> Literal["native", "mcp"]:
     return "mcp"
 
 
-def playwright_mcp_server(config: BrowserConfig) -> MCPServerConfig:
+def browser_output_dir() -> Path:
+    """Where the shared playwright-mcp server writes screenshots/PDFs.
+
+    playwright-mcp is ONE process for all agents, so its output can't be per-agent like
+    the native tools — files land in the root ``god`` agent's workspace under
+    ``.godpy/agents/`` (matching ``sandbox_for(AGENTS_DIR, "god")``). Without this,
+    playwright-mcp defaults to a ``.playwright-mcp`` dir in the current working
+    directory (i.e. the project tree).
+    """
+    return constants.AGENTS_DIR / "god" / "workspace"
+
+
+def playwright_mcp_server(
+    config: BrowserConfig, *, output_dir: Path | None = None
+) -> MCPServerConfig:
     """Synthesize the :class:`MCPServerConfig` for Microsoft's playwright-mcp.
 
-    Runs over stdio with the configured runtime (``bunx``). No ``tool_prefix``: the
-    server's tools are already named ``browser_*`` (the design godpy's native bundle
-    ports), so a prefix would only double it up. The caller attaches this only when
-    :func:`resolve_browser_backend` returns ``"mcp"``.
+    Runs over stdio with the configured runtime (``bunx``). ``--output-dir`` pins saved
+    files to the godpy workspace instead of polluting the project with ``.playwright-mcp``.
+    No ``tool_prefix``: the server's tools are already named ``browser_*`` (the design
+    godpy's native bundle ports), so a prefix would only double it up. The caller
+    attaches this only when :func:`resolve_browser_backend` returns ``"mcp"``.
     """
-    args = [config.package, "--browser", config.browser]
+    out = output_dir or browser_output_dir()
+    args = [config.package, "--browser", config.browser, "--output-dir", str(out)]
     if config.headless:
         args.append("--headless")
     if config.isolated:
