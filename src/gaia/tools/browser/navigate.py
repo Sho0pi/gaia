@@ -19,18 +19,13 @@ def make_browser_navigate(
     """Return the ADK ``browser_navigate`` tool bound to ``manager``."""
 
     async def browser_navigate(url: str, *, tool_context: ToolContext) -> dict[str, Any]:
-        """Open a web page in your browser so you can read and interact with it.
+        """Open a web page in your browser to read and interact with it.
 
-        Starts a headless browser (or reuses the one already open) and loads the URL.
-        Follow up with browser_snapshot to see the page, then browser_click /
-        browser_type to interact, or browser_screenshot to capture it.
+        Follow up with browser_snapshot to see the page, browser_click / browser_type
+        to interact, or browser_screenshot to capture it.
 
         Args:
-            url (str): The http(s) URL to open.
-
-        Returns:
-            dict: On success {'status': 'success', 'url': <final URL>, 'title': str}.
-            On failure {'status': 'error', 'error_message': str}.
+            url: the http(s) URL to open.
         """
         cleaned = url.strip()
         agent = tool_context.agent_name
