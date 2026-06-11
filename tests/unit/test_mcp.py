@@ -7,8 +7,8 @@ from typing import Any
 
 import pytest
 
-from godpy.config.schema import BrowserConfig, MCPConfig, MCPServerConfig
-from godpy.mcp import (
+from gaia.config.schema import BrowserConfig, MCPConfig, MCPServerConfig
+from gaia.mcp import (
     build_mcp_toolsets,
     playwright_mcp_server,
     resolve_browser_backend,
@@ -90,10 +90,10 @@ def test_disabled_servers_skipped() -> None:
 def test_missing_mcp_package_warns_and_returns_empty(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    monkeypatch.setattr("godpy.mcp.importlib.util.find_spec", lambda name: None)
+    monkeypatch.setattr("gaia.mcp.importlib.util.find_spec", lambda name: None)
     cfg = MCPConfig(servers=[MCPServerConfig(name="x", command="echo")])
 
-    with caplog.at_level(logging.WARNING, logger="godpy.mcp"):
+    with caplog.at_level(logging.WARNING, logger="gaia.mcp"):
         result = build_mcp_toolsets(cfg)
 
     assert result == []
@@ -104,10 +104,10 @@ def test_stdio_command_not_on_path_skipped(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     _use_fake_toolset(monkeypatch)
-    monkeypatch.setattr("godpy.mcp.shutil.which", lambda cmd: None)
+    monkeypatch.setattr("gaia.mcp.shutil.which", lambda cmd: None)
     cfg = MCPConfig(servers=[MCPServerConfig(name="ghost", command="nonesuch")])
 
-    with caplog.at_level(logging.WARNING, logger="godpy.mcp"):
+    with caplog.at_level(logging.WARNING, logger="gaia.mcp"):
         result = build_mcp_toolsets(cfg)
 
     assert result == []
@@ -146,16 +146,16 @@ def test_resolve_backend_native_when_requested() -> None:
 
 
 def test_resolve_backend_mcp_when_runtime_present(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("godpy.mcp.shutil.which", lambda cmd: "/usr/bin/bunx")
+    monkeypatch.setattr("gaia.mcp.shutil.which", lambda cmd: "/usr/bin/bunx")
     assert resolve_browser_backend(BrowserConfig(backend="mcp")) == "mcp"
 
 
 def test_resolve_backend_falls_back_when_runtime_missing(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    monkeypatch.setattr("godpy.mcp.shutil.which", lambda cmd: None)
+    monkeypatch.setattr("gaia.mcp.shutil.which", lambda cmd: None)
 
-    with caplog.at_level(logging.WARNING, logger="godpy.mcp"):
+    with caplog.at_level(logging.WARNING, logger="gaia.mcp"):
         backend = resolve_browser_backend(BrowserConfig(backend="mcp", runtime="bunx"))
 
     assert backend == "native"
@@ -192,14 +192,14 @@ def test_playwright_mcp_server_pins_output_dir(tmp_path: Any) -> None:
     assert server.args[server.args.index("--output-dir") + 1] == str(tmp_path)
 
 
-def test_playwright_mcp_server_defaults_output_dir_to_god_workspace() -> None:
-    from godpy.mcp import browser_output_dir
+def test_playwright_mcp_server_defaults_output_dir_to_gaia_workspace() -> None:
+    from gaia.mcp import browser_output_dir
 
     server = playwright_mcp_server(BrowserConfig())
 
     out = server.args[server.args.index("--output-dir") + 1]
     assert out == str(browser_output_dir())
-    assert out.endswith("/agents/god/workspace")  # under .godpy, not the project tree
+    assert out.endswith("/agents/gaia/workspace")  # under .gaia, not the project tree
 
 
 def test_playwright_mcp_server_omits_flags_when_off() -> None:

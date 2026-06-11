@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from godpy.cli._pidfile import PidFile
+from gaia.cli._pidfile import PidFile
 
 
 @pytest.fixture
 def pidfile(tmp_path: Path) -> PidFile:
-    return PidFile(tmp_path / "godpy.pid")
+    return PidFile(tmp_path / "gaia.pid")
 
 
 def test_write_read_round_trip(pidfile: PidFile) -> None:
@@ -38,7 +38,7 @@ def test_alive_dead_pid(monkeypatch: pytest.MonkeyPatch) -> None:
     def raise_lookup(pid: int, sig: int) -> None:
         raise ProcessLookupError
 
-    monkeypatch.setattr("godpy.cli._pidfile.os.kill", raise_lookup)
+    monkeypatch.setattr("gaia.cli._pidfile.os.kill", raise_lookup)
     assert PidFile.alive(99999) is False
 
 
@@ -46,7 +46,7 @@ def test_alive_permission_error_means_alive(monkeypatch: pytest.MonkeyPatch) -> 
     def raise_permission(pid: int, sig: int) -> None:
         raise PermissionError
 
-    monkeypatch.setattr("godpy.cli._pidfile.os.kill", raise_permission)
+    monkeypatch.setattr("gaia.cli._pidfile.os.kill", raise_permission)
     assert PidFile.alive(1) is True
 
 
@@ -81,6 +81,6 @@ def test_remove_idempotent(pidfile: PidFile) -> None:
 
 
 def test_default_path_comes_from_constants() -> None:
-    from godpy import constants
+    from gaia import constants
 
     assert PidFile().path == constants.PID_FILE

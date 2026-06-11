@@ -9,9 +9,9 @@ import time
 from pathlib import Path
 from typing import Any
 
-from godpy.providers.openai import device_auth
-from godpy.providers.openai.pkce import generate_pkce
-from godpy.providers.openai.store import Credentials, load_credentials
+from gaia.providers.openai import device_auth
+from gaia.providers.openai.pkce import generate_pkce
+from gaia.providers.openai.store import Credentials, load_credentials
 
 
 def test_pkce_is_valid_s256() -> None:

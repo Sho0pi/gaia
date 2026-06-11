@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from godpy.tools import web_fetch as wf
-from godpy.tools.web_fetch import (
+from gaia.tools import web_fetch as wf
+from gaia.tools.web_fetch import (
     MAX_BYTES_CAP,
     BlockedURLError,
     make_web_fetch,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from godpy.agents import AgentSpec, SoulRegistry
+from gaia.agents import AgentSpec, SoulRegistry
 
 
 def test_get_missing_returns_none(registry: SoulRegistry) -> None:

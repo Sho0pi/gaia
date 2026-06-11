@@ -12,12 +12,12 @@ from typing import Any
 
 import pytest
 
-import godpy.souls.delegate as delegate
-from godpy import constants
-from godpy.agents import AgentSpec, SoulRegistry
-from godpy.souls import make_delegate
-from godpy.souls.smith import SoulDecision
-from godpy.tools.fs.base import sandbox_for
+import gaia.souls.delegate as delegate
+from gaia import constants
+from gaia.agents import AgentSpec, SoulRegistry
+from gaia.souls import make_delegate
+from gaia.souls.smith import SoulDecision
+from gaia.tools.fs.base import sandbox_for
 
 _SPEC = AgentSpec(name="Web Designer", description="Builds websites.", instruction="i", model="m")
 
@@ -34,7 +34,7 @@ class _FakeFactory:
         return SimpleNamespace(name=spec.key)
 
 
-def _god(registry: SoulRegistry) -> Any:
+def _gaia(registry: SoulRegistry) -> Any:
     return SimpleNamespace(
         config=SimpleNamespace(
             llm=SimpleNamespace(
@@ -53,8 +53,8 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Any, list[Any]
     # delegate_to_soul no longer self-logs. ``events`` stays empty for signature stability.
     monkeypatch.setattr(constants, "AGENTS_DIR", tmp_path / "agents")
     events: list[Any] = []
-    god = _god(SoulRegistry(tmp_path / "reg"))
-    return god, events
+    gaia = _gaia(SoulRegistry(tmp_path / "reg"))
+    return gaia, events
 
 
 def _stub_decision(monkeypatch: pytest.MonkeyPatch, decision: SoulDecision) -> None:
@@ -65,7 +65,7 @@ def _stub_decision(monkeypatch: pytest.MonkeyPatch, decision: SoulDecision) -> N
 
 
 def _stub_run_writing(monkeypatch: pytest.MonkeyPatch, filename: str) -> None:
-    async def fake_run(god: Any, soul: Any, key: str, task: str, user_id: str) -> str:
+    async def fake_run(gaia: Any, soul: Any, key: str, task: str, user_id: str) -> str:
         (sandbox_for(constants.AGENTS_DIR, key).primary / filename).write_text("<html>")
         return "built it"
 
@@ -75,38 +75,38 @@ def _stub_run_writing(monkeypatch: pytest.MonkeyPatch, filename: str) -> None:
 async def test_forge_path_persists_runs_and_lists_only_new_files(
     env: tuple[Any, list[Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    god, _ = env
+    gaia, _ = env
     # An unrelated deliverable from a previous task already sits in the workspace.
     old = sandbox_for(constants.AGENTS_DIR, "web_designer").primary / "old_site.html"
     old.write_text("old")
     _stub_decision(monkeypatch, SoulDecision(action="forge", reason="none fit", spec=_SPEC))
     _stub_run_writing(monkeypatch, "index.html")
 
-    out = await make_delegate(god)("design a site", tool_context=None)
+    out = await make_delegate(gaia)("design a site", tool_context=None)
 
     assert out["status"] == "success"
     assert out["created"] is True
     assert out["soul"] == "Web Designer"
     assert out["files"] == ["index.html"]  # only this run's file; old_site.html excluded
     assert out["workspace"].endswith("web_designer/workspace")
-    assert god.souls.get("web_designer") is not None  # persisted for reuse
+    assert gaia.souls.get("web_designer") is not None  # persisted for reuse
 
 
 async def test_passes_invocation_user_id_to_the_soul(
     env: tuple[Any, list[Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    god, _ = env
+    gaia, _ = env
     _stub_decision(monkeypatch, SoulDecision(action="forge", reason="r", spec=_SPEC))
     seen: dict[str, str] = {}
 
-    async def fake_run(god: Any, soul: Any, key: str, task: str, user_id: str) -> str:
+    async def fake_run(gaia: Any, soul: Any, key: str, task: str, user_id: str) -> str:
         seen["user_id"] = user_id
         return "ok"
 
     monkeypatch.setattr(delegate, "_run_soul", fake_run)
     ctx = SimpleNamespace(_invocation_context=SimpleNamespace(user_id="alice"))
 
-    await make_delegate(god)("task", tool_context=ctx)
+    await make_delegate(gaia)("task", tool_context=ctx)
 
     assert seen["user_id"] == "alice"  # the soul reads/writes the real user's memory
 
@@ -114,14 +114,14 @@ async def test_passes_invocation_user_id_to_the_soul(
 async def test_reuse_path_does_not_recreate(
     env: tuple[Any, list[Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    god, _ = env
-    god.souls.save(_SPEC)  # already known
+    gaia, _ = env
+    gaia.souls.save(_SPEC)  # already known
     _stub_decision(
         monkeypatch, SoulDecision(action="reuse", reason="fits", soul_key="web_designer")
     )
     _stub_run_writing(monkeypatch, "index.html")
 
-    out = await make_delegate(god)("another site", tool_context=None)
+    out = await make_delegate(gaia)("another site", tool_context=None)
 
     assert out["status"] == "success"
     assert out["created"] is False
@@ -131,10 +131,10 @@ async def test_reuse_path_does_not_recreate(
 async def test_bad_reuse_key_is_a_graceful_error(
     env: tuple[Any, list[Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    god, _ = env
+    gaia, _ = env
     _stub_decision(monkeypatch, SoulDecision(action="reuse", reason="x", soul_key="ghost"))
 
-    out = await make_delegate(god)("task", tool_context=None)
+    out = await make_delegate(gaia)("task", tool_context=None)
 
     assert out["status"] == "error"
     assert "usable decision" in out["error_message"]
@@ -143,14 +143,14 @@ async def test_bad_reuse_key_is_a_graceful_error(
 async def test_smith_failure_is_caught(
     env: tuple[Any, list[Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    god, _ = env
+    gaia, _ = env
 
     async def boom(*_a: Any, **_k: Any) -> SoulDecision:
         raise RuntimeError("model down")
 
     monkeypatch.setattr(delegate, "_decide", boom)
 
-    out = await make_delegate(god)("task", tool_context=None)
+    out = await make_delegate(gaia)("task", tool_context=None)
 
     assert out["status"] == "error"
     assert "soul-smith failed" in out["error_message"]

@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from godpy import constants
-from godpy.config import Settings, configure_adk_env, get_settings
+from gaia import constants
+from gaia.config import Settings, configure_adk_env, get_settings
 
 
 def test_openai_key_reads_env_and_configures_adk(monkeypatch: pytest.MonkeyPatch) -> None:

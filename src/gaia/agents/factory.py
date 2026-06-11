@@ -1,0 +1,119 @@
+"""Build ADK subagents from a declarative spec, reusing stored ones when possible.
+
+The ADK import is deferred into :meth:`AgentFactory._build_llm_agent` so the spec
+and reuse logic stay unit-testable without a configured model backend.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+from gaia.agents.registry import SoulRegistry
+from gaia.agents.spec import AgentSpec, slugify
+from gaia.communication import DEFAULT_COMMUNICATION_STYLE, apply_communication_style
+from gaia.models import resolve_model
+from gaia.skills import attach_skills, load_skill
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from google.adk.agents import LlmAgent
+
+    from gaia.tools import ToolRegistry
+
+
+class AgentFactory:
+    """Creates subagents, but reuses a stored one whenever the key already exists."""
+
+    def __init__(
+        self,
+        registry: SoulRegistry,
+        *,
+        default_model: str,
+        default_provider: str = "gemini",
+        default_use_oauth: bool = False,
+        skills_dir: Path | None = None,
+        default_communication_style: str = DEFAULT_COMMUNICATION_STYLE,
+        tool_registry: ToolRegistry | None = None,
+        mcp_toolsets_provider: Callable[[], list[Any]] | None = None,
+    ) -> None:
+        self._registry = registry
+        self._default_model = default_model
+        self._default_provider = default_provider
+        self._default_use_oauth = default_use_oauth
+        self._skills_dir = skills_dir
+        self._default_communication_style = default_communication_style
+        self._tool_registry = tool_registry
+        # Built lazily at agent-build time (where ADK is already imported); souls get the
+        # same configured MCP toolsets as the root agent. Default: none.
+        self._mcp_toolsets_provider = mcp_toolsets_provider or (lambda: [])
+
+    def create_or_reuse(self, spec: AgentSpec) -> LlmAgent:
+        """Return an ADK agent for ``spec``, loading from the registry if present.
+
+        New specs are persisted so future tasks reuse them instead of recreating.
+        """
+        stored = self._registry.get(spec.key)
+        if stored is not None:
+            spec = stored
+        else:
+            self._registry.save(spec)
+        return self._build_llm_agent(spec)
+
+    def _build_llm_agent(self, spec: AgentSpec) -> LlmAgent:
+        """Construct the concrete ADK agent. Imports ADK lazily on purpose."""
+        from google.adk.agents import LlmAgent
+
+        instruction = spec.instruction
+        if self._skills_dir is not None:
+            instruction = attach_skills(instruction, spec.skills, self._skills_dir)
+        style = spec.communication_style or self._default_communication_style
+        instruction = apply_communication_style(instruction, style)
+
+        # Agents get every registered tool by default; a spec may pin a subset.
+        tools: list[Any] = []
+        if self._tool_registry is not None:
+            tools = (
+                self._tool_registry.resolve(spec.tools) if spec.tools else self._tool_registry.all()
+            )
+        # Configured external MCP servers attach to every soul too (not in the registry,
+        # so AgentSpec.tools can't pin them — they're all-or-nothing per server config).
+        tools = [*tools, *self._mcp_toolsets_provider()]
+
+        return LlmAgent(
+            name=spec.key,
+            model=resolve_model(
+                spec.model or self._default_model,
+                provider=self._default_provider,
+                use_oauth=self._default_use_oauth,
+            ),
+            description=spec.description,
+            instruction=instruction,
+            tools=tools,
+        )
+
+
+def to_agent_card(
+    spec: AgentSpec, *, url: str = "", skills_dir: Path | None = None
+) -> dict[str, Any]:
+    """Render an :class:`AgentSpec` as an A2A AgentCard dict (schema v0.3).
+
+    When ``skills_dir`` is given, each skill id is resolved to its real
+    name/description from the skill folder; otherwise the raw id is used for all
+    three fields (cheap, registry-free behaviour).
+    """
+    skills = []
+    for s in spec.skills:
+        name, description = s, s
+        if skills_dir is not None:
+            skill = load_skill(skills_dir, s)
+            if skill is not None:
+                name, description = skill.frontmatter.name, skill.frontmatter.description
+        skills.append({"id": slugify(s), "name": name, "description": description})
+    return {
+        "name": spec.name,
+        "description": spec.description,
+        "url": url,
+        "version": "0.1.0",
+        "skills": skills,
+    }

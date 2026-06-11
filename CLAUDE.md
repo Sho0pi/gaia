@@ -1,6 +1,6 @@
-# Godpy
+# Gaia
 
-AI agent inspired by openclaw, hermes-agent, picoclaw. The **God** agent answers
+AI agent inspired by openclaw, hermes-agent, picoclaw. The **Gaia** agent answers
 simple things itself and delegates complex tasks to **souls** — specialist
 subagents it forges once, **stores, and reuses** (never recreate). Two-tier
 memory: short-term (ADK session) + long-term (mem0, grows day by day).
@@ -17,8 +17,8 @@ unsure which library, delegate to the `lib-researcher` subagent.
 - `mem0ai` — long-term memory. ADK session `state` — short-term memory.
 - `python-telegram-bot`, `pywa`, `neonize` — connectors; `textual` — chat TUI.
 
-## Architecture (src/godpy/)
-- `god/` — `agent.py` God (root orchestrator), `handler.py` text↔ADK-Runner glue
+## Architecture (src/gaia/)
+- `core/` — `agent.py` Gaia (root orchestrator), `handler.py` text↔ADK-Runner glue
   (one handler == one conversation), `plugins.py` tool-call logging.
 - `souls/` — the spawn/reuse loop: `smith.py` decides reuse-vs-forge (structured
   output); `delegate.py` is the root-only `delegate_to_soul` tool (nested Runner,
@@ -28,7 +28,7 @@ unsure which library, delegate to the `lib-researcher` subagent.
 - `tools/` — LLM-callable tools; `registry.py` name→callable, **on by default**,
   gated by `tools.<id>.enabled`. `fs/` is sandboxed per agent. → `new-tool` skill.
   Browser is dual-backend: `browser.backend` (default `mcp`) drives Microsoft's
-  playwright-mcp via `bunx` (full tool surface, attached in `God.mcp_toolsets`); set
+  playwright-mcp via `bunx` (full tool surface, attached in `Gaia.mcp_toolsets`); set
   `native` for the built-in `browser_*` tools. Missing bun falls back to native. See
   `BrowserConfig` in `config/schema.py` for the SSRF/isolation/observability tradeoffs.
 - `commands/` — in-chat slash commands (`/help`, `/reset`, …): one class per file,
@@ -37,21 +37,21 @@ unsure which library, delegate to the `lib-researcher` subagent.
   `BaseMemoryService` (auto-ingest batching + `remember`/`load_memory` tools).
 - `connectors/` — thin I/O adapters only (cli TUI, telegram, whatsapp, whatsapp_web);
   all speak the `Handler`/`Send` contract in `base.py`. → `new-connector` skill.
-- `config/` — `settings.py` secrets (env only), `schema.py` god.yaml (hot-reloaded
+- `config/` — `settings.py` secrets (env only), `schema.py` gaia.yaml (hot-reloaded
   by `store.py`); the commented default file is **generated from the schema**
   (`scaffold.py`) — never hand-maintain a second copy.
 - `providers/openai/` — Sign in with ChatGPT (OAuth device flow + Responses backend).
-- Entry: the `godpy` CLI (`cli/`, Typer; `[project.scripts]`) → `app.py`
+- Entry: the `gaia` CLI (`cli/`, Typer; `[project.scripts]`) → `app.py`
   (`run_cli` / `run` / `run_dev` / `run_auth`).
-- `src/godpy/agents|souls` = godpy's RUNTIME agents. `.claude/agents/` = Claude Code
-  DEV agents that help build godpy. Do not confuse them.
+- `src/gaia/agents|souls` = gaia's RUNTIME agents. `.claude/agents/` = Claude Code
+  DEV agents that help build gaia. Do not confuse them.
 
 ## Commands (always via uv, from repo root)
 - Install: `uv sync --all-groups`
 - Lint + fix: `uv run ruff check --fix . && uv run ruff format .`
 - Types: `uv run mypy src`
 - Test: `uv run pytest`
-- Run: `uv run godpy` (TUI) / `godpy dev` (ADK web UI) / `godpy llm auth openai`
+- Run: `uv run gaia` (TUI) / `gaia dev` (ADK web UI) / `gaia llm auth openai`
 Do NOT `cd` into subdirs to run tools.
 
 ## Tests — what goes in which tier
@@ -85,4 +85,4 @@ Do NOT `cd` into subdirs to run tools.
 - Tools return dicts (`{"status": "success"|"error", …}`), **never raise to the
   model**, and self-log one `tool_used` event per call via a `done()` closure.
 - Secrets via env / pydantic-settings (`config/settings.py`). Never hardcode keys;
-  never put a secret in god.yaml. Logs are redacted best-effort — don't log secrets.
+  never put a secret in gaia.yaml. Logs are redacted best-effort — don't log secrets.

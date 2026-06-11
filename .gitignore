@@ -217,7 +217,7 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# godpy
+# gaia
 .env
 # agent_registry/ holds learned AgentCards. Commit to share across the team,
 # or uncomment the next line to keep them per-user.
@@ -227,5 +227,5 @@ __marimo__/
 .idea/
 
 # playwright-mcp's default output dir (only appears if a run can't write to the
-# configured --output-dir); godpy pins output into ~/.godpy/agents, not the repo.
+# configured --output-dir); gaia pins output into ~/.gaia/agents, not the repo.
 .playwright-mcp/

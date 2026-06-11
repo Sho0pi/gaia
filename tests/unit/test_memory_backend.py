@@ -1,4 +1,4 @@
-"""build_mem0_config maps god.yaml's memory blocks to mem0's provider shape.
+"""build_mem0_config maps gaia.yaml's memory blocks to mem0's provider shape.
 
 Pure dict assembly — no mem0 import, no network — so the provider-agnostic wiring
 (defaults, overrides, secret handling) is checked offline.
@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from godpy.config import MemoryConfig, MemoryProvider, Settings
-from godpy.memory.backend import DEFAULT_GEMINI_EMBEDDER_MODEL, build_mem0_config
+from gaia.config import MemoryConfig, MemoryProvider, Settings
+from gaia.memory.backend import DEFAULT_GEMINI_EMBEDDER_MODEL, build_mem0_config
 
 
 def _settings() -> Settings:
@@ -27,12 +27,12 @@ def test_defaults_wire_gemini_and_chroma() -> None:
     }
     store = cfg["vector_store"]
     assert store["provider"] == "chroma"
-    assert store["config"]["collection_name"] == "godpy"
+    assert store["config"]["collection_name"] == "gaia"
     assert store["config"]["path"].endswith("memory/chroma")
 
 
 def test_non_gemini_llm_carries_no_injected_key() -> None:
-    # OpenAI/Anthropic/etc read their own env var inside mem0 — godpy never injects it.
+    # OpenAI/Anthropic/etc read their own env var inside mem0 — gaia never injects it.
     memory = MemoryConfig(
         llm=MemoryProvider(provider="openai", model="gpt-4o-mini")  # type: ignore[call-arg]
     )
@@ -62,7 +62,7 @@ def test_pgvector_store_passes_extras_through() -> None:
     store = cfg["vector_store"]
     assert store["provider"] == "pgvector"
     assert store["config"]["host"] == "db" and store["config"]["port"] == 5432
-    assert store["config"]["collection_name"] == "godpy"  # default still applied
+    assert store["config"]["collection_name"] == "gaia"  # default still applied
     assert "path" not in store["config"]  # path is chroma-only
 
 

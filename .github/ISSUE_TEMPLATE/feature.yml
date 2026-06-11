@@ -1,5 +1,5 @@
 name: Feature
-description: New capability for godpy
+description: New capability for gaia
 labels: ["enhancement"]
 body:
   - type: textarea

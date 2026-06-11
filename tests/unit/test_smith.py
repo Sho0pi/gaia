@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from godpy.agents.spec import AgentSpec
-from godpy.souls.smith import SoulDecision, build_soul_smith
+from gaia.agents.spec import AgentSpec
+from gaia.souls.smith import SoulDecision, build_soul_smith
 
 
 def test_decision_roundtrips_forge_with_nested_spec() -> None:
@@ -60,7 +60,7 @@ def test_build_soul_smith_is_schema_only(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_build_soul_smith_resolves_openai_model(monkeypatch: pytest.MonkeyPatch) -> None:
     import google.adk.agents as adk
 
-    import godpy.models as models
+    import gaia.models as models
 
     captured: dict[str, object] = {}
     monkeypatch.setattr(adk, "LlmAgent", lambda **kw: captured.update(kw))

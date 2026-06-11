@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from godpy.tools.web_search import (
+from gaia.tools.web_search import (
     MAX_RESULTS_CAP,
     ddg_provider,
     get_search_provider,

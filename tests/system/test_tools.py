@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from godpy.agents import AgentSpec
-from godpy.config import Settings
-from godpy.god import God
+from gaia.agents import AgentSpec
+from gaia.config import Settings
+from gaia.core import Gaia
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("GEMINI_API_KEY"),
@@ -26,10 +26,10 @@ _NATIVE_BROWSER = "browser:\n  backend: native\n"
 
 
 def test_subagent_with_web_search_builds(tmp_path: Path) -> None:
-    config_path = tmp_path / "god.yaml"
+    config_path = tmp_path / "gaia.yaml"
     config_path.write_text(_NATIVE_BROWSER + "tools:\n  web_search:\n    engine: duckduckgo\n")
     settings = Settings(agent_registry_dir=tmp_path, config_path=config_path)
-    god = God(settings)
+    gaia = Gaia(settings)
     spec = AgentSpec(
         name="Researcher",
         description="Looks things up online.",
@@ -38,7 +38,7 @@ def test_subagent_with_web_search_builds(tmp_path: Path) -> None:
         tools=["web_search"],
     )
 
-    agent = god.ensure_agent(spec)
+    agent = gaia.ensure_agent(spec)
 
     assert agent.name == "researcher"
     assert len(agent.tools) == 1
@@ -46,10 +46,10 @@ def test_subagent_with_web_search_builds(tmp_path: Path) -> None:
 
 def test_subagent_with_web_fetch_builds(tmp_path: Path) -> None:
     # web_fetch needs no config; it is on by default.
-    config_path = tmp_path / "god.yaml"
+    config_path = tmp_path / "gaia.yaml"
     config_path.write_text(_NATIVE_BROWSER)
     settings = Settings(agent_registry_dir=tmp_path, config_path=config_path)
-    god = God(settings)
+    gaia = Gaia(settings)
     spec = AgentSpec(
         name="Reader",
         description="Reads web pages.",
@@ -58,7 +58,7 @@ def test_subagent_with_web_fetch_builds(tmp_path: Path) -> None:
         tools=["web_fetch"],
     )
 
-    agent = god.ensure_agent(spec)
+    agent = gaia.ensure_agent(spec)
 
     assert agent.name == "reader"
     assert len(agent.tools) == 1
@@ -66,10 +66,10 @@ def test_subagent_with_web_fetch_builds(tmp_path: Path) -> None:
 
 def test_subagent_with_fs_read_builds(tmp_path: Path) -> None:
     # fs_read needs no config; it is on by default.
-    config_path = tmp_path / "god.yaml"
+    config_path = tmp_path / "gaia.yaml"
     config_path.write_text(_NATIVE_BROWSER)
     settings = Settings(agent_registry_dir=tmp_path, config_path=config_path)
-    god = God(settings)
+    gaia = Gaia(settings)
     spec = AgentSpec(
         name="Filer",
         description="Reads files.",
@@ -78,7 +78,7 @@ def test_subagent_with_fs_read_builds(tmp_path: Path) -> None:
         tools=["fs_read"],
     )
 
-    agent = god.ensure_agent(spec)
+    agent = gaia.ensure_agent(spec)
 
     assert agent.name == "filer"
     assert len(agent.tools) == 1

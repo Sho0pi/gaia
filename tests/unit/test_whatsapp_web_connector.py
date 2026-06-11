@@ -15,8 +15,8 @@ from typing import Any
 
 import pytest
 
-from godpy.connectors.base import Send
-from godpy.connectors.whatsapp_web import WhatsAppWebConnector, _message_text
+from gaia.connectors.base import Send
+from gaia.connectors.whatsapp_web import WhatsAppWebConnector, _message_text
 
 
 def _msg(*, conversation: str = "", extended: str = "", quoted: str = "") -> SimpleNamespace:
@@ -92,7 +92,7 @@ def test_message_text_extraction(conversation: str, extended: str, expected: str
 
 
 def test_quoted_reply_includes_the_quoted_message() -> None:
-    # Replying to an earlier message must surface that message so God has the context.
+    # Replying to an earlier message must surface that message so Gaia has the context.
     text = _message_text(_msg(extended="what about this one?", quoted="the original question"))
 
     assert "the original question" in text
@@ -135,7 +135,7 @@ async def test_inbound_message_routed_to_handler(
 
 
 async def test_media_reply_sent_as_image(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
-    from godpy.connectors.base import Media
+    from gaia.connectors.base import Media
 
     async def handler(_text: str, send: Send) -> None:
         await send("here:")  # a text reply, then the image

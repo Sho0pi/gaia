@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from godpy.skills import attach_skills
+from gaia.skills import attach_skills
 
 _CAVEMAN_BODY = "Respond terse like smart caveman. Drop articles. Fragments OK."
 
@@ -16,7 +16,7 @@ def test_skill_folder_attaches_to_instruction(tmp_path: Path) -> None:
         f"---\nname: caveman\ndescription: Ultra-compressed mode.\n---\n\n{_CAVEMAN_BODY}\n"
     )
 
-    instruction = attach_skills("You are God.", ["caveman"], tmp_path)
+    instruction = attach_skills("You are Gaia.", ["caveman"], tmp_path)
 
-    assert "You are God." in instruction
+    assert "You are Gaia." in instruction
     assert _CAVEMAN_BODY in instruction

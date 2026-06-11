@@ -7,10 +7,10 @@ from typing import Any
 
 import pytest
 
-from godpy.dev import make_agent_loader
+from gaia.dev import make_agent_loader
 
 
-def test_loader_serves_god_root_once() -> None:
+def test_loader_serves_gaia_root_once() -> None:
     built: list[int] = []
     root = object()
 
@@ -20,28 +20,28 @@ def test_loader_serves_god_root_once() -> None:
 
     loader = make_agent_loader(SimpleNamespace(build_root_agent=build))
 
-    assert loader.list_agents() == ["god"]
-    assert loader.load_agent("god") is root
-    assert loader.load_agent("god") is root
+    assert loader.list_agents() == ["gaia"]
+    assert loader.load_agent("gaia") is root
+    assert loader.load_agent("gaia") is root
     assert len(built) == 1  # built once, then cached
 
 
-def test_run_dev_builds_god_and_serves(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_dev_builds_gaia_and_serves(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
-    fake_god = SimpleNamespace(config=SimpleNamespace(logging=None))
-    monkeypatch.setattr("godpy.app.God", lambda settings: fake_god)
-    monkeypatch.setattr("godpy.app.setup_logging", lambda *a, **k: None)
+    fake_gaia = SimpleNamespace(config=SimpleNamespace(logging=None))
+    monkeypatch.setattr("gaia.app.Gaia", lambda settings: fake_gaia)
+    monkeypatch.setattr("gaia.app.setup_logging", lambda *a, **k: None)
 
-    import godpy.dev as devmod
+    import gaia.dev as devmod
 
     monkeypatch.setattr(
         devmod,
         "serve_dev",
-        lambda god, *, host, port: captured.update(god=god, host=host, port=port),
+        lambda gaia, *, host, port: captured.update(gaia=gaia, host=host, port=port),
     )
 
-    from godpy.app import run_dev
+    from gaia.app import run_dev
 
     run_dev(settings=SimpleNamespace(), host="0.0.0.0", port=9001)
 
-    assert captured == {"god": fake_god, "host": "0.0.0.0", "port": 9001}
+    assert captured == {"gaia": fake_gaia, "host": "0.0.0.0", "port": 9001}

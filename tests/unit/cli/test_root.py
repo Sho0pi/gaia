@@ -1,7 +1,7 @@
 """Root CLI: help tree, version, global flags, and command delegation.
 
-The app commands import ``godpy.app`` lazily inside their bodies, so monkeypatching
-the ``godpy.app`` attributes before invoking intercepts the call without running God.
+The app commands import ``gaia.app`` lazily inside their bodies, so monkeypatching
+the ``gaia.app`` attributes before invoking intercepts the call without running Gaia.
 """
 
 from __future__ import annotations
@@ -14,8 +14,8 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from godpy import __version__
-from godpy.cli import app
+from gaia import __version__
+from gaia.cli import app
 
 runner = CliRunner()
 
@@ -31,13 +31,13 @@ def test_help_lists_command_tree() -> None:
 def test_version_flag() -> None:
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
-    assert f"godpy {__version__}" in result.output
+    assert f"gaia {__version__}" in result.output
 
 
 def test_version_command_human() -> None:
     result = runner.invoke(app, ["version"])
     assert result.exit_code == 0
-    assert f"godpy {__version__}" in result.output
+    assert f"gaia {__version__}" in result.output
     assert "python" in result.output
 
 
@@ -52,7 +52,7 @@ def test_version_command_json() -> None:
 def test_bare_invocation_opens_chat(monkeypatch: pytest.MonkeyPatch) -> None:
     called: dict[str, Any] = {}
     monkeypatch.setattr(
-        "godpy.app.run_cli",
+        "gaia.app.run_cli",
         lambda settings=None, *, env_file=None: called.update(env_file=env_file),
     )
     result = runner.invoke(app, [])
@@ -63,7 +63,7 @@ def test_bare_invocation_opens_chat(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_chat_forwards_env_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     called: dict[str, Any] = {}
     monkeypatch.setattr(
-        "godpy.app.run_cli",
+        "gaia.app.run_cli",
         lambda settings=None, *, env_file=None: called.update(env_file=env_file),
     )
     env = tmp_path / ".env"
@@ -75,7 +75,7 @@ def test_chat_forwards_env_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
 def test_dev_forwards_host_port(monkeypatch: pytest.MonkeyPatch) -> None:
     called: dict[str, Any] = {}
     monkeypatch.setattr(
-        "godpy.app.run_dev",
+        "gaia.app.run_dev",
         lambda settings=None, *, env_file=None, host="127.0.0.1", port=8000: called.update(
             env_file=env_file, host=host, port=port
         ),

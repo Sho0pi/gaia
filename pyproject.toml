@@ -1,7 +1,7 @@
 [project]
-name = "godpy"
+name = "gaia"
 version = "0.1.0"
-description = "God — an AI agent that spawns, stores, and fine-tunes task-specific subagents."
+description = "Gaia — an AI agent that spawns, stores, and fine-tunes task-specific subagents."
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "sho0pi" }]
@@ -20,13 +20,13 @@ dependencies = [
     "pyyaml>=6.0",
     "textual>=8.2.7",
     "python-json-logger>=4.1.0",
-    # The godpy console command (Typer = click + rich help + shell completion).
+    # The gaia console command (Typer = click + rich help + shell completion).
     "typer>=0.12",
     "rich>=13.0",
 ]
 
 [project.scripts]
-godpy = "godpy.cli:main"
+gaia = "gaia.cli:main"
 
 [dependency-groups]
 dev = [
@@ -51,21 +51,21 @@ memory = [
 ]
 # Non-Gemini model providers: OpenAI/GPT etc. via ADK's LiteLLM wrapper, and "Sign in
 # with ChatGPT" (httpx for the OAuth flow + Responses backend). Only needed when
-# god.yaml sets a non-gemini llm.provider; lazy-imported.
+# gaia.yaml sets a non-gemini llm.provider; lazy-imported.
 llm = [
     "litellm>=1.0",
     "httpx>=0.27",
 ]
 # Headless browser automation (the browser_* tools). Playwright drives a real
 # Chromium over CDP; async-native, ships the accessibility snapshot we hand the
-# model. Lazy-imported, so god imports without it. After installing the group, run
+# model. Lazy-imported, so gaia imports without it. After installing the group, run
 # `uv run playwright install chromium` once to fetch the browser binary.
 browser = [
     "playwright>=1.40",
 ]
 # External MCP (Model Context Protocol) servers, consumed via ADK's McpToolset.
 # `mcp` is the Python SDK ADK's mcp_tool imports. Lazy-imported and only touched when
-# god.yaml configures an mcp.server, so god imports without it. stdio servers also need
+# gaia.yaml configures an mcp.server, so gaia imports without it. stdio servers also need
 # their own runtime on PATH (e.g. `bunx` for node servers). NOTE: the DEFAULT browser
 # backend (browser.backend: mcp) is Microsoft's playwright-mcp launched via `bunx`, so it
 # needs this group AND bun on PATH (`brew install bun` / https://bun.sh). Without either,
@@ -79,7 +79,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/godpy"]
+packages = ["src/gaia"]
 
 [tool.ruff]
 line-length = 100
@@ -92,7 +92,7 @@ select = ["E", "F", "I", "N", "UP", "B", "ASYNC", "RUF"]
 [tool.ruff.lint.per-file-ignores]
 # Verbatim voice prompts: long lines and the literal em/en dashes they forbid are
 # intentional and must not be reflowed or "fixed".
-"src/godpy/communication.py" = ["E501", "RUF001", "RUF002", "RUF003"]
+"src/gaia/communication.py" = ["E501", "RUF001", "RUF002", "RUF003"]
 
 [tool.mypy]
 strict = true
@@ -118,7 +118,7 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "-ra --cov=src/godpy"
+addopts = "-ra --cov=src/gaia"
 markers = [
     "system: needs an external resource (model key, native lib, or browser binary)",
 ]

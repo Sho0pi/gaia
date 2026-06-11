@@ -5,9 +5,9 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-from godpy.commands import default_registry
-from godpy.commands.base import CommandContext
-from godpy.config import GodConfig
+from gaia.commands import default_registry
+from gaia.commands.base import CommandContext
+from gaia.config import GaiaConfig
 
 
 class _FakeMemory:
@@ -34,8 +34,8 @@ def _ctx(
     agents: list[str] | None = None,
     handler: Any = None,
 ) -> CommandContext:
-    god = SimpleNamespace(
-        config=GodConfig(),
+    gaia = SimpleNamespace(
+        config=GaiaConfig(),
         settings=SimpleNamespace(model="gemini-test"),
         memory_service=memory,
         known_souls=lambda: agents or [],
@@ -43,7 +43,7 @@ def _ctx(
     )
     return CommandContext(
         args=args,
-        god=god,
+        gaia=gaia,
         handler=handler or SimpleNamespace(),
         registry=default_registry(),
         user_id="u1",

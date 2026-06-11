@@ -2,8 +2,8 @@
 
 Everything process-shaped is faked: ``Popen`` is a stub whose construction writes the
 pidfile (mimicking the child's startup commit), ``os.kill`` records signals, and
-``godpy.app.run_daemon`` is patched (commands import it lazily, so patching the
-``godpy.app`` attribute intercepts the call).
+``gaia.app.run_daemon`` is patched (commands import it lazily, so patching the
+``gaia.app`` attribute intercepts the call).
 """
 
 from __future__ import annotations
@@ -16,28 +16,28 @@ from typing import Any, ClassVar
 import pytest
 from typer.testing import CliRunner
 
-from godpy.cli import app as cli_app
-from godpy.cli import daemon
-from godpy.cli._pidfile import PidFile
-from godpy.config import Settings
+from gaia.cli import app as cli_app
+from gaia.cli import daemon
+from gaia.cli._pidfile import PidFile
+from gaia.config import Settings
 
 runner = CliRunner()
 
 
 @pytest.fixture(autouse=True)
 def pid_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    path = tmp_path / "godpy.pid"
-    monkeypatch.setattr("godpy.constants.PID_FILE", path)  # PidFile() default
+    path = tmp_path / "gaia.pid"
+    monkeypatch.setattr("gaia.constants.PID_FILE", path)  # PidFile() default
     return path
 
 
 @pytest.fixture
 def settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Settings:
     """Real Settings pointed at a tmp config + log dir; patched into the light imports."""
-    config_path = tmp_path / "god.yaml"
+    config_path = tmp_path / "gaia.yaml"
     config_path.write_text("connectors:\n  telegram:\n    enabled: true\n")
     settings = Settings(config_path=config_path, log_dir=tmp_path / "logs")
-    monkeypatch.setattr("godpy.config.get_settings", lambda env_file=None: settings)
+    monkeypatch.setattr("gaia.config.get_settings", lambda env_file=None: settings)
     return settings
 
 
@@ -78,7 +78,7 @@ def fake_popen(monkeypatch: pytest.MonkeyPatch) -> type[_FakePopen]:
 def test_serve_refuses_when_already_running(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(PidFile, "read_live", lambda self: 1234)
     called: list[Any] = []
-    monkeypatch.setattr("godpy.app.run_daemon", lambda **kw: called.append(kw) or 0)
+    monkeypatch.setattr("gaia.app.run_daemon", lambda **kw: called.append(kw) or 0)
 
     result = runner.invoke(cli_app, ["serve"])
 
@@ -91,7 +91,7 @@ def test_serve_refuses_when_already_running(monkeypatch: pytest.MonkeyPatch) -> 
 def test_serve_exit_mirrors_run_daemon(monkeypatch: pytest.MonkeyPatch, code: int) -> None:
     called: dict[str, Any] = {}
     monkeypatch.setattr(
-        "godpy.app.run_daemon",
+        "gaia.app.run_daemon",
         lambda settings=None, *, env_file=None, hold=False: (
             called.update(env_file=env_file, hold=hold) or code
         ),
@@ -106,7 +106,7 @@ def test_serve_exit_mirrors_run_daemon(monkeypatch: pytest.MonkeyPatch, code: in
 def test_serve_forwards_hold(monkeypatch: pytest.MonkeyPatch) -> None:
     called: dict[str, Any] = {}
     monkeypatch.setattr(
-        "godpy.app.run_daemon",
+        "gaia.app.run_daemon",
         lambda settings=None, *, env_file=None, hold=False: called.update(hold=hold) or 0,
     )
 

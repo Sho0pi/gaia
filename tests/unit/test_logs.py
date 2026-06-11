@@ -10,10 +10,10 @@ from types import SimpleNamespace
 
 import pytest
 
-import godpy.logs as logs_module
-from godpy.config import Settings
-from godpy.config.schema import LoggingConfig
-from godpy.logs import ConsoleFormatter, _supports_color, log_event, setup_logging
+import gaia.logs as logs_module
+from gaia.config import Settings
+from gaia.config.schema import LoggingConfig
+from gaia.logs import ConsoleFormatter, _supports_color, log_event, setup_logging
 
 
 def _record(name: str, level: str, msg: str, **fields: object) -> logging.LogRecord:
@@ -31,7 +31,7 @@ def _reset_logging() -> Iterator[None]:
         handler.close()
         root.removeHandler(handler)
     root.setLevel(logging.WARNING)
-    for name in ("godpy", "godpy.events"):
+    for name in ("gaia", "gaia.events"):
         log = logging.getLogger(name)
         for handler in list(log.handlers):
             handler.close()
@@ -48,7 +48,7 @@ def _setup(tmp_path: Path, **settings_kwargs: object) -> Path:
 def test_creates_three_files_and_returns_dir(tmp_path: Path) -> None:
     log_dir = _setup(tmp_path)
 
-    logging.getLogger("godpy.test").warning("boom")
+    logging.getLogger("gaia.test").warning("boom")
     log_event("tool_used", tool="web_search")
 
     assert log_dir == tmp_path
@@ -60,7 +60,7 @@ def test_creates_three_files_and_returns_dir(tmp_path: Path) -> None:
 def test_warning_reaches_errors_log(tmp_path: Path) -> None:
     _setup(tmp_path)
 
-    logging.getLogger("godpy.connectors").warning("whatsapp failed to load")
+    logging.getLogger("gaia.connectors").warning("whatsapp failed to load")
 
     assert "whatsapp failed to load" in (tmp_path / "errors.log").read_text()
 
@@ -92,9 +92,9 @@ def test_reserved_field_name_does_not_crash(tmp_path: Path) -> None:
 
 def test_secrets_are_redacted_before_disk(tmp_path: Path) -> None:
     token = "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcd"  # telegram-shaped
-    _setup(tmp_path, GODPY_TELEGRAM_BOT_TOKEN=token)
+    _setup(tmp_path, GAIA_TELEGRAM_BOT_TOKEN=token)
 
-    logging.getLogger("godpy").error("connecting with token=%s", token)
+    logging.getLogger("gaia").error("connecting with token=%s", token)
 
     content = (tmp_path / "errors.log").read_text()
     assert token not in content
@@ -106,7 +106,7 @@ def test_openai_key_redacted_even_without_sk_prefix(tmp_path: Path) -> None:
     key = "legacyOpenAiKeyWithoutPrefix123456"
     _setup(tmp_path, OPENAI_API_KEY=key)
 
-    logging.getLogger("godpy").error("openai auth failed for key=%s", key)
+    logging.getLogger("gaia").error("openai auth failed for key=%s", key)
 
     content = (tmp_path / "errors.log").read_text()
     assert key not in content
@@ -126,9 +126,9 @@ def test_console_off_keeps_files_but_no_stdout_handlers(tmp_path: Path) -> None:
         ]
 
     assert stream_handlers(logging.getLogger()) == []
-    assert stream_handlers(logging.getLogger("godpy.events")) == []
+    assert stream_handlers(logging.getLogger("gaia.events")) == []
 
-    logging.getLogger("godpy").warning("tui boom")
+    logging.getLogger("gaia").warning("tui boom")
     log_event("tool_used", tool="web_search")
 
     assert "tui boom" in (tmp_path / "system.log").read_text()
@@ -159,16 +159,16 @@ def test_adk_basicconfig_after_setup_is_noop(tmp_path: Path) -> None:
 def test_console_formatter_plain_when_color_off() -> None:
     fmt = ConsoleFormatter(color=False)
 
-    line = fmt.format(_record("godpy.god.handler", "INFO", "built root agent"))
+    line = fmt.format(_record("gaia.core.handler", "INFO", "built root agent"))
 
     assert "\033[" not in line  # no ANSI
-    assert "INFO" in line and "god.handler" in line and "built root agent" in line
+    assert "INFO" in line and "core.handler" in line and "built root agent" in line
 
 
 def test_console_formatter_colors_when_on() -> None:
     fmt = ConsoleFormatter(color=True)
 
-    line = fmt.format(_record("godpy", "ERROR", "boom"))
+    line = fmt.format(_record("gaia", "ERROR", "boom"))
 
     assert "\033[" in line  # ANSI present
     assert "boom" in line
@@ -177,7 +177,7 @@ def test_console_formatter_colors_when_on() -> None:
 def test_event_formatter_renders_action_and_fields() -> None:
     fmt = ConsoleFormatter(color=False, event=True)
 
-    line = fmt.format(_record("godpy.events", "INFO", "tool_used", tool="web_search", results=5))
+    line = fmt.format(_record("gaia.events", "INFO", "tool_used", tool="web_search", results=5))
 
     assert "▸ tool_used" in line
     assert "tool=web_search" in line and "results=5" in line

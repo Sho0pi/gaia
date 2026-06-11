@@ -1,6 +1,6 @@
 ---
 name: feature-workflow
-description: The mandatory dev cycle for godpy features — plan, study prior art, implement in library idiom, test, self-review, and file the issue/PR via gh. Use at the start of any feature.
+description: The mandatory dev cycle for gaia features — plan, study prior art, implement in library idiom, test, self-review, and file the issue/PR via gh. Use at the start of any feature.
 ---
 
 # Feature workflow

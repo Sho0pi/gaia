@@ -9,14 +9,14 @@ import pytest
 from google.adk.models.llm_request import LlmRequest
 from google.genai import types
 
-import godpy.providers.openai.responses_llm as rl
-from godpy.providers.openai.responses_llm import (
+import gaia.providers.openai.responses_llm as rl
+from gaia.providers.openai.responses_llm import (
     ChatGptNotAuthenticatedError,
     ChatGptOAuthLlm,
     _content_to_input,
     _tools_from_request,
 )
-from godpy.providers.openai.store import Credentials
+from gaia.providers.openai.store import Credentials
 
 
 def test_tool_schema_types_are_lowercased_json_schema() -> None:

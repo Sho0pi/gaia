@@ -9,15 +9,15 @@ from typing import Any
 import pytest
 import yaml
 
-import godpy.app as app
-from godpy.cli._pidfile import PidFile
-from godpy.config import GodConfig, Settings
+import gaia.app as app
+from gaia.cli._pidfile import PidFile
+from gaia.config import GaiaConfig, Settings
 
 
 @pytest.fixture(autouse=True)
 def pid_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    path = tmp_path / "godpy.pid"
-    monkeypatch.setattr("godpy.constants.PID_FILE", path)  # PidFile() default
+    path = tmp_path / "gaia.pid"
+    monkeypatch.setattr("gaia.constants.PID_FILE", path)  # PidFile() default
     return path
 
 
@@ -26,17 +26,17 @@ def quiet_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]
     """Patch the heavy bits of run_daemon; record what _serve saw. Returns the recorder."""
     seen: dict[str, Any] = {}
 
-    def fake_god(settings: Settings) -> SimpleNamespace:
-        # Parse the real tmp god.yaml so each test's connector setup is honored.
+    def fake_gaia(settings: Settings) -> SimpleNamespace:
+        # Parse the real tmp gaia.yaml so each test's connector setup is honored.
         raw = yaml.safe_load(settings.config_path.read_text()) or {}
-        return SimpleNamespace(config=GodConfig.model_validate(raw), close=lambda: None)
+        return SimpleNamespace(config=GaiaConfig.model_validate(raw), close=lambda: None)
 
-    async def fake_serve(settings: Settings, god: Any, selected: list[str], *, hold: bool) -> None:
+    async def fake_serve(settings: Settings, gaia: Any, selected: list[str], *, hold: bool) -> None:
         seen["selected"] = selected
         seen["hold"] = hold
         seen["pidfile_during_serve"] = PidFile().read()
 
-    monkeypatch.setattr(app, "God", fake_god)
+    monkeypatch.setattr(app, "Gaia", fake_gaia)
     monkeypatch.setattr(app, "write_default_config", lambda path: None)
     monkeypatch.setattr(app, "setup_logging", lambda *a, **k: None)
     monkeypatch.setattr(app, "_serve", fake_serve)
@@ -44,7 +44,7 @@ def quiet_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]
 
 
 def _settings(tmp_path: Path, yaml: str = "") -> Settings:
-    config_path = tmp_path / "god.yaml"
+    config_path = tmp_path / "gaia.yaml"
     config_path.write_text(yaml)
     return Settings(config_path=config_path, log_dir=tmp_path / "logs")
 
@@ -87,9 +87,9 @@ def test_pidfile_written_before_serve_and_removed_after(
 def test_pidfile_removed_when_serve_raises(
     tmp_path: Path, pid_file: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    telegram_on = GodConfig.model_validate({"connectors": {"telegram": {"enabled": True}}})
+    telegram_on = GaiaConfig.model_validate({"connectors": {"telegram": {"enabled": True}}})
     monkeypatch.setattr(
-        app, "God", lambda settings: SimpleNamespace(config=telegram_on, close=lambda: None)
+        app, "Gaia", lambda settings: SimpleNamespace(config=telegram_on, close=lambda: None)
     )
     monkeypatch.setattr(app, "write_default_config", lambda path: None)
     monkeypatch.setattr(app, "setup_logging", lambda *a, **k: None)
