@@ -6,11 +6,12 @@ siblings) at module level, so ``gaia --help`` never imports ADK or the connector
 
 from __future__ import annotations
 
-from gaia.cli import daemon, llm, root
+from gaia.cli import analyze, daemon, llm, root
 
 # The full command tree, composed explicitly in one place.
 app = root.app
 app.add_typer(llm.app, name="llm")
+app.command()(analyze.analyze)
 app.command()(daemon.serve)
 app.command()(daemon.start)
 app.command()(daemon.stop)

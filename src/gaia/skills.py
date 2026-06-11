@@ -19,8 +19,12 @@ model backend (the loader itself is pure file parsing).
 from __future__ import annotations
 
 import logging
+import re
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+import yaml
 
 from gaia import constants
 
@@ -67,3 +71,34 @@ def attach_skills(base_instruction: str, skill_ids: list[str], skills_dir: Path)
         if skill is not None:
             sections.append(f"# Skill: {skill.frontmatter.name}\n\n{skill.instructions}")
     return "\n\n".join(sections)
+
+
+def skill_id_for(name: str) -> str:
+    """Normalize a proposed skill name into a kebab-case folder id."""
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    return slug or "skill"
+
+
+def write_skill(skills_dir: Path, name: str, description: str, instructions: str) -> Path:
+    """Create ``skills_dir/<id>/SKILL.md`` and validate it loads; return the folder.
+
+    ADK requires the folder name to equal the frontmatter ``name``, so both come from
+    :func:`skill_id_for`. Refuses to overwrite an existing skill. The written folder is
+    round-tripped through ADK's loader — on failure it is removed and the error raised,
+    so a half-written skill can never break startup loading.
+    """
+    skill_id = skill_id_for(name)
+    folder = Path(skills_dir) / skill_id
+    if folder.exists():
+        raise FileExistsError(f"skill {skill_id!r} already exists at {folder}")
+
+    front = yaml.safe_dump(
+        {"name": skill_id, "description": description.strip()}, sort_keys=False, allow_unicode=True
+    ).strip()
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_text(f"---\n{front}\n---\n\n{instructions.strip()}\n")
+
+    if load_skill(skills_dir, skill_id) is None:  # warns with the underlying reason
+        shutil.rmtree(folder, ignore_errors=True)
+        raise ValueError(f"written skill {skill_id!r} failed ADK validation — removed")
+    return folder
