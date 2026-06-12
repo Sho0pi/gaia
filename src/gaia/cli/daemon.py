@@ -16,8 +16,6 @@ import signal
 import subprocess
 import sys
 import time
-from collections import deque
-from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -25,6 +23,7 @@ import typer
 from gaia.cli._console import console, emit_json
 from gaia.cli._options import CliState, state
 from gaia.cli._pidfile import PidFile
+from gaia.cli.logs import tail_lines
 
 #: Exit code for daemon-state errors (already running / not running).
 EXIT_DAEMON = 3
@@ -164,7 +163,7 @@ def _start(st: CliState) -> int:
             console().print(
                 f"daemon exited immediately (code {proc.returncode}) — last lines of {log_path}:"
             )
-            for line in _tail(log_path, 15):
+            for line in tail_lines(log_path, 15):
                 console().print(f"  {line}")
             return 1
         if pidfile.read() == proc.pid:  # serve writes its pidfile once startup committed
@@ -197,15 +196,6 @@ def _stop(timeout: int) -> int:
         pass
     pidfile.remove()  # the killed child cannot remove its own file
     return 0
-
-
-def _tail(path: Path, lines: int) -> list[str]:
-    """The last ``lines`` lines of ``path`` (empty when the file is missing)."""
-    try:
-        with path.open(encoding="utf-8", errors="replace") as fh:
-            return [line.rstrip("\n") for line in deque(fh, maxlen=lines)]
-    except FileNotFoundError:
-        return []
 
 
 def _fmt_duration(seconds: int) -> str:
