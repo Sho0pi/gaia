@@ -36,6 +36,7 @@ class AgentFactory:
         default_communication_style: str = DEFAULT_COMMUNICATION_STYLE,
         tool_registry: ToolRegistry | None = None,
         mcp_toolsets_provider: Callable[[], list[Any]] | None = None,
+        skill_toolset_provider: Callable[[], list[Any]] | None = None,
     ) -> None:
         self._registry = registry
         self._default_model = default_model
@@ -45,8 +46,9 @@ class AgentFactory:
         self._default_communication_style = default_communication_style
         self._tool_registry = tool_registry
         # Built lazily at agent-build time (where ADK is already imported); souls get the
-        # same configured MCP toolsets as the root agent. Default: none.
+        # same configured MCP toolsets and on-demand skills toolset as the root. Default: none.
         self._mcp_toolsets_provider = mcp_toolsets_provider or (lambda: [])
+        self._skill_toolset_provider = skill_toolset_provider or (lambda: [])
 
     def create_or_reuse(self, spec: AgentSpec) -> LlmAgent:
         """Return an ADK agent for ``spec``, loading from the registry if present.
@@ -78,7 +80,7 @@ class AgentFactory:
             )
         # Configured external MCP servers attach to every soul too (not in the registry,
         # so AgentSpec.tools can't pin them — they're all-or-nothing per server config).
-        tools = [*tools, *self._mcp_toolsets_provider()]
+        tools = [*tools, *self._mcp_toolsets_provider(), *self._skill_toolset_provider()]
 
         return LlmAgent(
             name=spec.key,
