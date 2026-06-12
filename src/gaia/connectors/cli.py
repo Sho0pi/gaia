@@ -11,6 +11,7 @@ convention) so ``gaia.connectors`` stays importable without it.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, ClassVar
 
 from gaia import constants
@@ -23,8 +24,14 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 class CLIConnector:
     """Bridges a terminal chat UI to a Gaia handler coroutine."""
 
-    def __init__(self, handler: Handler) -> None:
+    def __init__(
+        self, handler: Handler, on_shutdown: Callable[[], Awaitable[None]] | None = None
+    ) -> None:
         self._handler = handler
+        # Run on the app's *own* event loop as it unmounts, so Gaia's async resources
+        # (browser/shell/MCP) are released on the loop that owns them — not after Textual
+        # has already torn the loop down (which is what raised 'Event loop is closed').
+        self._on_shutdown = on_shutdown
 
     def build_app(self) -> App[None]:
         """Build the Textual chat app wired to the handler. Imports Textual lazily."""
@@ -41,6 +48,7 @@ class CLIConnector:
         )
 
         handler = self._handler
+        on_shutdown = self._on_shutdown
 
         class ChatApp(App):  # type: ignore[type-arg]
             TITLE = constants.APP_NAME
@@ -64,6 +72,11 @@ class CLIConnector:
 
             def on_mount(self) -> None:
                 self.query_one("#prompt", Input).focus()
+
+            async def on_unmount(self) -> None:
+                # Textual awaits this during shutdown, loop still alive — release Gaia here.
+                if on_shutdown is not None:
+                    await on_shutdown()
 
             async def on_input_submitted(self, event: Input.Submitted) -> None:
                 text = event.value.strip()

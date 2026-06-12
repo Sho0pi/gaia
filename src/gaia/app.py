@@ -78,7 +78,7 @@ def run_cli(settings: Settings | None = None, *, env_file: Path | None = None) -
     gaia = Gaia(settings)
     # The TUI owns the terminal, so console log handlers would draw over it — files only.
     setup_logging(settings, gaia.config.logging, console=False)
-    CLIConnector(build_handler(gaia)).run()
+    CLIConnector(build_handler(gaia), on_shutdown=gaia.close).run()
 
 
 def run_dev(
@@ -129,7 +129,10 @@ def run(settings: Settings | None = None, *, env_file: Path | None = None) -> No
         return
 
     if selected == ["cli"]:
-        CLIConnector(build_handler(gaia)).run()
+        # Gaia is closed inside the TUI's own loop (on_shutdown), so its async resources
+        # are released before that loop dies. The post-run close is a no-op safety net for
+        # the case the app never mounted.
+        CLIConnector(build_handler(gaia), on_shutdown=gaia.close).run()
         asyncio.run(gaia.close())
         return
 
@@ -234,6 +237,14 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
         return
     try:
         await asyncio.gather(*tasks)
+    except asyncio.CancelledError:
+        # On shutdown the cancel hits us mid-``gather``; ``gather`` schedules the children's
+        # cancellation but does NOT wait for them, so re-cancel and await so each connector
+        # runs its own teardown (whatsapp disconnect, telegram stop) before we tear down.
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
     finally:
         # Drain any turns still buffered for memory before the process exits, so a
         # Ctrl-C doesn't drop the tail of the conversation (best-effort).

@@ -8,6 +8,7 @@ reply) without touching the real library.
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -45,6 +46,17 @@ class _FakeClient:
         self.handlers: dict[Any, Any] = {}
         self.replies: list[tuple[str, Any]] = []
         self.images: list[tuple[Any, str, str | None]] = []
+        self.connected = False
+        self.disconnected = False
+
+    async def connect(self) -> None:
+        self.connected = True
+
+    async def idle(self) -> None:
+        await asyncio.Event().wait()  # blocks until the task is cancelled
+
+    def disconnect(self) -> None:  # neonize's is sync; the connector handles either
+        self.disconnected = True
 
     def event(self, event_type: Any) -> Any:
         def register(fn: Any) -> Any:
@@ -157,3 +169,32 @@ async def test_empty_message_is_ignored(fake_neonize: dict[str, Any], tmp_path: 
     await client.handlers[fake_neonize["MessageEv"]](client, _msg())
 
     assert client.replies == []
+
+
+async def test_start_disconnects_on_cancel(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
+    # The shutdown bug: a cancelled start() must disconnect the native client, else
+    # neonize's goroutines outlive the asyncio task and the loop teardown raises.
+    async def handler(_text: str, _send: Send) -> None:  # pragma: no cover - never called
+        raise AssertionError
+
+    connector = WhatsAppWebConnector(tmp_path / "wa.db", handler)
+    captured: dict[str, _FakeClient] = {}
+    real_build = connector.build_client
+
+    def _capture() -> _FakeClient:
+        client = real_build()
+        captured["client"] = client
+        return client
+
+    connector.build_client = _capture  # type: ignore[method-assign]
+
+    task = asyncio.create_task(connector.start())
+    await asyncio.sleep(0)  # let it connect + reach idle()
+    client = captured["client"]
+    assert client.connected is True
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert client.disconnected is True  # finally ran disconnect on the way out

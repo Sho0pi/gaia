@@ -47,3 +47,28 @@ def test_root_agent_attaches_all_registered_tools(
     names = {getattr(t, "__name__", t) for t in tools}  # type: ignore[union-attr]
     expected = {"web_fetch", "web_search", "fs_read", "fs_write", "fs_edit", "delegate_to_soul"}
     assert expected <= names
+
+
+async def test_close_runs_tool_cleanup_and_mcp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Gaia.close must release the tool managers (shell/browser) AND the MCP toolsets on
+    # the running loop — even if one of them raises — and be idempotent.
+    gaia = _gaia(tmp_path)
+    calls: list[str] = []
+
+    async def fake_aclose() -> None:
+        calls.append("tools")
+
+    monkeypatch.setattr(gaia.tools, "aclose", fake_aclose)
+
+    class _Toolset:
+        async def close(self) -> None:
+            calls.append("mcp")
+
+    gaia._mcp = [_Toolset()]  # type: ignore[list-item]
+
+    await gaia.close()
+    await gaia.close()  # idempotent: second call does nothing
+
+    assert calls == ["tools", "mcp"]

@@ -11,6 +11,7 @@ unit tests can exercise the wiring without the native whatsmeow binary.
 
 from __future__ import annotations
 
+import inspect
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -126,8 +127,29 @@ class WhatsAppWebConnector:
         return client
 
     async def start(self) -> None:
-        """Connect (prompting a QR scan on first run) and block receiving events."""
+        """Connect (prompting a QR scan on first run) and block receiving events.
+
+        On cancellation (Ctrl-C / ``gaia stop``) the ``finally`` disconnects the client so
+        neonize's whatsmeow goroutines stop and ``idle()`` unblocks — otherwise the native
+        client keeps running after the asyncio task is gone and the loop teardown raises.
+        """
         client = self.build_client()
         logger.info("whatsapp starting — scan the QR if prompted (session: %s)", self._session_db)
         await client.connect()
-        await client.idle()  # blocks, keeps receiving events
+        try:
+            await client.idle()  # blocks, keeps receiving events
+        finally:
+            await _disconnect(client)
+
+
+async def _disconnect(client: Any) -> None:
+    """Best-effort shutdown of a neonize client (``disconnect``, sync or async)."""
+    disconnect = getattr(client, "disconnect", None)
+    if disconnect is None:
+        return
+    try:
+        result = disconnect()
+        if inspect.isawaitable(result):
+            await result
+    except Exception:  # pragma: no cover - shutdown best-effort
+        logger.debug("whatsapp disconnect failed", exc_info=True)

@@ -54,8 +54,9 @@ def test_plan_launch_daemon_mode(enabled: dict[str, bool], expected: list[str]) 
 class _FakeConnector:
     """Stands in for CLIConnector: accepts the handler, run() returns immediately."""
 
-    def __init__(self, handler: object) -> None:
+    def __init__(self, handler: object, on_shutdown: object = None) -> None:
         self.handler = handler
+        self.on_shutdown = on_shutdown
 
     def run(self) -> None:
         return None
