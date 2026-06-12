@@ -328,6 +328,17 @@ class AgentBinding(BaseModel):
     )
 
 
+class SkillsConfig(BaseModel):
+    """How the skills under ``skills_dir`` are exposed to agents."""
+
+    on_demand: bool = Field(
+        default=True,
+        description="Expose all skills in skills_dir on demand (ADK SkillToolset: the model "
+        "discovers them and loads a skill's instructions only when needed). Off = only skills "
+        "explicitly listed in agents.<name>.skills are injected (always-on).",
+    )
+
+
 class GaiaConfig(BaseModel):
     """Root of ``gaia.yaml``."""
 
@@ -346,6 +357,7 @@ class GaiaConfig(BaseModel):
     skills_dir: Path | None = Field(
         default=None, description="Skills folder; empty = the default under the home dir."
     )
+    skills: SkillsConfig = Field(default_factory=SkillsConfig)
     agents: dict[str, AgentBinding] = Field(
         default_factory=dict,
         description="Per-agent bindings; the root orchestrator uses key 'gaia'.",

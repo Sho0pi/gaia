@@ -47,3 +47,40 @@ def test_root_agent_attaches_all_registered_tools(
     names = {getattr(t, "__name__", t) for t in tools}  # type: ignore[union-attr]
     expected = {"web_fetch", "web_search", "fs_read", "fs_write", "fs_edit", "delegate_to_soul"}
     assert expected <= names
+
+
+def test_root_agent_attaches_skill_toolset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # On-demand skills: when skills_dir holds a skill, the root agent gets a SkillToolset.
+    skills = tmp_path / "skills"
+    (skills / "web-research").mkdir(parents=True)
+    (skills / "web-research" / "SKILL.md").write_text(
+        "---\nname: web-research\ndescription: search\n---\n\nbody\n"
+    )
+    config_path = tmp_path / "gaia.yaml"
+    config_path.write_text(f"skills_dir: {skills}\n")
+    settings = Settings(agent_registry_dir=tmp_path / "registry", config_path=config_path)
+    gaia = Gaia(settings)
+
+    from google.adk.tools.skill_toolset import SkillToolset
+
+    kwargs = _capture_root_kwargs(gaia, monkeypatch)
+    assert any(isinstance(t, SkillToolset) for t in kwargs["tools"])  # type: ignore[union-attr]
+
+
+def test_root_agent_omits_skill_toolset_when_disabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    skills = tmp_path / "skills"
+    (skills / "web-research").mkdir(parents=True)
+    (skills / "web-research" / "SKILL.md").write_text(
+        "---\nname: web-research\ndescription: search\n---\n\nbody\n"
+    )
+    config_path = tmp_path / "gaia.yaml"
+    config_path.write_text(f"skills_dir: {skills}\nskills:\n  on_demand: false\n")
+    settings = Settings(agent_registry_dir=tmp_path / "registry", config_path=config_path)
+    gaia = Gaia(settings)
+
+    from google.adk.tools.skill_toolset import SkillToolset
+
+    kwargs = _capture_root_kwargs(gaia, monkeypatch)
+    assert not any(isinstance(t, SkillToolset) for t in kwargs["tools"])  # type: ignore[union-attr]
