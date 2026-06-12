@@ -65,22 +65,3 @@ def test_root_agent_attaches_skill_toolset(tmp_path: Path, monkeypatch: pytest.M
 
     kwargs = _capture_root_kwargs(gaia, monkeypatch)
     assert any(isinstance(t, SkillToolset) for t in kwargs["tools"])  # type: ignore[union-attr]
-
-
-def test_root_agent_omits_skill_toolset_when_disabled(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    skills = tmp_path / "skills"
-    (skills / "web-research").mkdir(parents=True)
-    (skills / "web-research" / "SKILL.md").write_text(
-        "---\nname: web-research\ndescription: search\n---\n\nbody\n"
-    )
-    config_path = tmp_path / "gaia.yaml"
-    config_path.write_text(f"skills_dir: {skills}\nskills:\n  on_demand: false\n")
-    settings = Settings(agent_registry_dir=tmp_path / "registry", config_path=config_path)
-    gaia = Gaia(settings)
-
-    from google.adk.tools.skill_toolset import SkillToolset
-
-    kwargs = _capture_root_kwargs(gaia, monkeypatch)
-    assert not any(isinstance(t, SkillToolset) for t in kwargs["tools"])  # type: ignore[union-attr]

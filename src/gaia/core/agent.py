@@ -59,11 +59,11 @@ class Gaia:
 
         Exposes every skill under ``skills_dir`` to the model via ``list_skills`` /
         ``load_skill`` (progressive disclosure), so agents can reach the skills folder
-        without each id being pinned. ``[]`` when ``skills.on_demand`` is off or the folder
-        holds no valid skill. Built lazily so constructing Gaia needs no ADK.
+        without each id being pinned. ``[]`` when the folder holds no valid skill.
+        Built lazily so constructing Gaia needs no ADK.
         """
         if self._skill_toolsets is None:
-            toolset = build_skill_toolset(self.skills_dir) if self.config.skills.on_demand else None
+            toolset = build_skill_toolset(self.skills_dir)
             self._skill_toolsets = [toolset] if toolset is not None else []
         return self._skill_toolsets
 
