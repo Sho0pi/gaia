@@ -29,6 +29,9 @@ runner = CliRunner()
 def test_create_ai_forges_valid_spec(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     reg = tmp_path / "agent_registry"
     settings = Settings(agent_registry_dir=reg, config_path=tmp_path / "gaia.yaml")
+    # Honor the env-configured model (GEMINI_MODEL) like the other system tests — the
+    # schema default may have no free-tier quota (gemini-2.0-flash: limit 0 → 429).
+    (tmp_path / "gaia.yaml").write_text(f"llm:\n  model: {settings.model}\n")
     monkeypatch.setattr("gaia.config.get_settings", lambda env_file=None: settings)
 
     result = runner.invoke(

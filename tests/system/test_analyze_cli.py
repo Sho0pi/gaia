@@ -15,7 +15,7 @@ import pytest
 
 from gaia.analysis import AnalysisReport, digest_events, read_events, render_digest
 from gaia.cli.analyze import _run_analyst
-from gaia.config import GaiaConfig
+from gaia.config import GaiaConfig, LLMConfig, get_settings
 
 pytestmark = [
     pytest.mark.system,
@@ -47,7 +47,10 @@ def test_analyst_returns_valid_report(tmp_path: Path) -> None:
     (tmp_path / "events.jsonl").write_text("\n".join(lines) + "\n")
 
     digest = digest_events(read_events(tmp_path, now - timedelta(days=1)))
-    report = asyncio.run(_run_analyst(GaiaConfig(), render_digest(digest)))
+    # Honor the env-configured model (GEMINI_MODEL) like the other system tests — the
+    # schema default may have no free-tier quota (gemini-2.0-flash: limit 0 → 429).
+    cfg = GaiaConfig(llm=LLMConfig(model=get_settings().model))
+    report = asyncio.run(_run_analyst(cfg, render_digest(digest)))
 
     assert isinstance(report, AnalysisReport)
     assert report.summary  # the model described the window
