@@ -161,6 +161,25 @@ class BrowserConfig(BaseModel):
     )
 
 
+class VoiceConfig(BaseModel):
+    """Inbound voice notes: local speech-to-text via faster-whisper (the 'voice' group)."""
+
+    enabled: bool = Field(
+        default=True,
+        description="Transcribe inbound voice messages and answer them like text "
+        "(needs the 'voice' dep group; ignored when faster-whisper isn't installed).",
+    )
+    model: str = Field(
+        default="base",
+        description="faster-whisper model size: tiny/base/small/medium/large-v3. "
+        "Bigger = better transcripts, slower + more RAM. Weights download on first use.",
+    )
+    language: str | None = Field(
+        default=None,
+        description="Force a transcription language (e.g. 'en', 'he'); empty = auto-detect.",
+    )
+
+
 class GroupTrigger(BaseModel):
     """When Gaia should respond inside a group chat."""
 
@@ -339,6 +358,7 @@ class GaiaConfig(BaseModel):
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     browser: BrowserConfig = Field(default_factory=BrowserConfig)
+    voice: VoiceConfig = Field(default_factory=VoiceConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     default_communication_style: str = Field(
         default="human", description="Fallback voice for agents (human/caveman/ai)."

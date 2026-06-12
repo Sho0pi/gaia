@@ -37,6 +37,8 @@ PID_FILE = HOME_DIR / f"{APP_NAME}.pid"
 # Per-agent state. Each agent's sandboxed filesystem workspace lives at
 # AGENTS_DIR / <agent_name> / "workspace" (see tools/filesystem.py).
 AGENTS_DIR = HOME_DIR / "agents"
+# Transient downloaded artifacts (e.g. inbound voice notes under cache/voice/).
+CACHE_DIR = HOME_DIR / "cache"
 
 # Logging identity. The system logger is the app name; events are a child of it.
 LOGGER_NAME = APP_NAME

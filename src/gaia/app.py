@@ -17,6 +17,7 @@ import asyncio
 import logging
 import signal
 from pathlib import Path
+from typing import Any
 
 from gaia.config import (
     BACKGROUND_CONNECTORS,
@@ -40,13 +41,17 @@ logger = logging.getLogger(__name__)
 
 
 def select_connector(
-    settings: Settings, handler: Handler
+    settings: Settings, handler: Handler, *, transcriber: Any = None
 ) -> WhatsAppConnector | WhatsAppWebConnector:
-    """Choose the WhatsApp backend from configured credentials."""
+    """Choose the WhatsApp backend from configured credentials.
+
+    ``transcriber`` (``gaia.voice.Transcriber`` or None) turns inbound voice notes into
+    text on the web backend; the business backend has no voice path yet (webhook, #3).
+    """
     if settings.has_whatsapp_business:
         assert settings.whatsapp_phone_id and settings.whatsapp_token  # narrowed by property
         return WhatsAppConnector(settings.whatsapp_phone_id, settings.whatsapp_token, handler)
-    return WhatsAppWebConnector(settings.whatsapp_session_db, handler)
+    return WhatsAppWebConnector(settings.whatsapp_session_db, handler, transcriber=transcriber)
 
 
 def plan_launch(config: GaiaConfig, *, daemon: bool = False) -> list[str]:
@@ -211,7 +216,9 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
     tasks: list[asyncio.Task[None]] = []
 
     if "whatsapp" in selected:
-        connector = select_connector(settings, handler)
+        from gaia.voice import get_transcriber
+
+        connector = select_connector(settings, handler, transcriber=get_transcriber(gaia.config))
         if isinstance(connector, WhatsAppWebConnector):
             tasks.append(asyncio.create_task(connector.start()))
         else:
