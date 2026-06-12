@@ -68,20 +68,12 @@ def make_web_search(provider: SearchProvider) -> Callable[..., dict[str, Any]]:
     def web_search(
         query: str, max_results: int = DEFAULT_MAX_RESULTS, time_range: str | None = None
     ) -> dict[str, Any]:
-        """Search the web for current information.
-
-        Supports a query, a result count, and an optional temporal range filter.
-        Returns titles, URLs, and snippets from search results.
+        """Search the web for current information; returns titles, URLs, and snippets.
 
         Args:
-            query (str): The search query.
-            max_results (int): Maximum number of results to return (1-10).
-            time_range (str): Optional recency filter; one of 'day', 'week', 'month',
-                'year'. Omit or pass an empty string for no time limit.
-
-        Returns:
-            dict: On success, {'status': 'success', 'results': [{'title', 'url',
-            'snippet'}, ...]}. On failure, {'status': 'error', 'error_message': str}.
+            query: the search query.
+            max_results: how many results (1-10).
+            time_range: recency filter — 'day', 'week', 'month' or 'year'; empty = no limit.
         """
         cleaned = query.strip()
 

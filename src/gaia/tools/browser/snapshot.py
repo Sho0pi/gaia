@@ -18,16 +18,11 @@ def make_browser_snapshot(
     """Return the ADK ``browser_snapshot`` tool bound to ``manager``."""
 
     async def browser_snapshot(*, tool_context: ToolContext) -> dict[str, Any]:
-        """Read the current page as a list of elements you can act on.
+        """Read the current page as elements you can act on (its accessibility tree).
 
-        Returns the page's accessibility tree, where each element is tagged with a ref
-        like ``[ref=e4]`` (e.g. ``- button "Search" [ref=e4]``). Pass that ref id
-        (``e4``) to browser_click or browser_type. Call this after browser_navigate,
-        and again after the page changes, since refs are reassigned each snapshot.
-
-        Returns:
-            dict: On success {'status': 'success', 'snapshot': str, 'url': str,
-            'truncated': bool}. On failure {'status': 'error', 'error_message': str}.
+        Each element carries a ref like ``[ref=e4]``; pass that id (``e4``) to
+        browser_click or browser_type. Snapshot again after the page changes — refs
+        are reassigned each time.
         """
         agent = tool_context.agent_name
 
