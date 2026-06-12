@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import re
 
+import yaml
 from pydantic import BaseModel, Field
+
+#: Frontmatter keys, in display order. ``instruction`` (long prose) is the markdown body,
+#: never the frontmatter — that is what makes a soul file pleasant to read and edit.
+_FRONTMATTER_FIELDS = ("name", "description", "model", "skills", "tools", "communication_style")
 
 
 def slugify(name: str) -> str:
@@ -40,3 +45,20 @@ class AgentSpec(BaseModel):
     @property
     def key(self) -> str:
         return slugify(self.name)
+
+    def to_markdown(self) -> str:
+        """Serialize as a human-friendly Markdown file: YAML frontmatter + instruction body."""
+        meta = {field: getattr(self, field) for field in _FRONTMATTER_FIELDS}
+        front = yaml.safe_dump(meta, sort_keys=False, allow_unicode=True).strip()
+        return f"---\n{front}\n---\n\n{self.instruction.strip()}\n"
+
+    @classmethod
+    def from_markdown(cls, text: str) -> AgentSpec:
+        """Parse the :meth:`to_markdown` format back into a spec (raises on malformed input)."""
+        if not text.lstrip().startswith("---"):
+            raise ValueError("missing YAML frontmatter (expected a leading '---' line)")
+        _, front, body = text.lstrip().split("---", 2)
+        meta = yaml.safe_load(front) or {}
+        if not isinstance(meta, dict):
+            raise ValueError("frontmatter must be a mapping of fields")
+        return cls.model_validate({**meta, "instruction": body.strip()})
