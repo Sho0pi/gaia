@@ -17,10 +17,13 @@ from gaia.analysis import AnalysisReport, digest_events, read_events, render_dig
 from gaia.cli.analyze import _run_analyst
 from gaia.config import GaiaConfig
 
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("GEMINI_API_KEY"),
-    reason="needs a Gemini key (set GEMINI_API_KEY in .env)",
-)
+pytestmark = [
+    pytest.mark.system,
+    pytest.mark.skipif(
+        not os.environ.get("GEMINI_API_KEY"),
+        reason="needs a Gemini key (set GEMINI_API_KEY in .env)",
+    ),
+]
 
 
 def test_analyst_returns_valid_report(tmp_path: Path) -> None:

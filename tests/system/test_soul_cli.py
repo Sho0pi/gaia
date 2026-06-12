@@ -15,10 +15,13 @@ from gaia.agents import SoulRegistry
 from gaia.cli import app as cli_app
 from gaia.config import Settings
 
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("GEMINI_API_KEY"),
-    reason="needs a Gemini key (set GEMINI_API_KEY in .env)",
-)
+pytestmark = [
+    pytest.mark.system,
+    pytest.mark.skipif(
+        not os.environ.get("GEMINI_API_KEY"),
+        reason="needs a Gemini key (set GEMINI_API_KEY in .env)",
+    ),
+]
 
 runner = CliRunner()
 

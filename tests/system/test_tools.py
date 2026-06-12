@@ -14,10 +14,13 @@ from gaia.agents import AgentSpec
 from gaia.config import Settings
 from gaia.core import Gaia
 
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("GEMINI_API_KEY"),
-    reason="needs a Gemini key (set GEMINI_API_KEY in .env)",
-)
+pytestmark = [
+    pytest.mark.system,
+    pytest.mark.skipif(
+        not os.environ.get("GEMINI_API_KEY"),
+        reason="needs a Gemini key (set GEMINI_API_KEY in .env)",
+    ),
+]
 
 
 # backend: native keeps souls free of the default playwright-mcp toolset, so these

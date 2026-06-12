@@ -16,6 +16,8 @@ from gaia.connectors import WhatsAppWebConnector
 from gaia.connectors.base import Send
 from gaia.connectors.whatsapp_web import patch_protobuf_version_guard
 
+pytestmark = pytest.mark.system
+
 patch_protobuf_version_guard()  # same protobuf<7 guard the connector applies
 neonize = pytest.importorskip("neonize.aioze.client", reason="needs the neonize native lib")
 
