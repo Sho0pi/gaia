@@ -11,6 +11,7 @@ convention) so ``gaia.connectors`` stays importable without it.
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, ClassVar
 
 from gaia import constants
@@ -96,6 +97,15 @@ class CLIConnector:
 
         return ChatApp()
 
+    async def run_async(self) -> None:
+        """Run the TUI on the *current* event loop until the user quits.
+
+        The caller owns the loop, so anything that must outlive the app but die with
+        the loop (Gaia's async resources) can be closed right after this returns —
+        typically ``async with gaia: await connector.run_async()``.
+        """
+        await self.build_app().run_async()
+
     def run(self) -> None:
-        """Launch the TUI. Blocks until the user quits."""
-        self.build_app().run()
+        """Launch the TUI on its own fresh loop. Blocks until the user quits."""
+        asyncio.run(self.run_async())

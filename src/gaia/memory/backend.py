@@ -22,6 +22,7 @@ without a configured store.
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING, Any
 
 from gaia import constants
@@ -79,6 +80,10 @@ def build_mem0_config(settings: Settings, memory: MemoryConfig) -> dict[str, Any
 
 def build_mem0(settings: Settings, memory: MemoryConfig) -> Memory:
     """Construct a mem0 ``Memory`` configured from ``settings`` + ``memory`` config."""
+    # Disable mem0's PostHog telemetry before importing it (the flag is read at import).
+    # Besides the privacy win, its analytics consumer is a NON-daemon background thread
+    # that blocks interpreter shutdown joining it — a hang on Ctrl-C / `gaia stop`.
+    os.environ.setdefault("MEM0_TELEMETRY", "false")
     from mem0 import Memory
 
     return Memory.from_config(build_mem0_config(settings, memory))

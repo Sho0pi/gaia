@@ -6,7 +6,10 @@ Pure dict assembly — no mem0 import, no network — so the provider-agnostic w
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+
+import pytest
 
 from gaia.config import MemoryConfig, MemoryProvider, Settings
 from gaia.memory.backend import DEFAULT_GEMINI_EMBEDDER_MODEL, build_mem0_config
@@ -76,3 +79,21 @@ def test_local_embedder_needs_no_key() -> None:
 def test_config_path_is_absolute() -> None:
     cfg = build_mem0_config(_settings(), MemoryConfig())
     assert Path(cfg["vector_store"]["config"]["path"]).is_absolute()
+
+
+def test_build_mem0_disables_telemetry(monkeypatch: pytest.MonkeyPatch) -> None:
+    # mem0's PostHog telemetry runs on a non-daemon thread that wedges shutdown; build_mem0
+    # must set MEM0_TELEMETRY=false before importing mem0 (read at import time).
+    import sys
+    from types import ModuleType
+
+    from gaia.memory.backend import build_mem0
+
+    monkeypatch.delenv("MEM0_TELEMETRY", raising=False)
+    fake = ModuleType("mem0")
+    fake.Memory = type("Memory", (), {"from_config": staticmethod(lambda cfg: object())})  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "mem0", fake)
+
+    build_mem0(_settings(), MemoryConfig())
+
+    assert os.environ["MEM0_TELEMETRY"] == "false"

@@ -47,6 +47,7 @@ class Gaia:
         )
         self._memory_service: Mem0MemoryService | None = None
         self._mcp: list[McpToolset] | None = None
+        self._closed = False
 
     def mcp_toolsets(self) -> list[McpToolset]:
         """The configured external MCP toolsets, built once and shared by root + souls.
@@ -73,11 +74,28 @@ class Gaia:
         return self._mcp
 
     async def close(self) -> None:
-        """Shut down any open MCP toolsets (terminates stdio child processes)."""
+        """Release every async resource on the *running* loop (idempotent, best-effort).
+
+        Covers the stateful tool backends (shell processes, browser sessions) via the
+        registry's ``aclose`` and the MCP stdio child processes. Called from each shutdown
+        path while its loop is still alive, so nothing falls through to the tool managers'
+        ``atexit`` hooks — which run after the loop is gone and raise 'Event loop is closed'.
+        """
+        if self._closed:
+            return
+        self._closed = True
+        await self.tools.aclose()
         if self._mcp:
             from gaia.mcp import close_mcp_toolsets
 
             await close_mcp_toolsets(self._mcp)
+
+    async def __aenter__(self) -> Gaia:
+        """``async with Gaia(...):`` — :meth:`close` runs on exit, exceptions included."""
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        await self.close()
 
     @property
     def config(self) -> GaiaConfig:

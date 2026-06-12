@@ -78,7 +78,22 @@ def run_cli(settings: Settings | None = None, *, env_file: Path | None = None) -
     gaia = Gaia(settings)
     # The TUI owns the terminal, so console log handlers would draw over it — files only.
     setup_logging(settings, gaia.config.logging, console=False)
-    CLIConnector(build_handler(gaia)).run()
+    _run_tui(gaia)
+
+
+def _run_tui(gaia: Gaia) -> None:
+    """Run the chat TUI with Gaia's lifetime scoped to the loop that hosts it.
+
+    ``async with gaia`` guarantees the async resources (browser/shell/MCP) are closed
+    on the same still-alive loop the app ran on — quit, Ctrl-C, or crash alike.
+    Closing on a *different* loop afterwards is what raised 'Event loop is closed'.
+    """
+
+    async def _main() -> None:
+        async with gaia:
+            await CLIConnector(build_handler(gaia)).run_async()
+
+    asyncio.run(_main())
 
 
 def run_dev(
@@ -129,8 +144,7 @@ def run(settings: Settings | None = None, *, env_file: Path | None = None) -> No
         return
 
     if selected == ["cli"]:
-        CLIConnector(build_handler(gaia)).run()
-        asyncio.run(gaia.close())
+        _run_tui(gaia)
         return
 
     asyncio.run(_run_background(settings, gaia, selected))
@@ -206,38 +220,53 @@ async def _serve(settings: Settings, gaia: Gaia, selected: list[str], *, hold: b
 
 
 async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -> None:
-    """Run the enabled async connectors concurrently until interrupted."""
-    handler = build_handler(gaia)
-    tasks: list[asyncio.Task[None]] = []
+    """Run the enabled async connectors concurrently until interrupted.
 
-    if "whatsapp" in selected:
-        connector = select_connector(settings, handler)
-        if isinstance(connector, WhatsAppWebConnector):
-            tasks.append(asyncio.create_task(connector.start()))
-        else:
-            # Business backend delivers inbound over an HTTP webhook that isn't wired
-            # yet (issue #3). Build the client so config is validated, but say so loudly.
-            connector.build_client()
-            logger.warning(
-                "whatsapp business backend selected, but the inbound webhook server is "
-                "not wired yet (see issue #3) — no messages will be received"
-            )
+    ``async with gaia`` scopes the async resources to this coroutine: they are closed
+    on the still-running loop on every exit path — clean return, exception, or the
+    shutdown cancel (the re-raised ``CancelledError`` still runs ``__aexit__``).
+    """
+    async with gaia:
+        handler = build_handler(gaia)
+        tasks: list[asyncio.Task[None]] = []
 
-    if "telegram" in selected:
-        token = gaia.config.connectors.telegram.token
-        if not token:
-            logger.warning("telegram enabled but no token (set GAIA_TELEGRAM_BOT_TOKEN) — skipping")
-        else:
-            tasks.append(asyncio.create_task(TelegramConnector(token, handler).start()))
+        if "whatsapp" in selected:
+            connector = select_connector(settings, handler)
+            if isinstance(connector, WhatsAppWebConnector):
+                tasks.append(asyncio.create_task(connector.start()))
+            else:
+                # Business backend delivers inbound over an HTTP webhook that isn't wired
+                # yet (issue #3). Build the client so config is validated, but say so loudly.
+                connector.build_client()
+                logger.warning(
+                    "whatsapp business backend selected, but the inbound webhook server is "
+                    "not wired yet (see issue #3) — no messages will be received"
+                )
 
-    if not tasks:
-        return
-    try:
-        await asyncio.gather(*tasks)
-    finally:
-        # Drain any turns still buffered for memory before the process exits, so a
-        # Ctrl-C doesn't drop the tail of the conversation (best-effort).
-        flush = getattr(handler, "flush", None)
-        if flush is not None:
-            await flush()
-        await gaia.close()
+        if "telegram" in selected:
+            token = gaia.config.connectors.telegram.token
+            if not token:
+                logger.warning(
+                    "telegram enabled but no token (set GAIA_TELEGRAM_BOT_TOKEN) — skipping"
+                )
+            else:
+                tasks.append(asyncio.create_task(TelegramConnector(token, handler).start()))
+
+        if not tasks:
+            return
+        try:
+            await asyncio.gather(*tasks)
+        except asyncio.CancelledError:
+            # On shutdown the cancel hits us mid-``gather``; ``gather`` schedules the
+            # children's cancellation but does NOT wait for them, so re-cancel and await so
+            # each connector runs its own teardown (whatsapp stop, telegram stop) first.
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
+        finally:
+            # Drain any turns still buffered for memory before the process exits, so a
+            # Ctrl-C doesn't drop the tail of the conversation (best-effort).
+            flush = getattr(handler, "flush", None)
+            if flush is not None:
+                await flush()
