@@ -15,12 +15,19 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from gaia.connectors.base import Handler, Media, Reply
+from gaia.connectors.base import Handler, Media, Reply, current_chat
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from neonize.aioze.client import NewAClient
 
 logger = logging.getLogger(__name__)
+
+
+def _jid_to_str(jid: Any) -> str:
+    """Round-trippable ``user@server`` form of a neonize JID (for the cron store)."""
+    user = getattr(jid, "User", "")
+    server = getattr(jid, "Server", "")
+    return f"{user}@{server}" if user else str(server)
 
 
 def patch_protobuf_version_guard() -> None:
@@ -78,9 +85,13 @@ def _message_text(message: Any) -> str:
 class WhatsAppWebConnector:
     """Bridges regular-account WhatsApp messages to a Gaia handler coroutine."""
 
+    #: Connector id used in cron job channel fields / the daemon's connector registry.
+    NAME = "whatsapp"
+
     def __init__(self, session_db: Path, handler: Handler) -> None:
         self._session_db = session_db
         self._handler = handler
+        self._client: Any = None  # the live client while start() runs (for send_to)
 
     def build_client(self) -> NewAClient:
         """Create a neonize client wired to the handler.
@@ -110,6 +121,9 @@ class WhatsAppWebConnector:
             text = _message_text(message)
             if text:
                 chat = message.Info.MessageSource.Chat  # JID to send media replies to
+                # Record where this turn came from, so scheduling tools (cron) can
+                # capture the chat for later proactive delivery.
+                current_chat.set((self.NAME, _jid_to_str(chat)))
 
                 async def send(reply: Reply) -> None:
                     # An image reply goes out as a real WhatsApp image; text replies
@@ -130,4 +144,25 @@ class WhatsAppWebConnector:
         client = self.build_client()
         logger.info("whatsapp starting — scan the QR if prompted (session: %s)", self._session_db)
         await client.connect()
-        await client.idle()  # blocks, keeps receiving events
+        self._client = client  # expose the live client for proactive send_to
+        try:
+            await client.idle()  # blocks, keeps receiving events
+        finally:
+            self._client = None
+
+    async def send_to(self, chat: str, reply: Reply) -> None:
+        """Proactively send ``reply`` to ``chat`` (``user@server``) — used by cron.
+
+        Only works while :meth:`start` is connected (the daemon); raises otherwise so
+        the caller logs a clear delivery failure instead of silently dropping it.
+        """
+        if self._client is None:
+            raise RuntimeError("whatsapp connector is not running")
+        from neonize.utils import build_jid
+
+        user, _, server = chat.partition("@")
+        jid = build_jid(user, server or "s.whatsapp.net")
+        if isinstance(reply, Media):
+            await self._client.send_image(jid, str(reply.path), caption=reply.caption or None)
+        else:
+            await self._client.send_message(jid, reply)

@@ -8,15 +8,19 @@ from __future__ import annotations
 
 from typing import Any
 
-from gaia.connectors.base import Handler, Reply, as_text
+from gaia.connectors.base import Handler, Media, Reply, as_text, current_chat
 
 
 class TelegramConnector:
     """Bridges Telegram messages to a Gaia handler coroutine."""
 
+    #: Connector id used in cron job channel fields / the daemon's connector registry.
+    NAME = "telegram"
+
     def __init__(self, token: str, handler: Handler) -> None:
         self._token = token
         self._handler = handler
+        self._app: Any = None  # the live Application while start() runs (for send_to)
 
     def build_application(self) -> object:
         """Create a python-telegram-bot Application wired to the handler."""
@@ -34,6 +38,9 @@ class TelegramConnector:
                     # Media reply degrades to its caption/path text.
                     await message.reply_text(as_text(reply))
 
+                # Record where this turn came from, so scheduling tools (cron) can
+                # capture the chat for later proactive delivery.
+                current_chat.set((self.NAME, str(message.chat_id)))
                 await self._handler(update.message.text, send)
 
         # filters.TEXT keeps slash-commands (/help, /reset, …) flowing to the handler,
@@ -58,9 +65,25 @@ class TelegramConnector:
         await app.initialize()
         await app.start()
         await app.updater.start_polling()
+        self._app = app  # expose the live bot for proactive send_to
         try:
             await asyncio.Event().wait()  # block until cancelled
         finally:
+            self._app = None
             await app.updater.stop()
             await app.stop()
             await app.shutdown()
+
+    async def send_to(self, chat: str, reply: Reply) -> None:
+        """Proactively send ``reply`` to ``chat`` (a telegram chat id) — used by cron.
+
+        Only works while :meth:`start` is polling (the daemon); raises otherwise so the
+        caller logs a clear delivery failure instead of silently dropping the message.
+        """
+        if self._app is None:
+            raise RuntimeError("telegram connector is not running")
+        if isinstance(reply, Media):
+            with reply.path.open("rb") as fh:
+                await self._app.bot.send_photo(chat_id=chat, photo=fh, caption=reply.caption)
+        else:
+            await self._app.bot.send_message(chat_id=chat, text=reply)

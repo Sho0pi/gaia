@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING, Any, Union
 
 from gaia import constants
 from gaia.tools import browser, fs, shell
+from gaia.tools.cron import NAME as CRON
+from gaia.tools.cron import make_cron
 from gaia.tools.remember import NAME as REMEMBER
 from gaia.tools.remember import make_remember
 from gaia.tools.web_fetch import NAME as WEB_FETCH
@@ -176,6 +178,9 @@ def default_registry(config: GaiaConfig | None = None) -> ToolRegistry:
 
     if _is_enabled(config, WEB_FETCH):
         registry.register(WEB_FETCH, make_web_fetch(httpx_fetcher))
+
+    if _is_enabled(config, CRON):
+        registry.register(CRON, make_cron())
 
     engine = _tool_setting(config, WEB_SEARCH, "engine")
     if engine and _is_enabled(config, WEB_SEARCH):

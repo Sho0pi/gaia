@@ -161,6 +161,30 @@ class BrowserConfig(BaseModel):
     )
 
 
+class CronDeliver(BaseModel):
+    """Default delivery target for scheduled-job replies without a captured chat."""
+
+    channel: str = Field(
+        default="", description="Connector for cron replies (telegram/whatsapp); empty = log only."
+    )
+    chat: str = Field(
+        default="",
+        description="Chat id on that connector (telegram chat id / whatsapp user@server).",
+    )
+
+
+class CronConfig(BaseModel):
+    """Scheduled jobs (the cron tool / `gaia cron`). Jobs live in ~/.gaia/cron.json."""
+
+    enabled: bool = Field(
+        default=True, description="Run the cron scheduler inside the daemon (gaia serve/start)."
+    )
+    deliver: CronDeliver = Field(
+        default_factory=CronDeliver,
+        description="Fallback delivery target for jobs created without a chat (e.g. via the CLI).",
+    )
+
+
 class GroupTrigger(BaseModel):
     """When Gaia should respond inside a group chat."""
 
@@ -339,6 +363,7 @@ class GaiaConfig(BaseModel):
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     browser: BrowserConfig = Field(default_factory=BrowserConfig)
+    cron: CronConfig = Field(default_factory=CronConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     default_communication_style: str = Field(
         default="human", description="Fallback voice for agents (human/caveman/ai)."
