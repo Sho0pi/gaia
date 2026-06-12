@@ -20,17 +20,10 @@ def make_browser_type(manager: BrowserSessionManager) -> Callable[..., Awaitable
     ) -> dict[str, Any]:
         """Type text into a field on the current page.
 
-        Use a ref from the most recent browser_snapshot (e.g. a textbox's ``e2``). Set
-        submit=True to press Enter after typing (e.g. to run a search).
-
         Args:
-            ref (str): The element ref from the last snapshot, like 'e2'.
-            text (str): The text to type into the element.
-            submit (bool): Press Enter after typing (default False).
-
-        Returns:
-            dict: On success {'status': 'success'}. On failure {'status': 'error',
-            'error_message': str}.
+            ref: element ref from the most recent browser_snapshot, like 'e2'.
+            text: the text to type.
+            submit: press Enter after typing (e.g. to run a search).
         """
         agent = tool_context.agent_name
 

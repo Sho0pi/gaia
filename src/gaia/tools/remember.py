@@ -30,17 +30,11 @@ def make_remember() -> Callable[..., Any]:
     """
 
     async def remember(fact: str, *, tool_context: ToolContext) -> dict[str, Any]:
-        """Save a durable fact about the user to long-term memory.
-
-        Use this for stable preferences or details worth recalling in future
-        conversations (e.g. "the user's timezone is IST"), not for passing chit-chat.
+        """Save a durable fact about the user to long-term memory (stable preferences
+        and details worth recalling later — not passing chit-chat).
 
         Args:
-            fact (str): The fact to remember, as a short self-contained statement.
-
-        Returns:
-            dict: On success {'status': 'success', 'fact': str}. On failure
-            {'status': 'error', 'error_message': str}.
+            fact: a short, self-contained statement (e.g. "the user's timezone is IST").
         """
         cleaned = fact.strip()
 

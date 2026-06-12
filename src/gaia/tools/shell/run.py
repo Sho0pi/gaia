@@ -42,25 +42,17 @@ def make_exec(
         *,
         tool_context: ToolContext,
     ) -> dict[str, Any]:
-        """Run a shell command in your workspace and return its output.
+        """Run a shell command in your workspace (install deps, build, test, CLIs).
 
-        Use this to install deps, run a build, run tests, or invoke a CLI. The command
-        runs in your workspace directory. Set background=True for a long-running process
-        (a dev server, a long build): it returns a process_id immediately, then use
-        exec_poll to read its output, exec_kill to stop it, and exec_list to see them.
+        Set background=True for a long-running process (a dev server, a long build):
+        it returns a process_id immediately — then exec_poll reads its output,
+        exec_kill stops it, exec_list lists them.
 
         Args:
-            command (str): The shell command to run.
-            timeout_seconds (float): Foreground only — max seconds to wait (1-300,
-                default 30); the command is killed if it exceeds this.
-            workdir (str): Optional subdirectory to run in (must stay in your workspace);
-                empty means the workspace root.
-            background (bool): Run as a long-lived background process instead of waiting.
-
-        Returns:
-            dict: Foreground success {'status': 'success', 'exit_code': int, 'stdout':
-            str, 'truncated': bool}; background {'status': 'running', 'process_id': str,
-            'command': str, 'log': str}. On failure {'status': 'error', 'error_message': str}.
+            command: the shell command to run.
+            timeout_seconds: foreground only — max seconds to wait (1-300).
+            workdir: subdirectory to run in (must stay inside your workspace).
+            background: run as a long-lived background process instead of waiting.
         """
         agent = tool_context.agent_name
 

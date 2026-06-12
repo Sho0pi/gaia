@@ -24,16 +24,11 @@ def make_fs_glob(agents_dir: Path) -> Callable[..., dict[str, Any]]:
         *,
         tool_context: ToolContext,
     ) -> dict[str, Any]:
-        """Find files matching a glob pattern under the workspace, using ``fd``.
+        """Find workspace files matching a glob pattern.
 
         Args:
-            pattern (str): Glob matched against the relative path (e.g. '**/*.py').
-            root (str): Subdirectory to search; omit for the workspace root.
-            max_results (int): Maximum matches to return (default 500).
-
-        Returns:
-            dict: On success {'status': 'success', 'matches': [str], 'count': int,
-            'truncated': bool}. On failure {'status': 'error', 'error_message': str}.
+            pattern: glob matched against the relative path (e.g. '**/*.py').
+            root: subdirectory to search; omit for the workspace root.
         """
         agent = tool_context.agent_name
         sandbox = sandbox_for(agents_dir, agent)

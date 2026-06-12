@@ -19,11 +19,7 @@ def make_exec_kill(manager: ProcessManager) -> Callable[..., Awaitable[dict[str,
         """Stop a background process you started with exec(..., background=True).
 
         Args:
-            process_id (str): The id returned by the background exec.
-
-        Returns:
-            dict: On success {'status': 'success', 'process_id': str, 'exit_code':
-            int|None}. On failure {'status': 'error', 'error_message': str}.
+            process_id: the id returned by the background exec.
         """
         agent = tool_context.agent_name
 
