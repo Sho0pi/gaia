@@ -129,9 +129,12 @@ class WhatsAppWebConnector:
     async def start(self) -> None:
         """Connect (prompting a QR scan on first run) and block receiving events.
 
-        On cancellation (Ctrl-C / ``gaia stop``) the ``finally`` disconnects the client so
-        neonize's whatsmeow goroutines stop and ``idle()`` unblocks — otherwise the native
-        client keeps running after the asyncio task is gone and the loop teardown raises.
+        On cancellation (Ctrl-C / ``gaia stop``) the ``finally`` calls :func:`_stop_client`.
+        This is load-bearing: ``idle()`` awaits neonize's background ``connect_task``, whose
+        blocking ``Neonize()`` Go call runs in a **non-daemon** worker thread. A plain
+        ``disconnect()`` only closes the websocket — the worker thread keeps running and the
+        interpreter then hangs forever joining it at exit. ``stop()`` (Go-side ``Stop``) is
+        what actually unblocks that call so the thread can exit.
         """
         client = self.build_client()
         logger.info("whatsapp starting — scan the QR if prompted (session: %s)", self._session_db)
@@ -139,17 +142,24 @@ class WhatsAppWebConnector:
         try:
             await client.idle()  # blocks, keeps receiving events
         finally:
-            await _disconnect(client)
+            await _stop_client(client)
 
 
-async def _disconnect(client: Any) -> None:
-    """Best-effort shutdown of a neonize client (``disconnect``, sync or async)."""
-    disconnect = getattr(client, "disconnect", None)
-    if disconnect is None:
-        return
-    try:
-        result = disconnect()
-        if inspect.isawaitable(result):
-            await result
-    except Exception:  # pragma: no cover - shutdown best-effort
-        logger.debug("whatsapp disconnect failed", exc_info=True)
+async def _stop_client(client: Any) -> None:
+    """Stop a neonize client so its non-daemon worker thread exits (best-effort).
+
+    Prefers ``stop()`` (``Stop`` — unblocks the blocking Go call AND disconnects); falls
+    back to ``disconnect()`` for any client that lacks it. Tolerates sync or async methods.
+    """
+    for name in ("stop", "disconnect"):
+        method = getattr(client, name, None)
+        if method is None:
+            continue
+        try:
+            result = method()
+            if inspect.isawaitable(result):
+                await result
+            return
+        except Exception:  # pragma: no cover - shutdown best-effort
+            logger.debug("whatsapp %s failed", name, exc_info=True)
+            return

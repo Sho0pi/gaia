@@ -47,7 +47,7 @@ class _FakeClient:
         self.replies: list[tuple[str, Any]] = []
         self.images: list[tuple[Any, str, str | None]] = []
         self.connected = False
-        self.disconnected = False
+        self.stopped = False
 
     async def connect(self) -> None:
         self.connected = True
@@ -55,8 +55,8 @@ class _FakeClient:
     async def idle(self) -> None:
         await asyncio.Event().wait()  # blocks until the task is cancelled
 
-    def disconnect(self) -> None:  # neonize's is sync; the connector handles either
-        self.disconnected = True
+    async def stop(self) -> None:  # the method that unblocks neonize's Go worker thread
+        self.stopped = True
 
     def event(self, event_type: Any) -> Any:
         def register(fn: Any) -> Any:
@@ -171,9 +171,9 @@ async def test_empty_message_is_ignored(fake_neonize: dict[str, Any], tmp_path: 
     assert client.replies == []
 
 
-async def test_start_disconnects_on_cancel(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
-    # The shutdown bug: a cancelled start() must disconnect the native client, else
-    # neonize's goroutines outlive the asyncio task and the loop teardown raises.
+async def test_start_stops_client_on_cancel(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
+    # The shutdown hang: a cancelled start() must call stop() — disconnect() alone leaves
+    # neonize's blocking Go call parked in a non-daemon thread that wedges interpreter exit.
     async def handler(_text: str, _send: Send) -> None:  # pragma: no cover - never called
         raise AssertionError
 
@@ -197,4 +197,20 @@ async def test_start_disconnects_on_cancel(fake_neonize: dict[str, Any], tmp_pat
     with pytest.raises(asyncio.CancelledError):
         await task
 
-    assert client.disconnected is True  # finally ran disconnect on the way out
+    assert client.stopped is True  # finally ran stop() on the way out
+
+
+async def test_stop_client_falls_back_to_disconnect() -> None:
+    # A client exposing only disconnect() (no stop) must still be torn down.
+    from gaia.connectors.whatsapp_web import _stop_client
+
+    class _OnlyDisconnect:
+        def __init__(self) -> None:
+            self.disconnected = False
+
+        async def disconnect(self) -> None:
+            self.disconnected = True
+
+    client = _OnlyDisconnect()
+    await _stop_client(client)
+    assert client.disconnected is True
