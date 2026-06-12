@@ -80,7 +80,6 @@ class Gaia:
         registry's ``aclose`` and the MCP stdio child processes. Called from each shutdown
         path while its loop is still alive, so nothing falls through to the tool managers'
         ``atexit`` hooks — which run after the loop is gone and raise 'Event loop is closed'.
-        Idempotent: the TUI path closes on unmount and again as a post-run safety net.
         """
         if self._closed:
             return
@@ -90,6 +89,13 @@ class Gaia:
             from gaia.mcp import close_mcp_toolsets
 
             await close_mcp_toolsets(self._mcp)
+
+    async def __aenter__(self) -> Gaia:
+        """``async with Gaia(...):`` — :meth:`close` runs on exit, exceptions included."""
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        await self.close()
 
     @property
     def config(self) -> GaiaConfig:

@@ -59,19 +59,6 @@ async def test_empty_input_ignored() -> None:
         assert len(app.query("Static.user")) == 0
 
 
-async def test_on_shutdown_runs_on_unmount() -> None:
-    # The TUI fix: Gaia.close is invoked while Textual's own loop is still alive (unmount),
-    # not after it tore down — so async tool resources are released on their owning loop.
-    closed: list[str] = []
-
-    async def handler(_text: str, _send: Send) -> None:  # pragma: no cover - not exercised
-        return None
-
-    async def on_shutdown() -> None:
-        closed.append("closed")
-
-    app = CLIConnector(handler, on_shutdown=on_shutdown).build_app()
-    async with app.run_test():
-        pass  # context exit unmounts the app
-
-    assert closed == ["closed"]
+# Shutdown ordering (Gaia closed on the same loop right after the app exits) is
+# covered in test_connector_launch.py / test_gaia_agent.py — the connector itself no
+# longer carries a shutdown hook.

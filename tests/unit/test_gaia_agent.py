@@ -72,3 +72,24 @@ async def test_close_runs_tool_cleanup_and_mcp(
     await gaia.close()  # idempotent: second call does nothing
 
     assert calls == ["tools", "mcp"]
+
+
+async def test_async_context_manager_closes_even_on_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # ``async with gaia`` is the launchers' lifetime scope: close must run on exit,
+    # exception paths included (that's the whole point over a manual close call).
+    gaia = _gaia(tmp_path)
+    calls: list[str] = []
+
+    async def fake_aclose() -> None:
+        calls.append("tools")
+
+    monkeypatch.setattr(gaia.tools, "aclose", fake_aclose)
+
+    with pytest.raises(RuntimeError):
+        async with gaia as entered:
+            assert entered is gaia
+            raise RuntimeError("boom")
+
+    assert calls == ["tools"]
