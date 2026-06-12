@@ -128,7 +128,9 @@ class Gaia:
             "designing a website, writing a program), call delegate_to_soul(task) — it finds "
             "the right specialist soul or forges a new one and runs it. When it returns, tell "
             "the user which soul handled it (say so explicitly when 'created' is true), then "
-            "report the workspace path and the list of files the soul produced."
+            "report the workspace path and the list of files the soul produced. You can open "
+            "those deliverables directly (fs_read takes the absolute paths under the souls' "
+            "workspaces), so read/verify/summarize them yourself when the user asks."
         )
         bound = self.config.agents.get("gaia", AgentBinding())
         instruction = attach_skills(base_instruction, bound.skills, self.skills_dir)
