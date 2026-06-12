@@ -63,6 +63,9 @@ async def test_language_passed_through(fake_whisper: type[_FakeModel], tmp_path:
 
 
 def test_available_false_without_dep(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Evict any prior import (e.g. from fake_whisper used in earlier tests via to_thread)
+    # before patching find_spec — the available property checks sys.modules first.
+    monkeypatch.delitem(sys.modules, "faster_whisper", raising=False)
     monkeypatch.setattr(voice_mod.importlib.util, "find_spec", lambda name: None)
 
     assert Transcriber().available is False
@@ -79,6 +82,7 @@ def test_get_transcriber_missing_dep_warns_none(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     monkeypatch.setattr(voice_mod, "_transcriber", None)
+    monkeypatch.delitem(sys.modules, "faster_whisper", raising=False)
     monkeypatch.setattr(voice_mod.importlib.util, "find_spec", lambda name: None)
 
     import logging
