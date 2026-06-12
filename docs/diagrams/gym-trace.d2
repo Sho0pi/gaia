@@ -1,0 +1,24 @@
+# Worked example: "build a website focusing on gym improvement in my A/B plan".
+shape: sequence_diagram
+
+you: "you" { shape: person }
+gaia: "Gaia (PM)"
+board: "board"
+pt: "personal-trainer soul"
+nut: "nutritionist soul"
+web: "web-developer soul"
+
+you -> gaia: "build a website for\nmy A/B gym improvement"
+gaia -> board: "T1: PT program (A/B focus)\nT2: website from T1, blocked_by=T1"
+board -> pt: "dispatch T1"
+pt -> nut: "consult_soul:\n'protein target for cutting?'" {
+  style.stroke-dash: 3
+}
+nut -> pt: "answer (in PT's context,\nsame turn — no board hop)" {
+  style.stroke-dash: 3
+}
+pt -> board: "T1 done: program.md\n(workspace artifact)"
+board -> web: "T2 unblocked — dispatch\n(input: T1 artifacts)"
+web -> board: "T2 done: site files"
+board -> gaia: "mission complete"
+gaia -> you: "✅ site ready — 5 files,\npreview at ~/.gaia/agents/…"
