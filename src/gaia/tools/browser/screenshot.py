@@ -24,20 +24,12 @@ def make_browser_screenshot(
     async def browser_screenshot(
         full_page: bool = True, ref: str = "", *, tool_context: ToolContext
     ) -> dict[str, Any]:
-        """Capture a screenshot of the current page.
-
-        Saves a PNG into your workspace and returns its path. Use this to show the user
-        what a page looks like, or to verify a site you built renders correctly.
+        """Capture a screenshot of the current page; saves a PNG in your workspace.
 
         Args:
-            full_page (bool): Capture the entire scrollable page (default True). Set
-                False to capture only the visible viewport. Ignored when ref is set.
-            ref (str): Optional element ref from the last snapshot (e.g. 'e4') to
-                screenshot just that element instead of the whole page.
-
-        Returns:
-            dict: On success {'status': 'success', 'path': str, 'url': str}. On failure
-            {'status': 'error', 'error_message': str}.
+            full_page: entire scrollable page; false = visible viewport only.
+            ref: optional element ref from the last snapshot (e.g. 'e4') to capture
+                just that element.
         """
         agent = tool_context.agent_name
 

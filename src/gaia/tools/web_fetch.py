@@ -167,20 +167,10 @@ def make_web_fetch(fetcher: Fetcher) -> Callable[..., dict[str, Any]]:
     """
 
     def web_fetch(url: str, max_bytes: int = DEFAULT_MAX_BYTES) -> dict[str, Any]:
-        """Fetch a web page and return its main content as markdown.
-
-        Use this to read the content of a specific URL. Navigation, ads, and other
-        boilerplate are stripped; only the readable article is returned.
+        """Fetch a web page and return its readable content as markdown (nav/ads stripped).
 
         Args:
-            url (str): The http(s) URL to fetch.
-            max_bytes (int): Maximum number of response bytes to read (capped at
-                10000000). Larger pages are truncated.
-
-        Returns:
-            dict: On success, {'status': 'success', 'url': <final URL after redirects>,
-            'markdown': <readable content>}. On failure, {'status': 'error',
-            'error_message': str}.
+            url: the http(s) URL to fetch.
         """
         cleaned = url.strip()
 

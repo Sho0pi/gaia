@@ -16,19 +16,11 @@ def make_exec_poll(manager: ProcessManager) -> Callable[..., Awaitable[dict[str,
     """Return the ADK ``exec_poll`` tool bound to ``manager``."""
 
     async def exec_poll(process_id: str, *, tool_context: ToolContext) -> dict[str, Any]:
-        """Check a background process and read its output since you last polled.
-
-        Use the process_id from a background exec. Output is incremental: each call
-        returns only what's new. When the process has finished, 'status' is 'exited'
-        and 'exit_code' is set.
+        """Read a background process's output since the last poll (incremental); when
+        it has finished, 'status' is 'exited' and 'exit_code' is set.
 
         Args:
-            process_id (str): The id returned by exec(..., background=True).
-
-        Returns:
-            dict: On success {'status': 'running'|'exited', 'exit_code': int|None,
-            'output': str, 'truncated': bool, 'log': str}. On failure {'status':
-            'error', 'error_message': str}.
+            process_id: the id returned by exec(..., background=True).
         """
         agent = tool_context.agent_name
 

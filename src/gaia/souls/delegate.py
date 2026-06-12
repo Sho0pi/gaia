@@ -65,19 +65,13 @@ def make_delegate(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any]]]:
     """Return the root-only ``delegate_to_soul`` tool bound to ``gaia``."""
 
     async def delegate_to_soul(task: str, *, tool_context: ToolContext) -> dict[str, Any]:
-        """Hand a complex or specialized task to a specialist soul.
-
-        Finds the soul best suited to the task, or forges a new one if none fits, then runs
-        it — the soul writes its deliverables as files in its own workspace. Use this for
-        build/creation tasks (e.g. "design a website"), not for things you can answer yourself.
+        """Hand a complex or specialized task to a specialist soul (found or newly
+        forged); it writes its deliverables as files in its own workspace. Use for
+        build/creation tasks (e.g. "design a website"), not for things you can
+        answer yourself.
 
         Args:
-            task (str): The full task to carry out, in plain language.
-
-        Returns:
-            dict: On success {'status': 'success', 'soul': str, 'created': bool, 'reason': str,
-            'workspace': str, 'files': list[str], 'summary': str}. On failure {'status':
-            'error', 'error_message': str}.
+            task: the full task to carry out, in plain language.
         """
 
         model = gaia.config.llm.model or gaia.settings.model

@@ -18,8 +18,18 @@ markdown). gaia follows ADK's function-tool best practices
   closure's name must match it.
 - **Params:** type-hint everything. Required params have no default; optional params
   get a default (or `X | None = None`). **No `*args`/`**kwargs`** — ADK ignores them.
-- **Docstring is the description.** One-line purpose, then `Args:` (each param) and
-  `Returns:`. The model reads this to decide when/how to call.
+- **Docstring is the description — keep it lean.** ADK sends the *entire* docstring to
+  the model on **every request** (verbatim; no parsing), so every char is a recurring
+  token cost. The standard (issue #89, guarded by `tests/unit/test_tool_docstrings.py`):
+  - One summary line merging purpose + "use this to". Add a second line only for a
+    workflow/misuse note that prevents real errors (e.g. the browser ref flow).
+  - `Args:` entries are **short phrases carrying only semantics the JSON schema can't**:
+    enum values, formats ('e4' refs), ranges (1-10), path relativity. The schema already
+    has types/defaults/required — never restate them. Self-evident args may be omitted.
+  - **No `Returns:` block, ever.** The dict-return shape is a *code* convention (below),
+    not docstring content — the model reads the runtime result.
+  - `tool_context` stays undocumented (ADK injects it; never shown to the model).
+  - Budget: ≤700 chars (~175 tokens) per tool; aim well under.
 - **Return a dict, never raise to the model, never return a bare string.** Use
   `{"status": "success", ...}` or `{"status": "error", "error_message": "<human text>"}`.
   Validate inputs and return an error dict instead of raising.
