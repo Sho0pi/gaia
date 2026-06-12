@@ -11,6 +11,8 @@ unit tests can exercise the wiring without the native whatsmeow binary.
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -81,6 +83,9 @@ class WhatsAppWebConnector:
     def __init__(self, session_db: Path, handler: Handler) -> None:
         self._session_db = session_db
         self._handler = handler
+        # Set by the ConnectedEv/PairStatusEv handlers; pair() awaits it. Re-created per
+        # build_client so a stale signal from an earlier client can't satisfy a new wait.
+        self._connected = asyncio.Event()
 
     def build_client(self) -> NewAClient:
         """Create a neonize client wired to the handler.
@@ -96,14 +101,17 @@ class WhatsAppWebConnector:
 
         self._session_db.parent.mkdir(parents=True, exist_ok=True)
         client = NewAClient(str(self._session_db))
+        self._connected = asyncio.Event()
 
         @client.event(ConnectedEv)  # type: ignore[untyped-decorator]
         async def _on_connected(_client: NewAClient, _event: ConnectedEv) -> None:
             logger.info("whatsapp connected")
+            self._connected.set()
 
         @client.event(PairStatusEv)  # type: ignore[untyped-decorator]
         async def _on_pair(_client: NewAClient, event: PairStatusEv) -> None:
             logger.info("whatsapp paired as %s", event.ID.User)
+            self._connected.set()
 
         @client.event(MessageEv)  # type: ignore[untyped-decorator]
         async def _on_message(client: NewAClient, message: MessageEv) -> None:
@@ -131,3 +139,37 @@ class WhatsAppWebConnector:
         logger.info("whatsapp starting — scan the QR if prompted (session: %s)", self._session_db)
         await client.connect()
         await client.idle()  # blocks, keeps receiving events
+
+    async def pair(self, timeout_s: float = 120.0) -> bool:
+        """Foreground QR pairing: connect, wait for the scan, then shut the client down.
+
+        ``connect()`` makes neonize render the QR in the terminal; the ConnectedEv /
+        PairStatusEv handlers set ``_connected``. Returns True once paired (the session
+        persists to the db so later runs reconnect without a scan), False on timeout.
+        Must run in a foreground terminal — a daemon cannot show a QR.
+        """
+        client = self.build_client()
+        try:
+            await client.connect()
+            await asyncio.wait_for(self._connected.wait(), timeout=timeout_s)
+            return True
+        except TimeoutError:
+            return False
+        finally:
+            await _stop_client(client)
+
+
+async def _stop_client(client: Any) -> None:
+    """Best-effort neonize shutdown: ``stop()`` (unblocks the Go worker) or ``disconnect``."""
+    for name in ("stop", "disconnect"):
+        method = getattr(client, name, None)
+        if method is None:
+            continue
+        try:
+            result = method()
+            if inspect.isawaitable(result):
+                await result
+            return
+        except Exception:  # pragma: no cover - shutdown best-effort
+            logger.debug("whatsapp %s failed", name, exc_info=True)
+            return

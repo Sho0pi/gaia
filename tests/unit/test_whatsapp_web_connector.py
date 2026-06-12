@@ -45,6 +45,14 @@ class _FakeClient:
         self.handlers: dict[Any, Any] = {}
         self.replies: list[tuple[str, Any]] = []
         self.images: list[tuple[Any, str, str | None]] = []
+        self.connected = False
+        self.stopped = False
+
+    async def connect(self) -> None:
+        self.connected = True
+
+    async def stop(self) -> None:  # pair() tears the client down through this
+        self.stopped = True
 
     def event(self, event_type: Any) -> Any:
         def register(fn: Any) -> Any:
@@ -157,3 +165,38 @@ async def test_empty_message_is_ignored(fake_neonize: dict[str, Any], tmp_path: 
     await client.handlers[fake_neonize["MessageEv"]](client, _msg())
 
     assert client.replies == []
+
+
+async def test_pair_returns_true_when_connected_event_fires(
+    fake_neonize: dict[str, Any], tmp_path: Path
+) -> None:
+    async def handler(_text: str, _send: Send) -> None:  # pragma: no cover - never called
+        raise AssertionError
+
+    connector = WhatsAppWebConnector(tmp_path / "wa.db", handler)
+
+    class _PairingClient(_FakeClient):
+        async def connect(self) -> None:
+            await super().connect()
+            # Simulate the phone scanning the QR right after connect: fire the
+            # registered ConnectedEv handler, which must set the connector's event.
+            for event_type, fn in self.handlers.items():
+                if event_type.__name__ == "C":  # the fake ConnectedEv
+                    await fn(self, object())
+
+    sys.modules["neonize.aioze.client"].NewAClient = _PairingClient  # type: ignore[attr-defined]
+
+    paired = await connector.pair(timeout_s=2)
+
+    assert paired is True
+
+
+async def test_pair_times_out_false(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
+    async def handler(_text: str, _send: Send) -> None:  # pragma: no cover - never called
+        raise AssertionError
+
+    connector = WhatsAppWebConnector(tmp_path / "wa.db", handler)
+
+    paired = await connector.pair(timeout_s=0.05)  # nothing ever fires ConnectedEv
+
+    assert paired is False

@@ -23,6 +23,8 @@ dependencies = [
     # The gaia console command (Typer = click + rich help + shell completion).
     "typer>=0.12",
     "rich>=13.0",
+    "questionary>=2.1.1",
+    "ruamel-yaml>=0.19.1",
 ]
 
 [project.scripts]
