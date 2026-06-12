@@ -30,6 +30,21 @@ def _jid_to_str(jid: Any) -> str:
     return f"{user}@{server}" if user else str(server)
 
 
+def _deliverable_chat(source: Any) -> str:
+    """The chat id later proactive sends should target.
+
+    WhatsApp's LID addressing hides the phone number: ``Chat`` is then a ``…@lid``
+    JID, and ``send_message`` to it vanishes silently. For DMs the proto carries the
+    real phone-number JID in ``SenderAlt`` — prefer it; groups keep ``Chat`` (@g.us).
+    """
+    chat = source.Chat
+    if getattr(chat, "Server", "") == "lid" and not getattr(source, "IsGroup", False):
+        alt = getattr(source, "SenderAlt", None)
+        if getattr(alt, "User", ""):
+            return _jid_to_str(alt)
+    return _jid_to_str(chat)
+
+
 def patch_protobuf_version_guard() -> None:
     """Make protobuf's gencode/runtime version guard a no-op. Call before importing neonize.
 
@@ -122,8 +137,9 @@ class WhatsAppWebConnector:
             if text:
                 chat = message.Info.MessageSource.Chat  # JID to send media replies to
                 # Record where this turn came from, so scheduling tools (cron) can
-                # capture the chat for later proactive delivery.
-                current_chat.set((self.NAME, _jid_to_str(chat)))
+                # capture the chat for later proactive delivery (phone-number JID, not
+                # the undeliverable @lid identity).
+                current_chat.set((self.NAME, _deliverable_chat(message.Info.MessageSource)))
 
                 async def send(reply: Reply) -> None:
                     # An image reply goes out as a real WhatsApp image; text replies

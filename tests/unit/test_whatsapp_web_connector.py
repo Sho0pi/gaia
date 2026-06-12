@@ -157,3 +157,43 @@ async def test_empty_message_is_ignored(fake_neonize: dict[str, Any], tmp_path: 
     await client.handlers[fake_neonize["MessageEv"]](client, _msg())
 
     assert client.replies == []
+
+
+async def test_lid_chat_captures_phone_number_jid(
+    fake_neonize: dict[str, Any], tmp_path: Path
+) -> None:
+    # LID addressing: Chat is a hidden @lid identity (sends to it vanish); the capture
+    # must prefer SenderAlt — the deliverable phone-number JID.
+    from gaia.connectors.base import current_chat
+
+    async def handler(_text: str, _send: Send) -> None:
+        return None
+
+    client = WhatsAppWebConnector(tmp_path / "wa.db", handler).build_client()
+    msg = _msg(conversation="hi")
+    msg.Info.MessageSource = SimpleNamespace(
+        Chat=SimpleNamespace(User="160168088236120", Server="lid"),
+        IsGroup=False,
+        SenderAlt=SimpleNamespace(User="972501234567", Server="s.whatsapp.net"),
+    )
+
+    await client.handlers[fake_neonize["MessageEv"]](client, msg)
+
+    assert current_chat.get() == ("whatsapp", "972501234567@s.whatsapp.net")
+
+
+async def test_group_chat_keeps_group_jid(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
+    from gaia.connectors.base import current_chat
+
+    async def handler(_text: str, _send: Send) -> None:
+        return None
+
+    client = WhatsAppWebConnector(tmp_path / "wa.db", handler).build_client()
+    msg = _msg(conversation="hi")
+    msg.Info.MessageSource = SimpleNamespace(
+        Chat=SimpleNamespace(User="12036302byte", Server="g.us"), IsGroup=True
+    )
+
+    await client.handlers[fake_neonize["MessageEv"]](client, msg)
+
+    assert current_chat.get() == ("whatsapp", "12036302byte@g.us")
