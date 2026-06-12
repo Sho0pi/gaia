@@ -57,3 +57,8 @@ async def test_empty_input_ignored() -> None:
         assert called is False
         assert len(app.query(Markdown)) == 0
         assert len(app.query("Static.user")) == 0
+
+
+# Shutdown ordering (Gaia closed on the same loop right after the app exits) is
+# covered in test_connector_launch.py / test_gaia_agent.py — the connector itself no
+# longer carries a shutdown hook.

@@ -13,7 +13,7 @@ from __future__ import annotations
 import importlib.util
 import logging
 import shutil
-from collections.abc import Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from typing import TYPE_CHECKING, Any, Union
 
 from gaia import constants
@@ -49,10 +49,29 @@ class ToolRegistry:
 
     def __init__(self) -> None:
         self._tools: dict[str, Tool] = {}
+        self._closeables: list[Callable[[], Awaitable[None]]] = []
 
     def register(self, name: str, fn: Tool) -> None:
         """Add ``fn`` under ``name``; a later registration replaces an earlier one."""
         self._tools[name] = fn
+
+    def register_closeable(self, close: Callable[[], Awaitable[None]]) -> None:
+        """Record an async cleanup (e.g. a tool manager's ``close_all``) for :meth:`aclose`.
+
+        Lets stateful tool backends (the shell ProcessManager, the browser session
+        manager) be torn down by :meth:`Gaia.close` on the *running* loop that owns their
+        subprocesses/connections — instead of falling through to their ``atexit`` hook,
+        which runs after that loop is gone and raises 'Event loop is closed'.
+        """
+        self._closeables.append(close)
+
+    async def aclose(self) -> None:
+        """Run every registered cleanup, best-effort (one failure never blocks the rest)."""
+        for close in self._closeables:
+            try:
+                await close()
+            except Exception:  # pragma: no cover - shutdown best-effort
+                logger.debug("tool cleanup failed", exc_info=True)
 
     def get(self, name: str) -> Tool:
         """Return the tool registered as ``name`` or raise with the known names."""
@@ -133,6 +152,7 @@ def _register_browser_tools(registry: ToolRegistry, config: GaiaConfig | None) -
     # One manager per registry, shared by the browser tools (each closure captures it);
     # it closes its sessions on exit. No module-level singleton.
     manager = browser.BrowserSessionManager()
+    registry.register_closeable(manager.close_all)  # closed by Gaia.close on the live loop
     for name, make in _BROWSER_TOOLS:
         if _is_enabled(config, name):
             registry.register(name, make(manager))
@@ -152,6 +172,7 @@ def _register_shell_tools(registry: ToolRegistry, config: GaiaConfig | None) -> 
     # One manager per registry, shared by the four tools below (each closure captures
     # it); it cleans up its processes on exit. No module-level singleton.
     manager = shell.ProcessManager()
+    registry.register_closeable(manager.close_all)  # closed by Gaia.close on the live loop
     spawner = shell.local_spawner
     if _is_enabled(config, shell.EXEC):
         registry.register(

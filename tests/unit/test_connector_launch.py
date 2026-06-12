@@ -52,12 +52,12 @@ def test_plan_launch_daemon_mode(enabled: dict[str, bool], expected: list[str]) 
 
 
 class _FakeConnector:
-    """Stands in for CLIConnector: accepts the handler, run() returns immediately."""
+    """Stands in for CLIConnector: accepts the handler, run_async() returns at once."""
 
     def __init__(self, handler: object) -> None:
         self.handler = handler
 
-    def run(self) -> None:
+    async def run_async(self) -> None:
         return None
 
 
@@ -110,3 +110,27 @@ def test_run_without_cli_keeps_console_logging(
     app.run(_settings(tmp_path))  # nothing enabled -> background path, console stays on
 
     assert captured.get("console") is True
+
+
+def test_run_cli_closes_gaia_after_app_exits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The shutdown fix as a context manager: run_cli scopes Gaia to the TUI's loop via
+    # ``async with gaia``, so close runs right after the app exits — same loop, still
+    # alive — with no shutdown callback threaded through the connector.
+    order: list[str] = []
+    _capture_setup_logging(monkeypatch, tmp_path)
+
+    class _OrderedConnector(_FakeConnector):
+        async def run_async(self) -> None:
+            order.append("app ran")
+
+    async def fake_close(self: object) -> None:
+        order.append("gaia closed")
+
+    monkeypatch.setattr(app, "CLIConnector", _OrderedConnector)
+    monkeypatch.setattr(app.Gaia, "close", fake_close)
+
+    app.run_cli(_settings(tmp_path))
+
+    assert order == ["app ran", "gaia closed"]
