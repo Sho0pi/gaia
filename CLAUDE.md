@@ -99,3 +99,24 @@ Do NOT `cd` into subdirs to run tools.
   model**, and self-log one `tool_used` event per call via a `done()` closure.
 - Secrets via env / pydantic-settings (`config/settings.py`). Never hardcode keys;
   never put a secret in gaia.yaml. Logs are redacted best-effort — don't log secrets.
+
+## Service lifecycle & DI
+One Pythonic convention covers DI, Singleton and Lazy. Build-once services live
+in `gaia.di.Container` (one per `Gaia`, built in `Gaia.__init__`), backed by
+[`dependency-injector`](https://github.com/ets-labs/python-dependency-injector).
+- **DI**: external collaborators (`Settings`, `ConfigSupplier`) reach the
+  container via `providers.Dependency` slots — wired by `Gaia.__init__`.
+- **Singleton + Lazy**: every service is a `providers.Singleton(factory, ...)`.
+  They are lazy by construction — nothing runs until first `container.X()`.
+  Canonical example: `gaia.transcriber` builds the Whisper-backed transcriber
+  on first access, every later caller reuses the same instance.
+- **Hot-reloaded config**: `container.config` is a `providers.Callable`, not a
+  Singleton, so each access re-reads `ConfigSupplier.current` — yaml edits still
+  flow through.
+- **No `global` mutable state** for service construction (ruff `PLW0603`
+  enforces). No `@lru_cache` on factories — they hide lifetime and break test
+  isolation. Sole sanctioned exception: `cli/_console.py` `console()` (stateless,
+  no-arg, presentation-layer Rich singleton).
+- **Cleanup is ours, not the container's.** Services that own async resources
+  (mcp toolsets, browser/shell process managers, skill toolsets) are released by
+  `Gaia.close()` in shutdown order; `Container.shutdown_resources` is not used.
