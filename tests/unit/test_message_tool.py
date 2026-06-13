@@ -56,6 +56,29 @@ async def test_raw_phone_uses_given_channel(tmp_path: Path) -> None:
     assert wa.sent == [("111@s.whatsapp.net", "yo")]
 
 
+async def test_raw_phone_infers_single_live_channel_and_normalizes(tmp_path: Path) -> None:
+    # The reported bug: a phone with no channel (and no ambient chat, as at cron-fire
+    # time) must still send — inferred from the only live connector. Formatting stripped.
+    wa = _FakeConnector()
+    gaia = _gaia(tmp_path, {"whatsapp": wa})
+    current_chat.set(("", ""))  # cron-fire: no ambient channel
+
+    out = await make_message_user(gaia)("+972 50-123-4567", "on my way")
+
+    assert out["status"] == "success"
+    assert wa.sent == [("972501234567", "on my way")]
+
+
+async def test_ambiguous_channel_errors_clearly(tmp_path: Path) -> None:
+    gaia = _gaia(tmp_path, {"whatsapp": _FakeConnector(), "telegram": _FakeConnector()})
+    current_chat.set(("", ""))
+
+    out = await make_message_user(gaia)("0501234567", "hi")
+
+    assert out["status"] == "error"
+    assert "which channel" in out["error_message"]
+
+
 async def test_channel_not_running_is_clear_error(tmp_path: Path) -> None:
     gaia = _gaia(tmp_path, {})  # no live connectors (outside the daemon)
     gaia.users.register("whatsapp", "972@s.whatsapp.net", "Grace", role="user")
@@ -66,14 +89,14 @@ async def test_channel_not_running_is_clear_error(tmp_path: Path) -> None:
     assert "not running" in out["error_message"]
 
 
-async def test_unknown_recipient_without_channel_errors(tmp_path: Path) -> None:
-    gaia = _gaia(tmp_path, {"whatsapp": _FakeConnector()})
-    current_chat.set(("", ""))  # no ambient channel
+async def test_no_live_channel_errors(tmp_path: Path) -> None:
+    gaia = _gaia(tmp_path, {})  # nothing running and no channel hint
+    current_chat.set(("", ""))
 
     out = await make_message_user(gaia)("nobody", "hi")
 
     assert out["status"] == "error"
-    assert "unknown recipient" in out["error_message"]
+    assert "which channel" in out["error_message"]
 
 
 async def test_empty_text_rejected(tmp_path: Path) -> None:

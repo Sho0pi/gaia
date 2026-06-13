@@ -14,6 +14,7 @@ dropping — connectors only exist while ``gaia serve`` runs.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
@@ -27,12 +28,44 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 NAME = "message_user"
 
 
+def _infer_channel(gaia: Gaia, channel: str) -> str:
+    """Pick the channel to send on when the model didn't name one.
+
+    Order: explicit arg → the current conversation's channel → the only live connector
+    (the common case: a single-connector daemon, e.g. just whatsapp). Empty when it's
+    genuinely ambiguous (two+ connectors live and no other hint).
+    """
+    if channel:
+        return channel
+    ambient = current_chat.get()[0]
+    if ambient:
+        return ambient
+    live = list(gaia.connectors)
+    return live[0] if len(live) == 1 else ""
+
+
+def _normalize_chat(channel: str, recipient: str) -> str:
+    """Turn a raw recipient into a chat id the connector's ``send_to`` accepts.
+
+    For whatsapp a phone is wanted, so strip formatting (spaces, dashes, parens, a
+    leading ``+``) down to digits; an already-qualified JID (``...@server``) or a
+    non-whatsapp id passes through untouched.
+    """
+    if "@" in recipient:
+        return recipient
+    if channel == "whatsapp":
+        digits = re.sub(r"\D", "", recipient)
+        return digits or recipient
+    return recipient
+
+
 def _resolve_target(gaia: Gaia, recipient: str, channel: str) -> tuple[str, str] | str:
     """Resolve ``recipient`` to a ``(channel, chat)`` to send to, or an error string.
 
     Tries the user store first (canonical id, then display name, then a
     ``channel:sender`` identity); failing that, treats ``recipient`` as a raw sender id
-    (a phone/JID) on ``channel`` — the channel falling back to the current conversation's.
+    (a phone/JID), inferring the channel from the arg, the live chat, or the only
+    running connector.
     """
     store = gaia.users
     user: User | None = store.get(recipient)
@@ -54,11 +87,12 @@ def _resolve_target(gaia: Gaia, recipient: str, channel: str) -> tuple[str, str]
         ch, _, chat = match.partition(":")
         return ch, chat
 
-    # Not a known user — treat recipient as a raw sender id on the given/current channel.
-    ch = channel or current_chat.get()[0]
+    # Not a known user — treat recipient as a raw sender id (phone/JID).
+    ch = _infer_channel(gaia, channel)
     if not ch:
-        return f"unknown recipient {recipient!r} and no channel to send on"
-    return ch, recipient
+        live = ", ".join(gaia.connectors) or "none"
+        return f"can't tell which channel to send {recipient!r} on (live: {live}) — name one"
+    return ch, _normalize_chat(ch, recipient)
 
 
 def make_message_user(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any]]]:
