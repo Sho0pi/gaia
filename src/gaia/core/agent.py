@@ -19,15 +19,13 @@ from typing import TYPE_CHECKING, Any
 
 from dependency_injector import providers
 
-from gaia.agents import AgentFactory, AgentSpec, SoulRegistry
+from gaia.agents import AgentSpec
 from gaia.communication import apply_communication_style
 from gaia.config import ConfigSupplier, Settings, configure_adk_env, get_settings
 from gaia.config.schema import AgentBinding
 from gaia.di import Container
 from gaia.models import resolve_model
-from gaia.skills import attach_skills, resolve_skills_dir
-from gaia.tools import default_registry
-from gaia.users import UserStore
+from gaia.skills import attach_skills
 
 logger = logging.getLogger(__name__)
 
@@ -49,29 +47,17 @@ class Gaia:
             settings=providers.Object(self.settings),
             config_supplier=providers.Object(self.config_supplier),
         )
-        self.skills_dir = resolve_skills_dir(self.config)
-        self.souls = SoulRegistry(self.settings.agent_registry_dir)
-        self.users = UserStore()
-        self.users.seed_admins(self.config.admin)
-        self.tools = default_registry(self.config)
-        self.factory = AgentFactory(
-            self.souls,
-            default_model=self.config.llm.model or self.settings.model,
-            default_provider=self.config.llm.provider,
-            default_use_oauth=self.config.llm.openai.use_oauth,
-            skills_dir=self.skills_dir,
-            default_communication_style=self.config.default_communication_style,
-            tool_registry=self.tools,
-            # Container providers are themselves callable; calling them triggers
-            # lazy build and returns the singleton, matching the
-            # `Callable[[], list[...]]` contract AgentFactory expects.
-            mcp_toolsets_provider=self.container.mcp_toolsets,
-            skill_toolset_provider=self.container.skill_toolsets,
-        )
-        # Live proactive senders (connector name → object with ``send_to``), populated
-        # by the launcher once connectors are running. Empty outside the daemon; the
-        # message_user tool degrades with a clear error when a target channel isn't live.
-        self.connectors: dict[str, Any] = {}
+        # The container is the single composition root; Gaia pulls the handles it exposes
+        # to the rest of the code under their established names (facade). Construction of
+        # each lives in gaia.di, not here. See CLAUDE.md → Service lifecycle & DI.
+        self.skills_dir = self.container.skills_dir()
+        self.souls = self.container.souls()
+        self.users = self.container.users()
+        self.tools = self.container.tools()
+        self.factory = self.container.factory()
+        # Live proactive senders (connector name → object with ``send_to``); the launcher
+        # populates this same dict once connectors are running (empty outside the daemon).
+        self.connectors: dict[str, Any] = self.container.connectors()
         self._closed = False
 
     async def close(self) -> None:
@@ -186,7 +172,7 @@ class Gaia:
             tools=[
                 *self.tools.all(),
                 make_delegate(self),
-                make_message_user(self),
+                make_message_user(self.users, self.connectors),
                 *self.container.mcp_toolsets(),
                 *self.container.skill_toolsets(),
             ],

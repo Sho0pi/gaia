@@ -101,11 +101,18 @@ Do NOT `cd` into subdirs to run tools.
   never put a secret in gaia.yaml. Logs are redacted best-effort — don't log secrets.
 
 ## Service lifecycle & DI
-One Pythonic convention covers DI, Singleton and Lazy. Build-once services live
-in `gaia.di.Container` (one per `Gaia`, built in `Gaia.__init__`), backed by
-[`dependency-injector`](https://github.com/ets-labs/python-dependency-injector).
+One Pythonic convention covers DI, Singleton and Lazy. `gaia.di.Container` (one per
+`Gaia`) is the **single composition root** — *every* build-once service
+(`souls`, `users`, `tools`, `factory`, transcriber, memory, mcp/skill toolsets,
+the `connectors` registry) is a provider there. `Gaia.__init__` only builds the
+container and pulls the handles under their established names (`self.souls = …`):
+`Gaia` is a thin **facade + lifetime owner**, never a second place to construct.
+Add a new service? It's a provider in `di.py`, not a hand-built attr in `__init__`.
+Backed by [`dependency-injector`](https://github.com/ets-labs/python-dependency-injector).
 - **DI**: external collaborators (`Settings`, `ConfigSupplier`) reach the
-  container via `providers.Dependency` slots — wired by `Gaia.__init__`.
+  container via `providers.Dependency` slots — wired by `Gaia.__init__`. One provider
+  receives another *provider* (not its value) via `.provider` delegation — that's how
+  `factory` gets the lazy `mcp_toolsets`/`skill_toolsets` callables.
 - **Singleton + Lazy**: every service is a `providers.Singleton(factory, ...)`.
   They are lazy by construction — nothing runs until first `container.X()`.
   Canonical example: `gaia.transcriber` builds the Whisper-backed transcriber
@@ -120,3 +127,8 @@ in `gaia.di.Container` (one per `Gaia`, built in `Gaia.__init__`), backed by
 - **Cleanup is ours, not the container's.** Services that own async resources
   (mcp toolsets, browser/shell process managers, skill toolsets) are released by
   `Gaia.close()` in shutdown order; `Container.shutdown_resources` is not used.
+- **No `@inject`/`wire()`** (spiked + rejected, #146). `wire()` patches only
+  *module-level* functions, so our `make_*`-closure tools/runners are invisible to
+  it, and it binds `Provide` markers at module (global) scope — clashing with the
+  per-`Gaia` container. Consumers read services explicitly (`gaia.X`, or pass the one
+  service they need); prefer narrowing a tool's deps over threading the whole `gaia`.

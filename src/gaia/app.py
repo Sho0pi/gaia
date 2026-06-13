@@ -236,11 +236,11 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
     async with gaia:
         dispatcher = build_dispatcher(gaia)
         tasks: list[asyncio.Task[None]] = []
-        # Live connectors by name — the cron runner delivers proactive replies through it,
-        # and the message_user tool sends to other users through it. Shared onto gaia so
-        # tools (which don't otherwise see connectors) can reach the live senders.
-        running: dict[str, Any] = {}
-        gaia.connectors = running
+        # The container's connectors registry (the same dict the cron runner @inject's and
+        # the message_user tool reads). Populate it in place — don't rebind — so both stay
+        # pointed at the live senders.
+        running: dict[str, Any] = gaia.connectors
+        running.clear()
 
         if "whatsapp" in selected:
             connector = select_connector(
@@ -274,7 +274,7 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
         if not tasks:
             return
 
-        scheduler = _start_cron(gaia, running)
+        scheduler = _start_cron(gaia)
         try:
             await asyncio.gather(*tasks)
         except asyncio.CancelledError:
@@ -293,14 +293,14 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
             await dispatcher.flush_all()
 
 
-def _start_cron(gaia: Gaia, running: dict[str, Any]) -> Any:
+def _start_cron(gaia: Gaia) -> Any:
     """Start the cron scheduler for the daemon (None when disabled)."""
     if not gaia.config.cron.enabled:
         return None
     from gaia.cron import CronScheduler, CronStore
     from gaia.cron.runner import make_runner
 
-    scheduler = CronScheduler(CronStore(), make_runner(gaia, running))
+    scheduler = CronScheduler(CronStore(), make_runner(gaia))
     scheduler.start()
     return scheduler
 
