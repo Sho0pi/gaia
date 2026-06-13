@@ -23,9 +23,63 @@ from gaia.connectors.base import Dispatch, Media, Reply, current_chat
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from neonize.aioze.client import NewAClient
 
+    from gaia.config import GroupTrigger
     from gaia.voice import Transcriber
 
 logger = logging.getLogger(__name__)
+
+
+def _user_part(jid: str) -> str:
+    """The user (number) part of a ``user@server`` JID string, or the whole string."""
+    return jid.partition("@")[0]
+
+
+def _context_info(message: Any) -> Any:
+    """The inbound message's ``extendedTextMessage.contextInfo`` (or ``None``)."""
+    extended = getattr(message.Message, "extendedTextMessage", None)
+    return getattr(extended, "contextInfo", None)
+
+
+def _is_mentioned(message: Any, own_ids: set[str]) -> bool:
+    """Whether one of Gaia's own ids appears in the message's ``mentionedJID`` list.
+
+    WhatsApp may carry the bot's mention as its phone JID *or* its ``@lid`` identity, so
+    ``own_ids`` holds both number-parts and we match against either.
+    """
+    if not own_ids:
+        return False
+    context = _context_info(message)
+    mentioned = getattr(context, "mentionedJID", None) or []
+    return any(_user_part(str(jid)) in own_ids for jid in mentioned)
+
+
+def _is_reply_to(message: Any, own_ids: set[str]) -> bool:
+    """Whether the message replies to (quotes) a message Gaia authored.
+
+    The quoted message's author is carried on ``contextInfo.participant``; when that is one
+    of Gaia's own ids (phone or ``@lid``), the user replied to Gaia.
+    """
+    if not own_ids:
+        return False
+    context = _context_info(message)
+    participant = getattr(context, "participant", "") or ""
+    return bool(participant) and _user_part(str(participant)) in own_ids
+
+
+def _group_decision(message: Any, source: Any, own_ids: set[str], cfg: GroupTrigger) -> bool:
+    """Whether Gaia should *consider* this group message (was it addressed to Gaia?).
+
+    DMs always pass (the gate is group-only). In a group Gaia engages only when it is
+    *addressed* — @mentioned or someone replies to one of its messages — when ``mention_only``
+    is set. **Who** is allowed to trigger Gaia is **not** decided here: that is the user/role
+    system (``users.json`` + the dispatcher's guest-drop), so we don't duplicate an allow-list.
+    """
+    if not getattr(source, "IsGroup", False):
+        return True
+    if not cfg.respond_in_groups:
+        return False
+    addressed = _is_mentioned(message, own_ids) or _is_reply_to(message, own_ids)
+    return addressed or not cfg.mention_only
 
 
 def _jid_to_str(jid: Any) -> str:
@@ -121,6 +175,9 @@ class WhatsAppWebConnector:
 
     ``transcriber`` (a :class:`gaia.voice.Transcriber`) turns inbound voice notes into
     text for the handler; ``None`` means voice messages are ignored (prior behaviour).
+    ``group_trigger`` decides when Gaia answers inside a group chat (mention/reply); *who*
+    may trigger it is left to the user/role system (``users.json`` + the dispatcher's
+    guest-drop), not a separate allow-list. ``None`` falls back to the default quiet policy.
     ``show_active`` makes Gaia *look active* while it works: it marks an inbound message
     read (blue tick) the moment it starts and shows the "typing…" (or "recording audio…")
     indicator for the duration of the turn. Best-effort — degrades silently.
@@ -139,11 +196,18 @@ class WhatsAppWebConnector:
         dispatch: Dispatch,
         *,
         transcriber: Transcriber | None = None,
+        group_trigger: GroupTrigger | None = None,
         show_active: bool = True,
     ) -> None:
         self._session_db = session_db
         self._dispatch = dispatch  # channel-bound: (sender_id, name, text, send)
         self._transcriber = transcriber
+        if group_trigger is None:
+            from gaia.config import GroupTrigger
+
+            group_trigger = GroupTrigger()
+        self._group_trigger = group_trigger
+        self._own_ids: set[str] = set()  # bot's own number-parts (phone + @lid); lazy-loaded
         # Blue-tick + typing presence always travel together — one flag drives both.
         self._show_active = show_active
         self._client: Any = None  # the live client while start() runs (for send_to)
@@ -182,13 +246,23 @@ class WhatsAppWebConnector:
 
         @client.event(MessageEv)  # type: ignore[untyped-decorator]
         async def _on_message(client: NewAClient, message: MessageEv) -> None:
+            source = message.Info.MessageSource
+            # Entry trace: confirms an inbound event arrived at all (esp. for groups) before
+            # any text/gate logic — invaluable when "nothing happens" in a group.
+            logger.debug(
+                "inbound whatsapp message: group=%s chat=%s sender=%s",
+                getattr(source, "IsGroup", False),
+                _deliverable_chat(source),
+                _sender_jid(source),
+            )
             text = _message_text(message)
             was_voice = False
             if not text:
                 text = await self._transcribe_voice(client, message)
                 was_voice = bool(text)  # inbound was a (transcribed) voice note
             if text:
-                source = message.Info.MessageSource
+                if not await self._should_handle(client, message, source):
+                    return  # a group message Gaia wasn't addressed in (mention/reply)
                 chat = source.Chat  # JID to send media replies to
                 # Record where this turn came from, so scheduling tools (cron) can
                 # capture the chat for later proactive delivery (phone-number JID, not
@@ -218,6 +292,44 @@ class WhatsAppWebConnector:
                     await self._end_typing(client, chat, typing)
 
         return client
+
+    async def _should_handle(self, client: Any, message: Any, source: Any) -> bool:
+        """Apply the group policy: drop group messages Gaia isn't addressed in / not allowed.
+
+        DMs always pass. Resolving the group decision needs Gaia's own JID (to match
+        mentions/replies), fetched once and cached.
+        """
+        if not getattr(source, "IsGroup", False):
+            return True
+        own_ids = await self._ensure_own_ids(client)
+        if _group_decision(message, source, own_ids, self._group_trigger):
+            return True
+        context = _context_info(message)
+        logger.debug(
+            "group message ignored — not addressed. own_ids=%s mentioned=%s reply_author=%s",
+            sorted(own_ids),
+            list(getattr(context, "mentionedJID", None) or []),
+            getattr(context, "participant", ""),
+        )
+        return False
+
+    async def _ensure_own_ids(self, client: Any) -> set[str]:
+        """Gaia's own number-parts — phone JID **and** ``@lid`` — cached.
+
+        WhatsApp may address the bot in a group by either identity, so a mention only
+        matches if we know both. ``get_me()`` returns a Device carrying ``JID`` (phone) and
+        ``LID``. Empty/unset ids are skipped; an empty set means we couldn't resolve them.
+        """
+        if not self._own_ids:
+            try:
+                me = await client.get_me()
+                for jid in (getattr(me, "JID", None), getattr(me, "LID", None)):
+                    part = _user_part(_jid_to_str(jid)) if jid is not None else ""
+                    if part:
+                        self._own_ids.add(part)
+            except Exception:  # pragma: no cover - identity lookup is best-effort
+                logger.debug("could not resolve own ids for group mention check", exc_info=True)
+        return self._own_ids
 
     async def _mark_read(self, client: Any, source: Any, msg_id: str) -> None:
         """Blue-tick the inbound message (best-effort). Uses the message's own chat/sender.

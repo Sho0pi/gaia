@@ -218,10 +218,21 @@ class VoiceConfig(BaseModel):
 
 
 class GroupTrigger(BaseModel):
-    """When Gaia should respond inside a group chat."""
+    """When Gaia should respond inside a group chat.
 
+    Default is deliberately quiet: in a group Gaia answers only when it is *addressed*
+    (@mentioned or someone replies to one of its messages). *Who* may trigger it is the
+    user/role system's job (``users.json`` + the dispatcher's guest-drop) — known users
+    pass, unknown senders are guests and are dropped — so there is no second allow-list here.
+    """
+
+    respond_in_groups: bool = Field(
+        default=True,
+        description="Master switch for group chats; false = ignore all group messages.",
+    )
     mention_only: bool = Field(
-        default=True, description="Only respond in groups when Gaia is mentioned."
+        default=True,
+        description="Only respond in groups when Gaia is @mentioned or replied to.",
     )
 
 

@@ -20,17 +20,30 @@ from gaia.connectors.base import Send
 from gaia.connectors.whatsapp_web import WhatsAppWebConnector, _message_text
 
 
-def _msg(*, conversation: str = "", extended: str = "", quoted: str = "") -> SimpleNamespace:
+def _msg(
+    *,
+    conversation: str = "",
+    extended: str = "",
+    quoted: str = "",
+    mentioned: tuple[str, ...] = (),
+    reply_author: str = "",
+) -> SimpleNamespace:
     """Build a fake neonize MessageEv with the fields the connector reads.
 
-    ``quoted`` populates extendedTextMessage.contextInfo.quotedMessage (a reply).
+    ``quoted`` populates extendedTextMessage.contextInfo.quotedMessage (a reply);
+    ``mentioned`` populates ``mentionedJID`` and ``reply_author`` the quoted message's
+    author (``participant``) — both used by the group-mention gate.
     """
     quoted_message = (
         SimpleNamespace(conversation=quoted, extendedTextMessage=SimpleNamespace(text=""))
         if quoted
         else None
     )
-    context_info = SimpleNamespace(quotedMessage=quoted_message)
+    context_info = SimpleNamespace(
+        quotedMessage=quoted_message,
+        mentionedJID=list(mentioned),
+        participant=reply_author,
+    )
     return SimpleNamespace(
         Message=SimpleNamespace(
             conversation=conversation,
@@ -40,6 +53,16 @@ def _msg(*, conversation: str = "", extended: str = "", quoted: str = "") -> Sim
             ID="MSGID",
             MessageSource=SimpleNamespace(Chat="chat-jid", Sender="sender-jid"),
         ),
+    )
+
+
+def _group_source(sender: str = "555@s.whatsapp.net") -> SimpleNamespace:
+    """A group MessageSource: shared @g.us chat + an individual sender."""
+    user, _, server = sender.partition("@")
+    return SimpleNamespace(
+        Chat=SimpleNamespace(User="group", Server="g.us"),
+        IsGroup=True,
+        Sender=SimpleNamespace(User=user, Server=server or "s.whatsapp.net"),
     )
 
 
@@ -76,6 +99,13 @@ class _FakeClient:
 
     async def send_image(self, to: Any, file: str, caption: str | None = None) -> None:
         self.images.append((to, file, caption))
+
+    async def get_me(self) -> SimpleNamespace:
+        # Device carries both the phone JID and the @lid identity.
+        return SimpleNamespace(
+            JID=SimpleNamespace(User="bot", Server="s.whatsapp.net"),
+            LID=SimpleNamespace(User="lidbot", Server="lid"),
+        )
 
     async def mark_read(self, *ids: str, chat: Any, sender: Any, receipt: Any) -> None:
         self.reads.append((ids[0], chat, sender, receipt))
@@ -226,12 +256,21 @@ async def test_lid_chat_captures_phone_number_jid(
 
 
 async def test_group_chat_keeps_group_jid(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
+    from gaia.config import GroupTrigger
     from gaia.connectors.base import current_chat
 
-    client = WhatsAppWebConnector(tmp_path / "wa.db", _noop_dispatch).build_client()
+    # A group message that passes the gate (open policy here) still captures the group JID.
+    connector = WhatsAppWebConnector(
+        tmp_path / "wa.db",
+        _noop_dispatch,
+        group_trigger=GroupTrigger(mention_only=False),
+    )
+    client = connector.build_client()
     msg = _msg(conversation="hi")
     msg.Info.MessageSource = SimpleNamespace(
-        Chat=SimpleNamespace(User="12036302byte", Server="g.us"), IsGroup=True
+        Chat=SimpleNamespace(User="12036302byte", Server="g.us"),
+        IsGroup=True,
+        Sender=SimpleNamespace(User="111", Server="s.whatsapp.net"),
     )
 
     await client.handlers[fake_neonize["MessageEv"]](client, msg)
@@ -383,6 +422,98 @@ async def test_stop_client_falls_back_to_disconnect() -> None:
     client = _OnlyDisconnect()
     await _stop_client(client)
     assert client.disconnected is True
+
+
+# --- group-chat gating ---------------------------------------------------------------
+
+from gaia.config import GroupTrigger  # noqa: E402
+from gaia.connectors.whatsapp_web import _group_decision  # noqa: E402
+
+_BOT = "bot@s.whatsapp.net"
+_BOT_LID = "lidbot@lid"
+_BOT_IDS = {"bot", "lidbot"}  # the bot's own number-parts (phone + @lid)
+
+
+def _gt(**kw: Any) -> GroupTrigger:
+    return GroupTrigger(**kw)
+
+
+def test_group_decision_dm_always_passes() -> None:
+    dm = SimpleNamespace(IsGroup=False)
+    assert _group_decision(_msg(conversation="hi"), dm, _BOT_IDS, _gt()) is True
+
+
+def test_group_decision_requires_addressing() -> None:
+    # Who is *allowed* is the role system's job; here we only gate on being addressed.
+    src = _group_source("555@s.whatsapp.net")
+    # mentioned → handle
+    assert _group_decision(_msg(mentioned=(_BOT,)), src, _BOT_IDS, _gt()) is True
+    # not addressed → drop (mention_only default)
+    assert _group_decision(_msg(conversation="hello"), src, _BOT_IDS, _gt()) is False
+    # mention of someone else → still not addressed
+    assert _group_decision(_msg(mentioned=("999@s.whatsapp.net",)), src, _BOT_IDS, _gt()) is False
+
+
+def test_group_decision_matches_lid_mention() -> None:
+    # WhatsApp often carries the bot's mention as its @lid, not its phone JID.
+    src = _group_source("555@s.whatsapp.net")
+    assert _group_decision(_msg(mentioned=(_BOT_LID,)), src, _BOT_IDS, _gt()) is True
+
+
+def test_group_decision_reply_to_gaia_counts_as_addressed() -> None:
+    src = _group_source("555@s.whatsapp.net")
+    assert _group_decision(_msg(reply_author=_BOT), src, _BOT_IDS, _gt()) is True
+    # a reply to someone else is not addressing Gaia
+    assert _group_decision(_msg(reply_author="333@s.whatsapp.net"), src, _BOT_IDS, _gt()) is False
+
+
+def test_group_decision_respond_in_groups_off() -> None:
+    src = _group_source("555@s.whatsapp.net")
+    assert (
+        _group_decision(_msg(mentioned=(_BOT,)), src, _BOT_IDS, _gt(respond_in_groups=False))
+        is False
+    )
+
+
+def test_group_decision_mention_only_off_passes_any() -> None:
+    src = _group_source("555@s.whatsapp.net")
+    # mention_only off → any group message is considered (role gate decides who)
+    assert _group_decision(_msg(conversation="hey"), src, _BOT_IDS, _gt(mention_only=False)) is True
+
+
+async def test_group_message_dropped_when_not_addressed(
+    fake_neonize: dict[str, Any], tmp_path: Path
+) -> None:
+    seen: list[str] = []
+
+    async def dispatch(_s: str, _n: str, text: str, _send: Send) -> None:
+        seen.append(text)
+
+    connector = WhatsAppWebConnector(tmp_path / "wa.db", dispatch)
+    client = connector.build_client()
+    msg = _msg(conversation="just chatting")  # no mention
+    msg.Info.MessageSource = _group_source("555@s.whatsapp.net")
+
+    await client.handlers[fake_neonize["MessageEv"]](client, msg)
+    assert seen == []  # gaia stayed silent — not addressed
+
+
+async def test_group_message_handled_when_mentioned(
+    fake_neonize: dict[str, Any], tmp_path: Path
+) -> None:
+    seen: list[str] = []
+
+    async def dispatch(_s: str, _n: str, text: str, send: Send) -> None:
+        seen.append(text)
+        await send("on it")
+
+    connector = WhatsAppWebConnector(tmp_path / "wa.db", dispatch)
+    client = connector.build_client()
+    msg = _msg(conversation="@gaia status", mentioned=(_BOT,))
+    msg.Info.MessageSource = _group_source("555@s.whatsapp.net")
+
+    await client.handlers[fake_neonize["MessageEv"]](client, msg)
+    assert seen == ["@gaia status"] and [t for t, _ in client.replies] == ["on it"]
 
 
 # --- read receipts + typing indicator ------------------------------------------------
