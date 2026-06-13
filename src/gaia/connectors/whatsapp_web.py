@@ -229,7 +229,7 @@ class WhatsAppWebConnector:
             source = message.Info.MessageSource
             # Entry trace: confirms an inbound event arrived at all (esp. for groups) before
             # any text/gate logic — invaluable when "nothing happens" in a group.
-            logger.info(
+            logger.debug(
                 "inbound whatsapp message: group=%s chat=%s sender=%s",
                 getattr(source, "IsGroup", False),
                 _deliverable_chat(source),
@@ -276,7 +276,7 @@ class WhatsAppWebConnector:
         if _group_decision(message, source, own_ids, self._group_trigger):
             return True
         context = _context_info(message)
-        logger.info(
+        logger.debug(
             "group message ignored — not addressed. own_ids=%s mentioned=%s reply_author=%s",
             sorted(own_ids),
             list(getattr(context, "mentionedJID", None) or []),
