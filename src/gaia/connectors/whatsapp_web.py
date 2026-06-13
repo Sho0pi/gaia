@@ -272,7 +272,13 @@ class WhatsAppWebConnector:
         own_jid = await self._ensure_own_jid(client)
         if _group_decision(message, source, own_jid, self._group_trigger):
             return True
-        logger.info("group message ignored — Gaia not addressed (no mention / reply)")
+        context = _context_info(message)
+        logger.info(
+            "group message ignored — not addressed. own_jid=%s mentioned=%s reply_author=%s",
+            own_jid,
+            list(getattr(context, "mentionedJID", None) or []),
+            getattr(context, "participant", ""),
+        )
         return False
 
     async def _ensure_own_jid(self, client: Any) -> str:
