@@ -3,6 +3,13 @@
 Gaia owns the factory, registry and memory. For a task it decides which subagent
 should handle it, reusing a stored agent when one already fits. The concrete ADK
 root-agent wiring is built lazily in :meth:`Gaia.build_root_agent`.
+
+Build-once services (transcriber, memory, mcp/skill toolsets) live in
+:class:`gaia.di.Container` as lazy singletons. Callers reach them as
+``gaia.container.X()``; there are no pass-through wrappers on ``Gaia``. The
+one exception is :attr:`memory_service`, which keeps a thin property because
+its config-enabled gate has to run per-access (hot-reload aware). See
+``CLAUDE.md`` → *Service lifecycle & DI*.
 """
 
 from __future__ import annotations
@@ -10,20 +17,21 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from dependency_injector import providers
+
 from gaia.agents import AgentFactory, AgentSpec, SoulRegistry
 from gaia.communication import apply_communication_style
 from gaia.config import ConfigSupplier, Settings, configure_adk_env, get_settings
 from gaia.config.schema import AgentBinding
+from gaia.di import Container
 from gaia.models import resolve_model
-from gaia.skills import attach_skills, build_skill_toolset, resolve_skills_dir
+from gaia.skills import attach_skills, resolve_skills_dir
 from gaia.tools import default_registry
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from google.adk.agents import LlmAgent
-    from google.adk.tools.base_toolset import BaseToolset
-    from google.adk.tools.mcp_tool import McpToolset
 
     from gaia.config import GaiaConfig
     from gaia.memory import Mem0MemoryService
@@ -36,6 +44,10 @@ class Gaia:
         self.settings = settings or get_settings()
         configure_adk_env(self.settings)
         self.config_supplier = ConfigSupplier(self.settings.config_path)
+        self.container = Container(
+            settings=providers.Object(self.settings),
+            config_supplier=providers.Object(self.config_supplier),
+        )
         self.skills_dir = resolve_skills_dir(self.config)
         self.souls = SoulRegistry(self.settings.agent_registry_dir)
         self.tools = default_registry(self.config)
@@ -47,72 +59,30 @@ class Gaia:
             skills_dir=self.skills_dir,
             default_communication_style=self.config.default_communication_style,
             tool_registry=self.tools,
-            mcp_toolsets_provider=self.mcp_toolsets,
-            skill_toolset_provider=self.skill_toolsets,
+            # Container providers are themselves callable; calling them triggers
+            # lazy build and returns the singleton, matching the
+            # `Callable[[], list[...]]` contract AgentFactory expects.
+            mcp_toolsets_provider=self.container.mcp_toolsets,
+            skill_toolset_provider=self.container.skill_toolsets,
         )
-        self._memory_service: Mem0MemoryService | None = None
-        self._mcp: list[McpToolset] | None = None
-        self._skill_toolsets: list[BaseToolset] | None = None
         self._closed = False
-
-    def skill_toolsets(self) -> list[BaseToolset]:
-        """The on-demand skills toolset (ADK SkillToolset), built once and shared.
-
-        Exposes every skill under ``skills_dir`` to the model via ``list_skills`` /
-        ``load_skill`` (progressive disclosure), so agents can reach the skills folder
-        without each id being pinned. ``[]`` when the folder holds no valid skill.
-        Built lazily so constructing Gaia needs no ADK.
-        """
-        if self._skill_toolsets is None:
-            toolset = build_skill_toolset(self.skills_dir)
-            self._skill_toolsets = [toolset] if toolset is not None else []
-        return self._skill_toolsets
-
-    def mcp_toolsets(self) -> list[McpToolset]:
-        """The configured external MCP toolsets, built once and shared by root + souls.
-
-        Built lazily (the ADK/``mcp`` imports are deferred) so constructing Gaia needs
-        neither; ``[]`` when no MCP server is configured. When the browser backend
-        resolves to ``mcp``, Microsoft's playwright-mcp is appended as one more server
-        (deduped if the user already configured one named ``playwright``).
-        """
-        if self._mcp is None:
-            from gaia.config.schema import MCPConfig
-            from gaia.mcp import (
-                build_mcp_toolsets,
-                playwright_mcp_server,
-                resolve_browser_backend,
-            )
-
-            servers = list(self.config.mcp.servers)
-            if resolve_browser_backend(self.config.browser) == "mcp" and not any(
-                s.name == "playwright" for s in servers
-            ):
-                servers.append(playwright_mcp_server(self.config.browser))
-            self._mcp = build_mcp_toolsets(MCPConfig(servers=servers))
-        return self._mcp
 
     async def close(self) -> None:
         """Release every async resource on the *running* loop (idempotent, best-effort).
 
-        Covers the stateful tool backends (shell processes, browser sessions) via the
-        registry's ``aclose`` and the MCP stdio child processes. Called from each shutdown
-        path while its loop is still alive, so nothing falls through to the tool managers'
-        ``atexit`` hooks — which run after the loop is gone and raise 'Event loop is closed'.
+        Two cleanup queues run, both no-ops when their owner was never touched:
+        ``tools.aclose()`` releases the per-tool managers (shell processes,
+        browser sessions); ``container.lifecycle().aclose()`` releases the
+        services the container built (mcp stdio children, skill toolsets).
+        Called while the host loop is still alive so we don't fall through to
+        the tool managers' ``atexit`` hooks (which would raise
+        'Event loop is closed').
         """
         if self._closed:
             return
         self._closed = True
         await self.tools.aclose()
-        if self._mcp:
-            from gaia.mcp import close_mcp_toolsets
-
-            await close_mcp_toolsets(self._mcp)
-        for toolset in self._skill_toolsets or []:
-            try:
-                await toolset.close()
-            except Exception:  # pragma: no cover - shutdown best-effort
-                logger.debug("skill toolset close failed", exc_info=True)
+        await self.container.lifecycle().aclose()
 
     async def __aenter__(self) -> Gaia:
         """``async with Gaia(...):`` — :meth:`close` runs on exit, exceptions included."""
@@ -128,22 +98,20 @@ class Gaia:
 
     @property
     def memory_service(self) -> Mem0MemoryService | None:
-        """The long-term memory service (mem0), built once on first use.
+        """The long-term memory service (mem0), gated by the live ``memory.enabled`` flag.
 
-        ``None`` when ``memory.enabled`` is false — Gaia then runs session-only, with no
-        cross-session recall. Built lazily so importing/constructing Gaia needs no mem0
-        backend or model key.
+        Kept as a property (rather than letting callers use
+        ``gaia.container.memory_service()`` directly) because the
+        ``memory.enabled`` check has to run **per-access** — ``gaia.yaml``
+        hot-reload can flip the flag at runtime, and seven callers across the
+        codebase (handler, delegate, slash commands, the remember tool) rely
+        on getting ``None`` back when memory is off. The container singleton
+        underneath is still built at most once.
         """
         if not self.config.memory.enabled:
             return None
-        if self._memory_service is None:
-            from gaia.memory import Mem0MemoryService, build_mem0
-
-            backend = build_mem0(self.settings, self.config.memory)
-            self._memory_service = Mem0MemoryService(
-                backend, recall_limit=self.config.memory.recall_limit
-            )
-        return self._memory_service
+        service: Mem0MemoryService = self.container.memory_service()
+        return service
 
     def ensure_agent(self, spec: AgentSpec) -> LlmAgent:
         """Get a subagent for ``spec`` — reused if known, created+stored if new."""
@@ -206,8 +174,8 @@ class Gaia:
             tools=[
                 *self.tools.all(),
                 make_delegate(self),
-                *self.mcp_toolsets(),
-                *self.skill_toolsets(),
+                *self.container.mcp_toolsets(),
+                *self.container.skill_toolsets(),
             ],
             sub_agents=sub_agents,
         )

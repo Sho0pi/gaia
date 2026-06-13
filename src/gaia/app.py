@@ -238,10 +238,8 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
         running: dict[str, Any] = {}
 
         if "whatsapp" in selected:
-            from gaia.voice import build_transcriber
-
             connector = select_connector(
-                settings, handler, transcriber=build_transcriber(gaia.config)
+                settings, handler, transcriber=gaia.container.transcriber()
             )
             if isinstance(connector, WhatsAppWebConnector):
                 tasks.append(asyncio.create_task(connector.start()))
