@@ -262,6 +262,39 @@ async def test_mcp_screenshot_path_in_text_is_sent_as_media(tmp_path: Path) -> N
     assert media[0].path == shot
 
 
+async def test_mcp_screenshot_markdown_link_resolved_against_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # playwright-mcp's real shape: a markdown link to a cwd-relative file (it ignores
+    # --output-dir for the screenshot name), e.g. "[Screenshot of viewport](./flow.png)".
+    # We pin the server cwd to the workspace, so the basename resolves there.
+    from gaia.connectors.base import Media
+
+    monkeypatch.setattr("gaia.mcp.browser_output_dir", lambda: tmp_path)
+    shot = tmp_path / "flow-with-grace.png"
+    shot.write_bytes(b"\x89PNG saved")
+    handler = GaiaHandler(SimpleNamespace(memory_service=None))
+    handler._runner = _FakeRunner(
+        [
+            _mcp_screenshot_event(
+                [
+                    {
+                        "type": "text",
+                        "text": "### Result\n- [Screenshot of viewport](./flow-with-grace.png)",
+                    }
+                ]
+            ),
+            _event("done"),
+        ]
+    )
+
+    sent = await _collect_replies(handler, "shot")
+
+    media = [r for r in sent if isinstance(r, Media)]
+    assert len(media) == 1
+    assert media[0].path == shot
+
+
 async def test_mcp_screenshot_inline_image_is_written_and_sent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

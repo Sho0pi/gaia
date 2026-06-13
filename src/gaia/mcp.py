@@ -67,7 +67,7 @@ def server_to_params(
 
         return StdioConnectionParams(
             server_params=StdioServerParameters(
-                command=server.command, args=server.args, env=_stdio_env(server)
+                command=server.command, args=server.args, env=_stdio_env(server), cwd=server.cwd
             )
         )
     if not server.url:
@@ -180,13 +180,17 @@ def playwright_mcp_server(
 ) -> MCPServerConfig:
     """Synthesize the :class:`MCPServerConfig` for Microsoft's playwright-mcp.
 
-    Runs over stdio with the configured runtime (``bunx``). ``--output-dir`` pins saved
-    files to the gaia workspace instead of polluting the project with ``.playwright-mcp``.
-    No ``tool_prefix``: the server's tools are already named ``browser_*`` (the design
-    gaia's native bundle ports), so a prefix would only double it up. The caller
-    attaches this only when :func:`resolve_browser_backend` returns ``"mcp"``.
+    Runs over stdio with the configured runtime (``bunx``). The server's **cwd** is pinned
+    to the gaia workspace: ``browser_take_screenshot`` writes its file relative to the
+    process cwd (it ignores ``--output-dir`` for the screenshot ``filename``), so without
+    this the PNG lands in gaia's own cwd and the connector can't find it to send. With cwd
+    set, the screenshot's ``./<name>.png`` resolves under the workspace where
+    :func:`gaia.core.screenshots.media_for_screenshots` looks. ``--output-dir`` still pins
+    session/trace files. No ``tool_prefix``: the server's tools are already named
+    ``browser_*``. The caller attaches this only when ``resolve_browser_backend`` is mcp.
     """
     out = output_dir or browser_output_dir()
+    out.mkdir(parents=True, exist_ok=True)  # the server's cwd must exist at launch
     args = [config.package, "--browser", config.browser, "--output-dir", str(out)]
     if config.headless:
         args.append("--headless")
@@ -199,5 +203,6 @@ def playwright_mcp_server(
         transport="stdio",
         command=config.runtime,
         args=args,
+        cwd=str(out),
         tool_filter=config.tool_filter,
     )
