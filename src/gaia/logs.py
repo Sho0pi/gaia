@@ -55,7 +55,23 @@ _GENERIC_SECRETS = (
     re.compile(r"\bey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"),  # JWT (oauth)
 )
 
-_configured = False
+# Marker stamped on every handler ``setup_logging`` adds to the root logger.
+# We detect prior setup by handler presence rather than a module-level mutable
+# flag — keeps test isolation simple (no global to reset) and matches the
+# "no `global` for service construction" convention in CLAUDE.md.
+_HANDLER_MARK = "_gaia_owned"
+
+
+def _mark(handler: logging.Handler) -> logging.Handler:
+    """Tag ``handler`` so :func:`_already_configured` recognises our prior setup."""
+    setattr(handler, _HANDLER_MARK, True)
+    return handler
+
+
+def _already_configured() -> bool:
+    """True if a previous :func:`setup_logging` call has installed handlers."""
+    root = logging.getLogger()
+    return any(getattr(h, _HANDLER_MARK, False) for h in root.handlers)
 
 
 def _extra_fields(record: logging.LogRecord) -> dict[str, Any]:
@@ -221,9 +237,8 @@ def setup_logging(
     ``StreamHandler`` grabs the *real* stdout before Textual redirects ``sys.stdout``,
     so its writes would draw over the chat UI.
     """
-    global _configured
     log_dir = Path(settings.log_dir)
-    if _configured and not force:
+    if _already_configured() and not force:
         return log_dir
 
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -252,9 +267,9 @@ def setup_logging(
         stream = logging.StreamHandler(sys.stdout)
         stream.setLevel(level)
         stream.setFormatter(ConsoleFormatter(redactor=redactor, color=color))
-        root.addHandler(stream)
-    root.addHandler(_rotating(log_dir / "system.log", level, text_fmt, cfg))
-    root.addHandler(_rotating(log_dir / "errors.log", logging.WARNING, text_fmt, cfg))
+        root.addHandler(_mark(stream))
+    root.addHandler(_mark(_rotating(log_dir / "system.log", level, text_fmt, cfg)))
+    root.addHandler(_mark(_rotating(log_dir / "errors.log", logging.WARNING, text_fmt, cfg)))
 
     # gaia logs inherit the root handlers (no dedicated handlers of their own).
     system = logging.getLogger(constants.LOGGER_NAME)
@@ -287,7 +302,6 @@ def setup_logging(
     for name in _NOISY:
         logging.getLogger(name).setLevel(logging.WARNING)
 
-    _configured = True
     return log_dir
 
 

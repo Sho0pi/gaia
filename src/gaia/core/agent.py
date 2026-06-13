@@ -3,6 +3,11 @@
 Gaia owns the factory, registry and memory. For a task it decides which subagent
 should handle it, reusing a stored agent when one already fits. The concrete ADK
 root-agent wiring is built lazily in :meth:`Gaia.build_root_agent`.
+
+Build-once services (transcriber, memory, mcp/skill toolsets) live in
+:class:`gaia.di.Container` as lazy singletons; ``Gaia`` exposes them as
+properties/methods that delegate to the container. See ``CLAUDE.md`` →
+*Service lifecycle & DI*.
 """
 
 from __future__ import annotations
@@ -10,12 +15,15 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from dependency_injector import providers
+
 from gaia.agents import AgentFactory, AgentSpec, SoulRegistry
 from gaia.communication import apply_communication_style
 from gaia.config import ConfigSupplier, Settings, configure_adk_env, get_settings
 from gaia.config.schema import AgentBinding
+from gaia.di import Container
 from gaia.models import resolve_model
-from gaia.skills import attach_skills, build_skill_toolset, resolve_skills_dir
+from gaia.skills import attach_skills, resolve_skills_dir
 from gaia.tools import default_registry
 
 logger = logging.getLogger(__name__)
@@ -27,6 +35,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
     from gaia.config import GaiaConfig
     from gaia.memory import Mem0MemoryService
+    from gaia.voice import Transcriber
 
 
 class Gaia:
@@ -36,6 +45,10 @@ class Gaia:
         self.settings = settings or get_settings()
         configure_adk_env(self.settings)
         self.config_supplier = ConfigSupplier(self.settings.config_path)
+        self.container = Container(
+            settings=providers.Object(self.settings),
+            config_supplier=providers.Object(self.config_supplier),
+        )
         self.skills_dir = resolve_skills_dir(self.config)
         self.souls = SoulRegistry(self.settings.agent_registry_dir)
         self.tools = default_registry(self.config)
@@ -50,7 +63,9 @@ class Gaia:
             mcp_toolsets_provider=self.mcp_toolsets,
             skill_toolset_provider=self.skill_toolsets,
         )
-        self._memory_service: Mem0MemoryService | None = None
+        # Cache provider results locally so close() can release them without
+        # triggering build on a never-touched service (container would otherwise
+        # construct an unused toolset just to tear it down).
         self._mcp: list[McpToolset] | None = None
         self._skill_toolsets: list[BaseToolset] | None = None
         self._closed = False
@@ -58,38 +73,25 @@ class Gaia:
     def skill_toolsets(self) -> list[BaseToolset]:
         """The on-demand skills toolset (ADK SkillToolset), built once and shared.
 
-        Exposes every skill under ``skills_dir`` to the model via ``list_skills`` /
-        ``load_skill`` (progressive disclosure), so agents can reach the skills folder
-        without each id being pinned. ``[]`` when the folder holds no valid skill.
-        Built lazily so constructing Gaia needs no ADK.
+        Lazy singleton: built on first call by ``gaia.di.Container`` (see
+        ``CLAUDE.md`` → *Service lifecycle & DI*). Exposes every skill under
+        ``skills_dir`` to the model via ``list_skills`` / ``load_skill``
+        (progressive disclosure); ``[]`` when the folder holds no valid skill.
         """
         if self._skill_toolsets is None:
-            toolset = build_skill_toolset(self.skills_dir)
-            self._skill_toolsets = [toolset] if toolset is not None else []
+            self._skill_toolsets = self.container.skill_toolsets()
         return self._skill_toolsets
 
     def mcp_toolsets(self) -> list[McpToolset]:
         """The configured external MCP toolsets, built once and shared by root + souls.
 
-        Built lazily (the ADK/``mcp`` imports are deferred) so constructing Gaia needs
-        neither; ``[]`` when no MCP server is configured. When the browser backend
-        resolves to ``mcp``, Microsoft's playwright-mcp is appended as one more server
-        (deduped if the user already configured one named ``playwright``).
+        Lazy singleton via ``gaia.di.Container``. ``[]`` when no MCP server is
+        configured. When the browser backend resolves to ``mcp``, Microsoft's
+        playwright-mcp is appended as one more server (deduped if the user
+        already configured one named ``playwright``).
         """
         if self._mcp is None:
-            from gaia.config.schema import MCPConfig
-            from gaia.mcp import (
-                build_mcp_toolsets,
-                playwright_mcp_server,
-                resolve_browser_backend,
-            )
-
-            servers = list(self.config.mcp.servers)
-            if resolve_browser_backend(self.config.browser) == "mcp" and not any(
-                s.name == "playwright" for s in servers
-            ):
-                servers.append(playwright_mcp_server(self.config.browser))
-            self._mcp = build_mcp_toolsets(MCPConfig(servers=servers))
+            self._mcp = self.container.mcp_toolsets()
         return self._mcp
 
     async def close(self) -> None:
@@ -128,22 +130,29 @@ class Gaia:
 
     @property
     def memory_service(self) -> Mem0MemoryService | None:
-        """The long-term memory service (mem0), built once on first use.
+        """The long-term memory service (mem0), a lazy singleton from the container.
 
-        ``None`` when ``memory.enabled`` is false — Gaia then runs session-only, with no
-        cross-session recall. Built lazily so importing/constructing Gaia needs no mem0
-        backend or model key.
+        ``None`` when ``memory.enabled`` is false — Gaia then runs session-only,
+        with no cross-session recall. Built on first access; subsequent calls
+        return the cached instance even if ``memory.enabled`` is toggled, until
+        Gaia is rebuilt.
         """
         if not self.config.memory.enabled:
             return None
-        if self._memory_service is None:
-            from gaia.memory import Mem0MemoryService, build_mem0
+        service: Mem0MemoryService = self.container.memory_service()
+        return service
 
-            backend = build_mem0(self.settings, self.config.memory)
-            self._memory_service = Mem0MemoryService(
-                backend, recall_limit=self.config.memory.recall_limit
-            )
-        return self._memory_service
+    @property
+    def transcriber(self) -> Transcriber | None:
+        """The voice-to-text transcriber, a lazy singleton from the container.
+
+        Canonical "lazy singleton" example: built on first access (loads the
+        Whisper model lazily inside its own ``transcribe()`` too), reused for
+        every connector and tool that needs it. ``None`` when ``voice.enabled``
+        is false or ``faster-whisper`` isn't installed.
+        """
+        result: Transcriber | None = self.container.transcriber()
+        return result
 
     def ensure_agent(self, spec: AgentSpec) -> LlmAgent:
         """Get a subagent for ``spec`` — reused if known, created+stored if new."""

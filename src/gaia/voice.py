@@ -31,8 +31,10 @@ class Transcriber:
     """Speech-to-text over a lazily-built, instance-cached WhisperModel.
 
     The model is held on the instance (built on first :meth:`transcribe`), so one
-    Transcriber loads the weights once and reuses them. Inject it where it's needed
-    (the connector takes it as a constructor arg) — there is no module-level singleton.
+    Transcriber loads the weights once and reuses them. The instance itself is a
+    lazy singleton on :attr:`gaia.core.Gaia.transcriber` (via
+    :class:`gaia.di.Container`); connectors receive it via constructor injection
+    from the composition root (``app.py``).
     """
 
     def __init__(
@@ -93,11 +95,12 @@ class Transcriber:
 def build_transcriber(config: GaiaConfig) -> Transcriber | None:
     """Build a transcriber from ``voice`` config, or ``None`` when off/uninstalled.
 
-    A plain factory — no caching, no module global. The single caller (the daemon, at
-    connector startup) hands the result to the connector, which owns it for its lifetime
-    (constructor injection); the model is then loaded once and reused on that instance.
-    ``None`` when ``voice.enabled`` is false or faster-whisper isn't installed (warned,
-    naming the remedy) — connectors then ignore voice notes, today's behaviour.
+    A plain factory — no caching, no module global. ``gaia.di.Container`` calls
+    it once per Gaia (``providers.Singleton``) so ``Gaia.transcriber`` is the
+    same instance for every caller; the model is then loaded once and reused on
+    that instance. ``None`` when ``voice.enabled`` is false or faster-whisper
+    isn't installed (warned, naming the remedy) — connectors then ignore voice
+    notes, today's behaviour.
     """
     if not config.voice.enabled:
         return None

@@ -10,7 +10,6 @@ from types import SimpleNamespace
 
 import pytest
 
-import gaia.logs as logs_module
 from gaia.config import Settings
 from gaia.config.schema import LoggingConfig
 from gaia.logs import ConsoleFormatter, _supports_color, log_event, setup_logging
@@ -24,7 +23,12 @@ def _record(name: str, level: str, msg: str, **fields: object) -> logging.LogRec
 
 @pytest.fixture(autouse=True)
 def _reset_logging() -> Iterator[None]:
-    """Undo the global logger mutations setup_logging makes, so tests stay isolated."""
+    """Undo the logger mutations setup_logging makes, so tests stay isolated.
+
+    Detection of prior setup is now handler-presence based (see
+    ``logs._already_configured``), so clearing the root + gaia handlers is the
+    whole reset — no module-level flag to flip.
+    """
     yield
     root = logging.getLogger()
     for handler in list(root.handlers):
@@ -38,7 +42,6 @@ def _reset_logging() -> Iterator[None]:
         log.handlers.clear()
         log.propagate = True
         log.setLevel(logging.NOTSET)
-    logs_module._configured = False
 
 
 def _setup(tmp_path: Path, **settings_kwargs: object) -> Path:
@@ -207,3 +210,32 @@ def test_setup_is_idempotent(tmp_path: Path) -> None:
     setup_logging(Settings(log_dir=tmp_path), LoggingConfig())
 
     assert len(root.handlers) == count
+
+
+def test_setup_reruns_when_root_handlers_cleared(tmp_path: Path) -> None:
+    """No module-level flag: detection is purely handler-presence-based.
+
+    If something nukes the root handlers between calls, the next ``setup_logging``
+    re-runs (instead of skipping because of a stale "already configured" flag).
+    """
+    _setup(tmp_path)
+    root = logging.getLogger()
+    for handler in list(root.handlers):
+        root.removeHandler(handler)
+        handler.close()
+
+    setup_logging(Settings(log_dir=tmp_path), LoggingConfig())
+
+    assert len(root.handlers) > 0
+
+
+def test_force_rebuilds_handlers(tmp_path: Path) -> None:
+    _setup(tmp_path)
+    before = list(logging.getLogger().handlers)
+
+    setup_logging(Settings(log_dir=tmp_path), LoggingConfig(), force=True)
+    after = list(logging.getLogger().handlers)
+
+    # Same shape, but distinct handler instances — force closed + replaced them.
+    assert len(after) == len(before)
+    assert all(b is not a for b, a in zip(before, after, strict=False))
