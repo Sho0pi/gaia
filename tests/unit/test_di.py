@@ -21,6 +21,16 @@ from gaia.core import Gaia
 from gaia.di import LifecycleManager
 
 
+@pytest.fixture(autouse=True)
+def _isolate_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep building a real Gaia from leaking into the shared ~/.gaia files.
+
+    `UserStore()` defaults to the constants path, not tmp — so a Gaia built here would seed
+    admins into the real users.json, polluting other tests' clean-home assumptions in CI.
+    """
+    monkeypatch.setattr("gaia.constants.USERS_FILE", tmp_path / "users.json")
+
+
 @pytest.fixture
 def fake_whisper(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub faster_whisper so the transcriber can build without the real model."""
@@ -40,6 +50,39 @@ def _gaia(tmp_path: Path) -> Gaia:
         log_dir=tmp_path / "logs",
     )
     return Gaia(settings)
+
+
+def test_container_is_single_composition_root(tmp_path: Path) -> None:
+    # Gaia's handles ARE the container's singletons — construction lives only in di.py.
+    gaia = _gaia(tmp_path)
+
+    assert gaia.souls is gaia.container.souls()
+    assert gaia.tools is gaia.container.tools()
+    assert gaia.users is gaia.container.users()
+    assert gaia.factory is gaia.container.factory()
+    assert gaia.connectors is gaia.container.connectors()
+
+
+def test_factory_provider_delegation_wires_lazy_toolsets(tmp_path: Path) -> None:
+    # The factory must receive the mcp/skill *providers* (callables), not resolved lists,
+    # so souls still build toolsets lazily. Smoke: the factory builds an agent end to end.
+    gaia = _gaia(tmp_path)
+
+    assert gaia.factory._mcp_toolsets_provider is gaia.container.mcp_toolsets
+    assert gaia.factory._skill_toolset_provider is gaia.container.skill_toolsets
+
+
+def test_users_seeded_from_config_admin(tmp_path: Path) -> None:
+    config_path = tmp_path / "gaia.yaml"
+    config_path.write_text("admin:\n  - 'whatsapp:111@s.whatsapp.net'\n")
+    settings = Settings(
+        agent_registry_dir=tmp_path / "registry", config_path=config_path, log_dir=tmp_path / "l"
+    )
+
+    gaia = Gaia(settings)
+
+    seeded = gaia.users.resolve("whatsapp", "111@s.whatsapp.net")
+    assert seeded is not None and seeded.role == "admin"
 
 
 def test_gaia_init_does_not_build_transcriber(

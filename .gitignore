@@ -229,3 +229,9 @@ __marimo__/
 # playwright-mcp's default output dir (only appears if a run can't write to the
 # configured --output-dir); gaia pins output into ~/.gaia/agents, not the repo.
 .playwright-mcp/
+
+# macOS / editor / scratch junk (never commit)
+.DS_Store
+*.bak
+# Local screenshots/scratch images at the repo root (diagrams live in docs/ as .svg)
+/*.png

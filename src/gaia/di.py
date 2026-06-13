@@ -21,21 +21,29 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from dependency_injector import containers, providers
 
+from gaia.agents import AgentFactory, SoulRegistry
 from gaia.skills import build_skill_toolset, resolve_skills_dir
+from gaia.tools import default_registry
+from gaia.users import UserStore
 from gaia.voice import build_transcriber
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
+    from pathlib import Path
+
     from google.adk.tools.base_toolset import BaseToolset
     from google.adk.tools.mcp_tool import McpToolset
 
     from gaia.config import GaiaConfig, Settings
     from gaia.config.store import ConfigSupplier
     from gaia.memory import Mem0MemoryService
+    from gaia.tools import ToolRegistry
     from gaia.voice import Transcriber
+
+    ToolsetProvider = Callable[[], list[Any]]
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +78,41 @@ class LifecycleManager:
                 await closer()
             except Exception:  # pragma: no cover - shutdown best-effort
                 logger.debug("lifecycle close failed", exc_info=True)
+
+
+def _build_user_store(config: GaiaConfig) -> UserStore:
+    """Build the user store and seed admins from ``config.admin`` (a build-time side effect)."""
+    store = UserStore()
+    store.seed_admins(config.admin)
+    return store
+
+
+def _build_factory(
+    souls: SoulRegistry,
+    settings: Settings,
+    config: GaiaConfig,
+    tools: ToolRegistry,
+    mcp_toolsets_provider: ToolsetProvider,
+    skill_toolset_provider: ToolsetProvider,
+) -> AgentFactory:
+    """Assemble the :class:`AgentFactory`.
+
+    A small builder rather than a pure provider expression because the
+    ``config.llm.model or settings.model`` fallback can't be written as one. The two
+    toolset *providers* arrive via container provider-delegation, so the factory keeps
+    its lazy ``Callable[[], list]`` contract.
+    """
+    return AgentFactory(
+        souls,
+        default_model=config.llm.model or settings.model,
+        default_provider=config.llm.provider,
+        default_use_oauth=config.llm.openai.use_oauth,
+        skills_dir=resolve_skills_dir(config),
+        default_communication_style=config.default_communication_style,
+        tool_registry=tools,
+        mcp_toolsets_provider=mcp_toolsets_provider,
+        skill_toolset_provider=skill_toolset_provider,
+    )
 
 
 def _build_memory_service(settings: Settings, config: GaiaConfig) -> Mem0MemoryService:
@@ -141,6 +184,17 @@ class Container(containers.DeclarativeContainer):
 
     lifecycle: providers.Singleton[LifecycleManager] = providers.Singleton(LifecycleManager)
 
+    # Live proactive-sender registry (connector name → object with send_to), populated by
+    # the launcher once connectors are running; one shared dict per Gaia. Empty otherwise.
+    connectors: providers.Singleton[dict[str, Any]] = providers.Singleton(dict)
+
+    skills_dir: providers.Singleton[Path] = providers.Singleton(resolve_skills_dir, config)
+    souls: providers.Singleton[SoulRegistry] = providers.Singleton(
+        SoulRegistry, settings.provided.agent_registry_dir
+    )
+    users: providers.Singleton[UserStore] = providers.Singleton(_build_user_store, config)
+    tools: providers.Singleton[ToolRegistry] = providers.Singleton(default_registry, config)
+
     transcriber: providers.Singleton[Transcriber | None] = providers.Singleton(
         build_transcriber, config
     )
@@ -152,4 +206,16 @@ class Container(containers.DeclarativeContainer):
     )
     skill_toolsets: providers.Singleton[list[BaseToolset]] = providers.Singleton(
         _build_skill_toolsets, config, lifecycle
+    )
+
+    # provider-delegation: the factory receives the mcp/skill *provider objects*
+    # (callables), not their resolved values, so souls still build toolsets lazily.
+    factory: providers.Singleton[AgentFactory] = providers.Singleton(
+        _build_factory,
+        souls,
+        settings,
+        config,
+        tools,
+        mcp_toolsets.provider,
+        skill_toolsets.provider,
     )

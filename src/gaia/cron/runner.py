@@ -27,15 +27,20 @@ class ProactiveSender(Protocol):
     async def send_to(self, chat: str, reply: Reply) -> None: ...
 
 
-def make_runner(
-    gaia: Gaia, connectors: dict[str, ProactiveSender]
-) -> Any:  # Runner (Callable[[CronJob], Awaitable[None]])
-    """Build the scheduler's runner bound to ``gaia`` and the live connector registry."""
+def make_runner(gaia: Gaia) -> Any:  # Runner (Callable[[CronJob], Awaitable[None]])
+    """Build the scheduler's runner bound to ``gaia``.
+
+    The live connector registry is read from ``gaia.connectors`` (the container's shared
+    dict the launcher populates). We deliberately do NOT use dependency-injector
+    ``@inject`` here — its ``wire()`` only patches *module-level* functions, so this
+    per-call closure is invisible to it, and wiring binds ``Provide`` markers at module
+    (global) scope, which clashes with the per-``Gaia`` container. See #146 for the spike.
+    """
     from gaia.core.handler import build_handler
 
     async def run(job: CronJob) -> None:
         channel, chat = _delivery_target(gaia, job)
-        sender = connectors.get(channel)
+        sender = gaia.connectors.get(channel)
 
         async def send(reply: Reply) -> None:
             if sender is None:

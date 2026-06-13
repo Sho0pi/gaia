@@ -28,7 +28,7 @@ async def test_sends_to_known_user_by_id(tmp_path: Path) -> None:
     gaia = _gaia(tmp_path, {"whatsapp": wa})
     gaia.users.register("whatsapp", "972@s.whatsapp.net", "Grace", role="user")
 
-    tool = make_message_user(gaia)
+    tool = make_message_user(gaia.users, gaia.connectors)
     out = await tool("grace", "I love you")
 
     assert out["status"] == "success"
@@ -40,7 +40,7 @@ async def test_resolves_by_display_name(tmp_path: Path) -> None:
     gaia = _gaia(tmp_path, {"whatsapp": wa})
     gaia.users.register("whatsapp", "972@s.whatsapp.net", "Grace", role="user")
 
-    out = await make_message_user(gaia)("Grace", "hi")
+    out = await make_message_user(gaia.users, gaia.connectors)("Grace", "hi")
 
     assert out["status"] == "success"
     assert wa.sent[0][0] == "972@s.whatsapp.net"
@@ -50,7 +50,9 @@ async def test_raw_phone_uses_given_channel(tmp_path: Path) -> None:
     wa = _FakeConnector()
     gaia = _gaia(tmp_path, {"whatsapp": wa})
 
-    out = await make_message_user(gaia)("111@s.whatsapp.net", "yo", channel="whatsapp")
+    out = await make_message_user(gaia.users, gaia.connectors)(
+        "111@s.whatsapp.net", "yo", channel="whatsapp"
+    )
 
     assert out["status"] == "success"
     assert wa.sent == [("111@s.whatsapp.net", "yo")]
@@ -63,7 +65,7 @@ async def test_raw_phone_infers_single_live_channel_and_normalizes(tmp_path: Pat
     gaia = _gaia(tmp_path, {"whatsapp": wa})
     current_chat.set(("", ""))  # cron-fire: no ambient channel
 
-    out = await make_message_user(gaia)("+972 50-123-4567", "on my way")
+    out = await make_message_user(gaia.users, gaia.connectors)("+972 50-123-4567", "on my way")
 
     assert out["status"] == "success"
     assert wa.sent == [("972501234567", "on my way")]
@@ -73,7 +75,7 @@ async def test_ambiguous_channel_errors_clearly(tmp_path: Path) -> None:
     gaia = _gaia(tmp_path, {"whatsapp": _FakeConnector(), "telegram": _FakeConnector()})
     current_chat.set(("", ""))
 
-    out = await make_message_user(gaia)("0501234567", "hi")
+    out = await make_message_user(gaia.users, gaia.connectors)("0501234567", "hi")
 
     assert out["status"] == "error"
     assert "which channel" in out["error_message"]
@@ -83,7 +85,7 @@ async def test_channel_not_running_is_clear_error(tmp_path: Path) -> None:
     gaia = _gaia(tmp_path, {})  # no live connectors (outside the daemon)
     gaia.users.register("whatsapp", "972@s.whatsapp.net", "Grace", role="user")
 
-    out = await make_message_user(gaia)("grace", "hi")
+    out = await make_message_user(gaia.users, gaia.connectors)("grace", "hi")
 
     assert out["status"] == "error"
     assert "not running" in out["error_message"]
@@ -93,14 +95,14 @@ async def test_no_live_channel_errors(tmp_path: Path) -> None:
     gaia = _gaia(tmp_path, {})  # nothing running and no channel hint
     current_chat.set(("", ""))
 
-    out = await make_message_user(gaia)("nobody", "hi")
+    out = await make_message_user(gaia.users, gaia.connectors)("nobody", "hi")
 
     assert out["status"] == "error"
     assert "which channel" in out["error_message"]
 
 
 async def test_empty_text_rejected(tmp_path: Path) -> None:
-    out = await make_message_user(_gaia(tmp_path, {}))("grace", "   ")
+    out = await make_message_user(UserStore(tmp_path / "users.json"), {})("grace", "   ")
 
     assert out["status"] == "error"
     assert "empty" in out["error_message"]

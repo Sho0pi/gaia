@@ -21,14 +21,13 @@ from typing import TYPE_CHECKING, Any
 from gaia.connectors.base import current_chat
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from gaia.core.agent import Gaia
-    from gaia.users import User
+    from gaia.users import User, UserStore
 
 #: Tool id / ADK tool name (matches the closure name).
 NAME = "message_user"
 
 
-def _infer_channel(gaia: Gaia, channel: str) -> str:
+def _infer_channel(connectors: dict[str, Any], channel: str) -> str:
     """Pick the channel to send on when the model didn't name one.
 
     Order: explicit arg → the current conversation's channel → the only live connector
@@ -40,7 +39,7 @@ def _infer_channel(gaia: Gaia, channel: str) -> str:
     ambient = current_chat.get()[0]
     if ambient:
         return ambient
-    live = list(gaia.connectors)
+    live = list(connectors)
     return live[0] if len(live) == 1 else ""
 
 
@@ -59,7 +58,9 @@ def _normalize_chat(channel: str, recipient: str) -> str:
     return recipient
 
 
-def _resolve_target(gaia: Gaia, recipient: str, channel: str) -> tuple[str, str] | str:
+def _resolve_target(
+    store: UserStore, connectors: dict[str, Any], recipient: str, channel: str
+) -> tuple[str, str] | str:
     """Resolve ``recipient`` to a ``(channel, chat)`` to send to, or an error string.
 
     Tries the user store first (canonical id, then display name, then a
@@ -67,7 +68,6 @@ def _resolve_target(gaia: Gaia, recipient: str, channel: str) -> tuple[str, str]
     (a phone/JID), inferring the channel from the arg, the live chat, or the only
     running connector.
     """
-    store = gaia.users
     user: User | None = store.get(recipient)
     if user is None:
         user = next((u for u in store.list() if u.name.lower() == recipient.lower()), None)
@@ -88,15 +88,21 @@ def _resolve_target(gaia: Gaia, recipient: str, channel: str) -> tuple[str, str]
         return ch, chat
 
     # Not a known user — treat recipient as a raw sender id (phone/JID).
-    ch = _infer_channel(gaia, channel)
+    ch = _infer_channel(connectors, channel)
     if not ch:
-        live = ", ".join(gaia.connectors) or "none"
+        live = ", ".join(connectors) or "none"
         return f"can't tell which channel to send {recipient!r} on (live: {live}) — name one"
     return ch, _normalize_chat(ch, recipient)
 
 
-def make_message_user(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any]]]:
-    """Return the root-only ``message_user`` tool bound to ``gaia``."""
+def make_message_user(
+    users: UserStore, connectors: dict[str, Any]
+) -> Callable[..., Awaitable[dict[str, Any]]]:
+    """Return the root-only ``message_user`` tool.
+
+    Takes just the two services it needs — the user store and the live connector
+    registry — rather than the whole ``Gaia`` (smaller surface, trivially testable).
+    """
 
     async def message_user(recipient: str, text: str, channel: str = "") -> dict[str, Any]:
         """Send a text message to another person, now.
@@ -117,12 +123,12 @@ def make_message_user(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any]]]:
         if not text.strip():
             return {"status": "error", "error_message": "text must not be empty"}
 
-        resolved = _resolve_target(gaia, recipient.strip(), channel.strip())
+        resolved = _resolve_target(users, connectors, recipient.strip(), channel.strip())
         if isinstance(resolved, str):
             return {"status": "error", "error_message": resolved}
         ch, chat = resolved
 
-        sender = gaia.connectors.get(ch)
+        sender = connectors.get(ch)
         if sender is None:
             return {
                 "status": "error",
