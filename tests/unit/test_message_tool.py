@@ -50,7 +50,9 @@ async def test_raw_phone_uses_given_channel(tmp_path: Path) -> None:
     wa = _FakeConnector()
     gaia = _gaia(tmp_path, {"whatsapp": wa})
 
-    out = await make_message_user(gaia.users, gaia.connectors)("111@s.whatsapp.net", "yo", channel="whatsapp")
+    out = await make_message_user(gaia.users, gaia.connectors)(
+        "111@s.whatsapp.net", "yo", channel="whatsapp"
+    )
 
     assert out["status"] == "success"
     assert wa.sent == [("111@s.whatsapp.net", "yo")]
