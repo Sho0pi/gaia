@@ -79,7 +79,7 @@ async def test_unknown_remote_sender_is_gated_as_guest(
     await d.for_channel("whatsapp")("972@s.whatsapp.net", "Grace", "hi", await _send_collect(out))
 
     assert built == []  # no handler built — never reached the model
-    assert any("ask the admin" in m.lower() for m in out)
+    assert out == []  # guests get silence on the wire; approval is out-of-band
     # but the sender is now a pending guest the admin can see
     user = gaia.users.resolve("whatsapp", "972@s.whatsapp.net")
     assert user is not None and user.role == "guest" and user.name == "Grace"

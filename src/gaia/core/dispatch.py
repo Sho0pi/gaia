@@ -58,9 +58,14 @@ class Dispatcher:
             )
 
         if user.role == "guest":
-            await send(
-                "You don't have access yet — ask the admin to approve you.\n"
-                f"Your id: {channel}:{sender_id}"
+            # Silently drop guest messages — the model never sees them and nothing
+            # goes back over the wire. Approval is out-of-band: the guest reaches the
+            # admin directly (DM, etc), the admin promotes them via the user command.
+            logger.info(
+                "dropped message from guest %s:%s (id=%s) — awaiting admin approval",
+                channel,
+                sender_id,
+                user.id,
             )
             return
 
