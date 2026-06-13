@@ -31,12 +31,25 @@ logger = logging.getLogger(__name__)
 _IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".webp")
 
 #: Text deliverables whose *content* we send back (the soul writes the real answer to a
-#: file and only summarizes "done" — the user wants the content, not the filename).
-_TEXT_SUFFIXES = (".md", ".txt", ".html", ".csv", ".json", ".py", ".js", ".ts", ".css", ".yaml")
+#: file and only summarizes "done" — the user wants the content, not the filename). ``.html``
+#: is deliberately absent: a web deliverable is *rendered* to a screenshot instead of dumping
+#: its source.
+_TEXT_SUFFIXES = (".md", ".txt", ".csv", ".json", ".py", ".js", ".ts", ".yaml")
+
+#: Filename the rendered web preview is written under (skipped in the raw-image loop).
+_PREVIEW_PNG = "_preview.png"
 
 #: Cap per text artifact and overall, so a huge deliverable doesn't flood the chat.
 _PER_FILE_CHARS = 3000
 _TOTAL_CHARS = 8000
+
+
+def _web_entry(files: list[str]) -> str | None:
+    """The html file to preview: ``index.html`` if present, else the first ``.html``."""
+    htmls = [f for f in files if f.lower().endswith(".html")]
+    if not htmls:
+        return None
+    return next((f for f in htmls if Path(f).name.lower() == "index.html"), htmls[0])
 
 
 def _artifact_text(workspace: str, files: list[str]) -> str:
@@ -95,13 +108,27 @@ async def notify_result(gaia: Gaia, task: Task, run: SoulRun) -> None:
         return
 
     summary = run.summary.strip() or "(no summary)"
-    text = f"✓ {task.title or task.id}\n\n{summary}"
-    body = _artifact_text(run.workspace, run.files)
-    if body:
-        text = f"{text}\n\n{body}"
+    head = f"✓ {task.title or task.id}\n\n{summary}"
     try:
+        # A web deliverable: render index.html to an image so the user sees the page.
+        entry = _web_entry(run.files)
+        if entry and run.workspace:
+            from gaia.tools.browser.render import render_html_to_png
+
+            workspace = Path(run.workspace)
+            png = await render_html_to_png(workspace / entry, workspace / _PREVIEW_PNG)
+            if png is not None:
+                caption = f"{head}\n\nfiles: {run.workspace}"[:1000]
+                await sender.send_to(chat, Media(path=png, caption=caption))
+                return
+
+        # Otherwise: summary + inline text-deliverable content, then image artifacts.
+        body = _artifact_text(run.workspace, run.files)
+        text = f"{head}\n\n{body}" if body else head
         await sender.send_to(chat, text)
         for path in run.files:
+            if path == _PREVIEW_PNG:
+                continue  # our generated preview, not a soul artifact
             if path.lower().endswith(_IMAGE_SUFFIXES):
                 full = Path(run.workspace) / path if run.workspace else Path(path)
                 await sender.send_to(chat, Media(path=full))
