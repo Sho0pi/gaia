@@ -1,4 +1,4 @@
-"""Gaia.mcp_toolsets attaches playwright-mcp when the browser backend resolves to mcp."""
+"""``gaia.container.mcp_toolsets`` attaches playwright-mcp when browser backend resolves to mcp."""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def test_mcp_backend_attaches_playwright(tmp_path: Path, monkeypatch: pytest.Mon
     _patch(monkeypatch, bunx=True)
     gaia = _gaia(tmp_path, "browser:\n  backend: mcp\n")
 
-    toolsets = gaia.mcp_toolsets()
+    toolsets = gaia.container.mcp_toolsets()
 
     assert len(toolsets) == 1
     assert toolsets[0].connection_params.server_params.command == "bunx"
@@ -49,7 +49,7 @@ def test_native_backend_attaches_nothing(tmp_path: Path, monkeypatch: pytest.Mon
     _patch(monkeypatch, bunx=True)
     gaia = _gaia(tmp_path, "browser:\n  backend: native\n")
 
-    assert gaia.mcp_toolsets() == []
+    assert gaia.container.mcp_toolsets() == []
 
 
 def test_mcp_backend_falls_back_when_bunx_absent(
@@ -59,7 +59,7 @@ def test_mcp_backend_falls_back_when_bunx_absent(
     gaia = _gaia(tmp_path, "browser:\n  backend: mcp\n")
 
     # No bunx → resolver returns native → playwright-mcp not attached.
-    assert gaia.mcp_toolsets() == []
+    assert gaia.container.mcp_toolsets() == []
 
 
 def test_user_playwright_server_not_doubled(
@@ -72,4 +72,4 @@ def test_user_playwright_server_not_doubled(
     )
 
     # The synthesized server is deduped against the user's own 'playwright' entry.
-    assert len(gaia.mcp_toolsets()) == 1
+    assert len(gaia.container.mcp_toolsets()) == 1

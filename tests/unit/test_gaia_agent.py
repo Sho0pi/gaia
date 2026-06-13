@@ -80,11 +80,12 @@ async def test_close_runs_tool_cleanup_and_mcp(
 
     monkeypatch.setattr(gaia.tools, "aclose", fake_aclose)
 
-    class _Toolset:
-        async def close(self) -> None:
-            calls.append("mcp")
+    async def fake_mcp_close() -> None:
+        calls.append("mcp")
 
-    gaia._mcp = [_Toolset()]  # type: ignore[list-item]
+    # Container-resource cleanup is mediated by LifecycleManager — register the
+    # fake closer the same way a real builder would have, then trigger close.
+    gaia.container.lifecycle().add(fake_mcp_close)
 
     await gaia.close()
     await gaia.close()  # idempotent: second call does nothing

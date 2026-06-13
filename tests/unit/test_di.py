@@ -2,7 +2,8 @@
 
 Singleton semantics (per-Container), laziness (no construction at Gaia init,
 only on first access), per-instance isolation (a fresh Gaia builds a fresh
-singleton), and the memory-disabled gate.
+singleton), the memory-disabled gate, and the LifecycleManager teardown
+(closer registered only when the resource is pulled).
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ import pytest
 import gaia.di as di_module
 from gaia.config import Settings
 from gaia.core import Gaia
+from gaia.di import LifecycleManager
 
 
 @pytest.fixture
@@ -59,11 +61,11 @@ def test_gaia_init_does_not_build_transcriber(
 
 
 def test_transcriber_built_on_first_access_and_reused(tmp_path: Path, fake_whisper: None) -> None:
-    """``gaia.transcriber`` is a lazy singleton: identical instance across calls."""
+    """``container.transcriber()`` is a lazy singleton: identical instance across calls."""
     gaia = _gaia(tmp_path)
 
-    first = gaia.transcriber
-    second = gaia.transcriber
+    first = gaia.container.transcriber()
+    second = gaia.container.transcriber()
 
     assert first is not None
     assert first is second
@@ -76,9 +78,9 @@ def test_distinct_gaia_instances_have_distinct_transcribers(
     one = _gaia(tmp_path / "a")
     two = _gaia(tmp_path / "b")
 
-    assert one.transcriber is not None
-    assert two.transcriber is not None
-    assert one.transcriber is not two.transcriber
+    assert one.container.transcriber() is not None
+    assert two.container.transcriber() is not None
+    assert one.container.transcriber() is not two.container.transcriber()
 
 
 def test_memory_disabled_short_circuits_container(
@@ -109,7 +111,73 @@ def test_memory_disabled_short_circuits_container(
 
 
 def test_mcp_toolsets_reused_across_calls(tmp_path: Path) -> None:
-    """The mcp toolsets list is the same object on every Gaia.mcp_toolsets() call."""
+    """Pulling the toolsets twice returns the cached singleton list."""
     gaia = _gaia(tmp_path)
 
-    assert gaia.mcp_toolsets() is gaia.mcp_toolsets()
+    assert gaia.container.mcp_toolsets() is gaia.container.mcp_toolsets()
+
+
+async def test_lifecycle_manager_runs_registered_closers() -> None:
+    """``LifecycleManager`` runs each closer in order and swallows individual failures."""
+    calls: list[str] = []
+
+    async def _ok() -> None:
+        calls.append("ok")
+
+    async def _fail() -> None:
+        calls.append("fail")
+        raise RuntimeError("boom")
+
+    lifecycle = LifecycleManager()
+    lifecycle.add(_ok)
+    lifecycle.add(_fail)
+    lifecycle.add(_ok)
+
+    await lifecycle.aclose()
+
+    assert calls == ["ok", "fail", "ok"]
+
+
+async def test_close_runs_no_closers_when_resources_never_pulled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If nothing pulls mcp/skill toolsets, ``Gaia.close()`` never invokes a closer."""
+    closed: list[str] = []
+
+    async def _spy_close_mcp(_toolsets: Any) -> None:
+        closed.append("mcp")
+
+    monkeypatch.setattr("gaia.mcp.close_mcp_toolsets", _spy_close_mcp)
+
+    gaia = _gaia(tmp_path)
+    # No access to gaia.container.mcp_toolsets() / .skill_toolsets() — never built.
+
+    await gaia.close()
+
+    assert closed == []
+
+
+async def test_close_runs_closers_for_pulled_resources(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pulling mcp_toolsets registers a closer; close runs it exactly once."""
+    fake_toolsets = [object()]  # truthy so the real `_build_mcp_toolsets` registers a closer
+    closed: list[Any] = []
+
+    async def _spy_close_mcp(toolsets: Any) -> None:
+        closed.append(toolsets)
+
+    # Patch the builder + closer at their import path inside `gaia.mcp`, which is
+    # what `_build_mcp_toolsets` reaches through. Declarative containers capture
+    # the wrapper at class-definition, so patching `di._build_mcp_toolsets`
+    # itself would be a no-op.
+    monkeypatch.setattr("gaia.mcp.build_mcp_toolsets", lambda _cfg: fake_toolsets)
+    monkeypatch.setattr("gaia.mcp.close_mcp_toolsets", _spy_close_mcp)
+
+    gaia = _gaia(tmp_path)
+    pulled = gaia.container.mcp_toolsets()
+
+    await gaia.close()
+
+    assert pulled is fake_toolsets
+    assert closed == [fake_toolsets]

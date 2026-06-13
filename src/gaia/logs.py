@@ -55,10 +55,14 @@ _GENERIC_SECRETS = (
     re.compile(r"\bey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"),  # JWT (oauth)
 )
 
-# Marker stamped on every handler ``setup_logging`` adds to the root logger.
-# We detect prior setup by handler presence rather than a module-level mutable
-# flag — keeps test isolation simple (no global to reset) and matches the
-# "no `global` for service construction" convention in CLAUDE.md.
+# Logging setup is process-bootstrap — a side-effect on the root logger
+# (handlers installed, levels set), not a service with an instance to cache.
+# A lazy singleton needs a *value* to hold; there is none here. The "have we
+# already configured logging?" bit therefore lives on the right object — the
+# handler we own, on the root logger — instead of a parallel module-level
+# flag. That's why this is a marker attribute and not a `providers.Singleton`
+# or a module-level `_configured` boolean: no out-of-band state, no test
+# fixture reset, and the bit and the thing it describes share one lifetime.
 _HANDLER_MARK = "_gaia_owned"
 
 

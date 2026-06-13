@@ -5,9 +5,11 @@ should handle it, reusing a stored agent when one already fits. The concrete ADK
 root-agent wiring is built lazily in :meth:`Gaia.build_root_agent`.
 
 Build-once services (transcriber, memory, mcp/skill toolsets) live in
-:class:`gaia.di.Container` as lazy singletons; ``Gaia`` exposes them as
-properties/methods that delegate to the container. See ``CLAUDE.md`` →
-*Service lifecycle & DI*.
+:class:`gaia.di.Container` as lazy singletons. Callers reach them as
+``gaia.container.X()``; there are no pass-through wrappers on ``Gaia``. The
+one exception is :attr:`memory_service`, which keeps a thin property because
+its config-enabled gate has to run per-access (hot-reload aware). See
+``CLAUDE.md`` → *Service lifecycle & DI*.
 """
 
 from __future__ import annotations
@@ -30,12 +32,9 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from google.adk.agents import LlmAgent
-    from google.adk.tools.base_toolset import BaseToolset
-    from google.adk.tools.mcp_tool import McpToolset
 
     from gaia.config import GaiaConfig
     from gaia.memory import Mem0MemoryService
-    from gaia.voice import Transcriber
 
 
 class Gaia:
@@ -60,61 +59,30 @@ class Gaia:
             skills_dir=self.skills_dir,
             default_communication_style=self.config.default_communication_style,
             tool_registry=self.tools,
-            mcp_toolsets_provider=self.mcp_toolsets,
-            skill_toolset_provider=self.skill_toolsets,
+            # Container providers are themselves callable; calling them triggers
+            # lazy build and returns the singleton, matching the
+            # `Callable[[], list[...]]` contract AgentFactory expects.
+            mcp_toolsets_provider=self.container.mcp_toolsets,
+            skill_toolset_provider=self.container.skill_toolsets,
         )
-        # Cache provider results locally so close() can release them without
-        # triggering build on a never-touched service (container would otherwise
-        # construct an unused toolset just to tear it down).
-        self._mcp: list[McpToolset] | None = None
-        self._skill_toolsets: list[BaseToolset] | None = None
         self._closed = False
-
-    def skill_toolsets(self) -> list[BaseToolset]:
-        """The on-demand skills toolset (ADK SkillToolset), built once and shared.
-
-        Lazy singleton: built on first call by ``gaia.di.Container`` (see
-        ``CLAUDE.md`` → *Service lifecycle & DI*). Exposes every skill under
-        ``skills_dir`` to the model via ``list_skills`` / ``load_skill``
-        (progressive disclosure); ``[]`` when the folder holds no valid skill.
-        """
-        if self._skill_toolsets is None:
-            self._skill_toolsets = self.container.skill_toolsets()
-        return self._skill_toolsets
-
-    def mcp_toolsets(self) -> list[McpToolset]:
-        """The configured external MCP toolsets, built once and shared by root + souls.
-
-        Lazy singleton via ``gaia.di.Container``. ``[]`` when no MCP server is
-        configured. When the browser backend resolves to ``mcp``, Microsoft's
-        playwright-mcp is appended as one more server (deduped if the user
-        already configured one named ``playwright``).
-        """
-        if self._mcp is None:
-            self._mcp = self.container.mcp_toolsets()
-        return self._mcp
 
     async def close(self) -> None:
         """Release every async resource on the *running* loop (idempotent, best-effort).
 
-        Covers the stateful tool backends (shell processes, browser sessions) via the
-        registry's ``aclose`` and the MCP stdio child processes. Called from each shutdown
-        path while its loop is still alive, so nothing falls through to the tool managers'
-        ``atexit`` hooks — which run after the loop is gone and raise 'Event loop is closed'.
+        Two cleanup queues run, both no-ops when their owner was never touched:
+        ``tools.aclose()`` releases the per-tool managers (shell processes,
+        browser sessions); ``container.lifecycle().aclose()`` releases the
+        services the container built (mcp stdio children, skill toolsets).
+        Called while the host loop is still alive so we don't fall through to
+        the tool managers' ``atexit`` hooks (which would raise
+        'Event loop is closed').
         """
         if self._closed:
             return
         self._closed = True
         await self.tools.aclose()
-        if self._mcp:
-            from gaia.mcp import close_mcp_toolsets
-
-            await close_mcp_toolsets(self._mcp)
-        for toolset in self._skill_toolsets or []:
-            try:
-                await toolset.close()
-            except Exception:  # pragma: no cover - shutdown best-effort
-                logger.debug("skill toolset close failed", exc_info=True)
+        await self.container.lifecycle().aclose()
 
     async def __aenter__(self) -> Gaia:
         """``async with Gaia(...):`` — :meth:`close` runs on exit, exceptions included."""
@@ -130,29 +98,20 @@ class Gaia:
 
     @property
     def memory_service(self) -> Mem0MemoryService | None:
-        """The long-term memory service (mem0), a lazy singleton from the container.
+        """The long-term memory service (mem0), gated by the live ``memory.enabled`` flag.
 
-        ``None`` when ``memory.enabled`` is false — Gaia then runs session-only,
-        with no cross-session recall. Built on first access; subsequent calls
-        return the cached instance even if ``memory.enabled`` is toggled, until
-        Gaia is rebuilt.
+        Kept as a property (rather than letting callers use
+        ``gaia.container.memory_service()`` directly) because the
+        ``memory.enabled`` check has to run **per-access** — ``gaia.yaml``
+        hot-reload can flip the flag at runtime, and seven callers across the
+        codebase (handler, delegate, slash commands, the remember tool) rely
+        on getting ``None`` back when memory is off. The container singleton
+        underneath is still built at most once.
         """
         if not self.config.memory.enabled:
             return None
         service: Mem0MemoryService = self.container.memory_service()
         return service
-
-    @property
-    def transcriber(self) -> Transcriber | None:
-        """The voice-to-text transcriber, a lazy singleton from the container.
-
-        Canonical "lazy singleton" example: built on first access (loads the
-        Whisper model lazily inside its own ``transcribe()`` too), reused for
-        every connector and tool that needs it. ``None`` when ``voice.enabled``
-        is false or ``faster-whisper`` isn't installed.
-        """
-        result: Transcriber | None = self.container.transcriber()
-        return result
 
     def ensure_agent(self, spec: AgentSpec) -> LlmAgent:
         """Get a subagent for ``spec`` — reused if known, created+stored if new."""
@@ -215,8 +174,8 @@ class Gaia:
             tools=[
                 *self.tools.all(),
                 make_delegate(self),
-                *self.mcp_toolsets(),
-                *self.skill_toolsets(),
+                *self.container.mcp_toolsets(),
+                *self.container.skill_toolsets(),
             ],
             sub_agents=sub_agents,
         )
