@@ -43,6 +43,13 @@ Send = Callable[[Reply], Awaitable[None]]
 # Receives inbound text + the sink, streams replies through it, returns nothing.
 Handler = Callable[[str, Send], Awaitable[None]]
 
+# What a connector calls per inbound message: it identifies the *sender*
+# (``sender_id`` = the channel-specific id, ``name`` = a display name from the channel)
+# and the text, plus the reply sink. The channel is bound when the connector is built,
+# so the connector only supplies who-and-what; the dispatcher resolves the sender to a
+# canonical user + role, gates guests, and routes to that user's handler.
+Dispatch = Callable[[str, str, str, Send], Awaitable[None]]
+
 
 def as_text(reply: Reply) -> str:
     """Best-effort text form of a reply, for connectors that can't send media.

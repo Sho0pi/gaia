@@ -115,29 +115,30 @@ def test_no_quote_returns_plain_text() -> None:
     assert _message_text(_msg(conversation="just a normal message")) == "just a normal message"
 
 
+async def _noop_dispatch(_sender_id: str, _name: str, _text: str, _send: Send) -> None:
+    return None
+
+
 def test_build_client_creates_session_dir(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
     db = tmp_path / "nested" / "whatsapp.db"
 
-    async def handler(_text: str) -> str:
-        return "ok"
-
-    WhatsAppWebConnector(db, handler).build_client()
+    WhatsAppWebConnector(db, _noop_dispatch).build_client()
 
     assert db.parent.is_dir()
 
 
-async def test_inbound_message_routed_to_handler(
+async def test_inbound_message_routed_to_dispatch(
     fake_neonize: dict[str, Any], tmp_path: Path
 ) -> None:
     seen: list[str] = []
 
-    async def handler(text: str, send: Send) -> None:
+    async def dispatch(_sender_id: str, _name: str, text: str, send: Send) -> None:
         seen.append(text)
         # Stream two replies to prove the sink can fan out one inbound to many.
         await send(f"echo:{text}")
         await send("again")
 
-    client = WhatsAppWebConnector(tmp_path / "wa.db", handler).build_client()
+    client = WhatsAppWebConnector(tmp_path / "wa.db", dispatch).build_client()
     message = _msg(conversation="ping")
 
     await client.handlers[fake_neonize["MessageEv"]](client, message)
@@ -149,11 +150,11 @@ async def test_inbound_message_routed_to_handler(
 async def test_media_reply_sent_as_image(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
     from gaia.connectors.base import Media
 
-    async def handler(_text: str, send: Send) -> None:
+    async def dispatch(_sender_id: str, _name: str, _text: str, send: Send) -> None:
         await send("here:")  # a text reply, then the image
         await send(Media(Path("/tmp/shot.png"), caption="screenshot"))
 
-    client = WhatsAppWebConnector(tmp_path / "wa.db", handler).build_client()
+    client = WhatsAppWebConnector(tmp_path / "wa.db", dispatch).build_client()
     await client.handlers[fake_neonize["MessageEv"]](client, _msg(conversation="shot"))
 
     assert [text for text, _ in client.replies] == ["here:"]  # text reply still sent
@@ -161,10 +162,10 @@ async def test_media_reply_sent_as_image(fake_neonize: dict[str, Any], tmp_path:
 
 
 async def test_empty_message_is_ignored(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
-    async def handler(_text: str, _send: Send) -> None:  # pragma: no cover - must not run
-        raise AssertionError("handler called on empty message")
+    async def dispatch(*_a: object) -> None:  # pragma: no cover - must not run
+        raise AssertionError("dispatch called on empty message")
 
-    client = WhatsAppWebConnector(tmp_path / "wa.db", handler).build_client()
+    client = WhatsAppWebConnector(tmp_path / "wa.db", dispatch).build_client()
 
     await client.handlers[fake_neonize["MessageEv"]](client, _msg())
 
@@ -174,14 +175,16 @@ async def test_empty_message_is_ignored(fake_neonize: dict[str, Any], tmp_path: 
 async def test_lid_chat_captures_phone_number_jid(
     fake_neonize: dict[str, Any], tmp_path: Path
 ) -> None:
-    # LID addressing: Chat is a hidden @lid identity (sends to it vanish); the capture
-    # must prefer SenderAlt — the deliverable phone-number JID.
+    # LID addressing: Chat is a hidden @lid identity (sends to it vanish); the delivery
+    # capture and the sender identity must both prefer SenderAlt — the phone-number JID.
     from gaia.connectors.base import current_chat
 
-    async def handler(_text: str, _send: Send) -> None:
-        return None
+    seen: list[str] = []
 
-    client = WhatsAppWebConnector(tmp_path / "wa.db", handler).build_client()
+    async def dispatch(sender_id: str, _name: str, _text: str, _send: Send) -> None:
+        seen.append(sender_id)
+
+    client = WhatsAppWebConnector(tmp_path / "wa.db", dispatch).build_client()
     msg = _msg(conversation="hi")
     msg.Info.MessageSource = SimpleNamespace(
         Chat=SimpleNamespace(User="160168088236120", Server="lid"),
@@ -191,16 +194,14 @@ async def test_lid_chat_captures_phone_number_jid(
 
     await client.handlers[fake_neonize["MessageEv"]](client, msg)
 
-    assert current_chat.get() == ("whatsapp", "972501234567@s.whatsapp.net")
+    assert seen == ["972501234567@s.whatsapp.net"]  # identity = the sender's phone JID
+    assert current_chat.get() == ("whatsapp", "972501234567@s.whatsapp.net")  # delivery target
 
 
 async def test_group_chat_keeps_group_jid(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
     from gaia.connectors.base import current_chat
 
-    async def handler(_text: str, _send: Send) -> None:
-        return None
-
-    client = WhatsAppWebConnector(tmp_path / "wa.db", handler).build_client()
+    client = WhatsAppWebConnector(tmp_path / "wa.db", _noop_dispatch).build_client()
     msg = _msg(conversation="hi")
     msg.Info.MessageSource = SimpleNamespace(
         Chat=SimpleNamespace(User="12036302byte", Server="g.us"), IsGroup=True
@@ -255,11 +256,11 @@ async def test_voice_note_transcribed_to_handler(
     sys.modules["neonize.aioze.client"].NewAClient = _DownloadClient  # type: ignore[attr-defined]
     seen: list[str] = []
 
-    async def handler(text: str, send: Send) -> None:
+    async def dispatch(_sender_id: str, _name: str, text: str, _send: Send) -> None:
         seen.append(text)
 
     transcriber = _FakeTranscriber()
-    connector = WhatsAppWebConnector(tmp_path / "wa.db", handler, transcriber=transcriber)
+    connector = WhatsAppWebConnector(tmp_path / "wa.db", dispatch, transcriber=transcriber)
     client = connector.build_client()
 
     await client.handlers[fake_neonize["MessageEv"]](client, _voice_msg())
@@ -273,10 +274,10 @@ async def test_voice_note_transcribed_to_handler(
 async def test_voice_note_ignored_without_transcriber(
     fake_neonize: dict[str, Any], tmp_path: Path, cache_dir: Path
 ) -> None:
-    async def handler(_text: str, _send: Send) -> None:  # pragma: no cover - must not run
+    async def dispatch(*_a: object) -> None:  # pragma: no cover - must not run
         raise AssertionError("voice note must be dropped without a transcriber")
 
-    client = WhatsAppWebConnector(tmp_path / "wa.db", handler).build_client()
+    client = WhatsAppWebConnector(tmp_path / "wa.db", dispatch).build_client()
 
     await client.handlers[fake_neonize["MessageEv"]](client, _voice_msg())  # no crash
 
@@ -290,10 +291,10 @@ async def test_voice_download_failure_drops_message(
 
     sys.modules["neonize.aioze.client"].NewAClient = _FailingClient  # type: ignore[attr-defined]
 
-    async def handler(_text: str, _send: Send) -> None:  # pragma: no cover - must not run
+    async def dispatch(*_a: object) -> None:  # pragma: no cover - must not run
         raise AssertionError
 
-    connector = WhatsAppWebConnector(tmp_path / "wa.db", handler, transcriber=_FakeTranscriber())
+    connector = WhatsAppWebConnector(tmp_path / "wa.db", dispatch, transcriber=_FakeTranscriber())
     client = connector.build_client()
 
     await client.handlers[fake_neonize["MessageEv"]](client, _voice_msg())  # logged, no crash
@@ -304,10 +305,10 @@ async def test_text_message_pipeline_unchanged_with_transcriber(
 ) -> None:
     seen: list[str] = []
 
-    async def handler(text: str, send: Send) -> None:
+    async def dispatch(_sender_id: str, _name: str, text: str, _send: Send) -> None:
         seen.append(text)
 
-    connector = WhatsAppWebConnector(tmp_path / "wa.db", handler, transcriber=_FakeTranscriber())
+    connector = WhatsAppWebConnector(tmp_path / "wa.db", dispatch, transcriber=_FakeTranscriber())
     client = connector.build_client()
 
     await client.handlers[fake_neonize["MessageEv"]](client, _msg(conversation="plain text"))
@@ -318,10 +319,7 @@ async def test_text_message_pipeline_unchanged_with_transcriber(
 async def test_start_stops_client_on_cancel(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
     # The shutdown hang: a cancelled start() must call stop() — disconnect() alone leaves
     # neonize's blocking Go call parked in a non-daemon thread that wedges interpreter exit.
-    async def handler(_text: str, _send: Send) -> None:  # pragma: no cover - never called
-        raise AssertionError
-
-    connector = WhatsAppWebConnector(tmp_path / "wa.db", handler)
+    connector = WhatsAppWebConnector(tmp_path / "wa.db", _noop_dispatch)
     captured: dict[str, _FakeClient] = {}
     real_build = connector.build_client
 

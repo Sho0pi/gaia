@@ -85,12 +85,32 @@ def get_settings(env_file: Path | None = None) -> Settings:
     return Settings()
 
 
+#: Telemetry/analytics kill-switches for our dependency stack, set (via ``setdefault``,
+#: so a user can still opt back in) before any backend imports. ``DO_NOT_TRACK`` is the
+#: cross-vendor consoledonottrack.com standard several libs honour; the rest are the
+#: specific flags each lib reads at import. ``OTEL_SDK_DISABLED`` also quiets ADK's OTel
+#: metrics emitter (the "missing token usage metadata" warning for non-Gemini models).
+_TELEMETRY_OFF = {
+    "DO_NOT_TRACK": "1",
+    "OTEL_SDK_DISABLED": "true",  # OpenTelemetry SDK (ADK traces + metrics) → no-op
+    "ANONYMIZED_TELEMETRY": "False",  # chromadb / posthog
+    "CHROMA_TELEMETRY_IMPL": "none",  # chromadb belt-and-suspenders
+    "MEM0_TELEMETRY": "false",  # mem0 posthog
+    "LITELLM_TELEMETRY": "False",  # litellm (non-Gemini models)
+    "HF_HUB_DISABLE_TELEMETRY": "1",  # huggingface (faster-whisper weights)
+}
+
+
 def configure_adk_env(settings: Settings) -> None:
-    """Bridge our keys into the env vars the model backends expect.
+    """Bridge our keys into the env vars the model backends expect, and silence telemetry.
 
     ADK / google-genai read ``GOOGLE_API_KEY``; litellm (GPT models) reads
-    ``OPENAI_API_KEY``. Each is exported only when present.
+    ``OPENAI_API_KEY``. Each is exported only when present. Telemetry kill-switches
+    (:data:`_TELEMETRY_OFF`) are set first so no dependency phones home; all via
+    ``setdefault`` so an operator who explicitly sets one wins.
     """
+    for name, value in _TELEMETRY_OFF.items():
+        os.environ.setdefault(name, value)
     if settings.google_api_key:
         os.environ.setdefault("GOOGLE_API_KEY", settings.google_api_key)
     if settings.openai_api_key:

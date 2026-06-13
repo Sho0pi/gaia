@@ -8,30 +8,31 @@ from __future__ import annotations
 
 from typing import Any
 
-from gaia.connectors.base import Handler, Media, Reply, as_text, current_chat
+from gaia.connectors.base import Dispatch, Media, Reply, as_text, current_chat
 
 
 class TelegramConnector:
-    """Bridges Telegram messages to a Gaia handler coroutine."""
+    """Bridges Telegram messages to the dispatcher (per-sender identity → user)."""
 
     #: Connector id used in cron job channel fields / the daemon's connector registry.
     NAME = "telegram"
 
-    def __init__(self, token: str, handler: Handler) -> None:
+    def __init__(self, token: str, dispatch: Dispatch) -> None:
         self._token = token
-        self._handler = handler
+        self._dispatch = dispatch  # channel-bound: (sender_id, name, text, send)
         self._app: Any = None  # the live Application while start() runs (for send_to)
 
     def build_application(self) -> object:
-        """Create a python-telegram-bot Application wired to the handler."""
+        """Create a python-telegram-bot Application wired to the dispatcher."""
         from telegram import Update
         from telegram.ext import Application, MessageHandler, filters
 
         app = Application.builder().token(self._token).build()
 
         async def _on_message(update: Update, _context: object) -> None:
-            if update.message and update.message.text:
-                message = update.message
+            message = update.message
+            if message and message.text and message.from_user:
+                sender = message.from_user
 
                 async def send(reply: Reply) -> None:
                     # Telegram media replies (reply_photo) are a follow-up; for now a
@@ -39,9 +40,10 @@ class TelegramConnector:
                     await message.reply_text(as_text(reply))
 
                 # Record where this turn came from, so scheduling tools (cron) can
-                # capture the chat for later proactive delivery.
+                # capture the chat for later proactive delivery (the chat, not the sender).
                 current_chat.set((self.NAME, str(message.chat_id)))
-                await self._handler(update.message.text, send)
+                name = sender.first_name or sender.username or str(sender.id)
+                await self._dispatch(str(sender.id), name, message.text, send)
 
         # filters.TEXT keeps slash-commands (/help, /reset, …) flowing to the handler,
         # which dispatches them itself; ~COMMAND would swallow them before Gaia sees them.

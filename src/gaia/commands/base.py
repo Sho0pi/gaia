@@ -31,6 +31,7 @@ class CommandContext:
     registry: CommandRegistry
     user_id: str
     session_id: str
+    role: str = "admin"  # the caller's role; admin-only commands gate on it
 
 
 class Command(ABC):

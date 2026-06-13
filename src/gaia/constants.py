@@ -36,6 +36,8 @@ AGENT_REGISTRY_DIR = HOME_DIR / "agent_registry"
 PID_FILE = HOME_DIR / f"{APP_NAME}.pid"
 # Scheduled jobs (the cron store; managed by the cron tool / `gaia cron`).
 CRON_FILE = HOME_DIR / "cron.json"
+# Known users: (channel, sender) -> canonical user identity + role (the user store).
+USERS_FILE = HOME_DIR / "users.json"
 # Per-agent state. Each agent's sandboxed filesystem workspace lives at
 # AGENTS_DIR / <agent_name> / "workspace" (see tools/filesystem.py).
 AGENTS_DIR = HOME_DIR / "agents"
