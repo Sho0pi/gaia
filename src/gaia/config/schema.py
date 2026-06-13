@@ -198,7 +198,9 @@ class MissionsConfig(BaseModel):
         "(filed via task_create) on souls and pushes results.",
     )
     max_concurrent: int = Field(
-        default=3, description="How many tasks the dispatcher runs in parallel."
+        default=3,
+        description="How many board tasks run at once — each runs on one soul, so this is "
+        "the cap on simultaneously-busy souls/agents. Extra ready tasks wait their turn.",
     )
     poll_seconds: float = Field(
         default=2.0, description="How often the dispatcher polls the board for ready tasks."

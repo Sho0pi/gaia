@@ -7,19 +7,18 @@ screenshots already become :class:`~gaia.connectors.base.Media` on the way out
 (``core/handler._emit_reply`` → ``core/screenshots`` / #143), so the preview lands as a real
 WhatsApp image — no bespoke render in the hot path.
 
-A render fallback (``tools/browser/render.render_html_to_png``) guarantees the screenshot
-still arrives if the turn produced none (model didn't, or the browser backend couldn't open
-``file://``). Best-effort throughout: the result is already safe on the board.
+If a deliverable needs fixing after presenting, Gaia (the master soul) decides to delegate
+it back to the right agent — there's no special render/preview machinery here. Best-effort
+throughout: the result is already safe on the board.
 """
 
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING
 
-from gaia.connectors.base import Media, Reply
-from gaia.missions.notify import _target, _web_entry
+from gaia.connectors.base import Reply
+from gaia.missions.notify import _target
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from gaia.core.agent import Gaia
@@ -60,12 +59,7 @@ async def present_result(gaia: Gaia, task: Task, run: SoulRun) -> None:
 
     from gaia.core.handler import build_handler
 
-    sent_media = False
-
     async def send(reply: Reply) -> None:
-        nonlocal sent_media
-        if isinstance(reply, Media):
-            sent_media = True
         await sender.send_to(chat, reply)
 
     handler = build_handler(gaia, user_id=task.owner or "gaia", session_id=f"mission-{task.id}")
@@ -73,19 +67,3 @@ async def present_result(gaia: Gaia, task: Task, run: SoulRun) -> None:
         await handler(_prompt(task, run), send)
     except Exception:  # pragma: no cover - presentation is best-effort
         logger.warning("mission %s: present turn failed", task.id, exc_info=True)
-
-    # Fallback: if Gaia showed no image but the deliverable is a website, render it ourselves
-    # so the user always gets the preview, whatever the browser backend did.
-    entry = _web_entry(run.files)
-    if not sent_media and entry and run.workspace:
-        from gaia.tools.browser.render import render_html_to_png
-
-        workspace = Path(run.workspace)
-        png = await render_html_to_png(workspace / entry, workspace / "_preview.png")
-        if png is not None:
-            try:
-                await sender.send_to(chat, Media(path=png, caption=""))
-            except Exception:  # pragma: no cover - best-effort
-                logger.warning(
-                    "mission %s: fallback preview delivery failed", task.id, exc_info=True
-                )

@@ -105,17 +105,12 @@ async def test_text_artifact_content_is_delivered(tmp_path: Path) -> None:
     assert "Day 1: Push" in msg and "Day 2: Pull" in msg  # actual content delivered
 
 
-async def test_web_deliverable_is_rendered_and_sent_as_image(
+async def test_web_deliverable_is_not_rendered_here(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # An index.html deliverable is rendered to a screenshot image — not dumped as source.
+    # A website is presented by Gaia (present_result), not rendered here: notify_result just
+    # pushes the summary text and never dumps the html source.
     (tmp_path / "index.html").write_text("<h1>Gym Site</h1>")
-
-    async def fake_render(html: Path, out_png: Path) -> Path:
-        out_png.write_bytes(b"PNG")  # noqa: ASYNC240 - test stub for a real render
-        return out_png
-
-    monkeypatch.setattr("gaia.tools.browser.render.render_html_to_png", fake_render)
     wa = _FakeSender()
     gaia = _gaia({"whatsapp": wa}, UserStore(tmp_path / "u.json"))
     task = Task(title="Build site", notify_channel="whatsapp", notify_chat="972@x")
@@ -125,32 +120,9 @@ async def test_web_deliverable_is_rendered_and_sent_as_image(
 
     await notify_result(gaia, task, run)
 
-    assert len(wa.sent) == 1
-    _, reply = wa.sent[0]
-    assert isinstance(reply, Media) and reply.path.name == "_preview.png"
-    assert "Built it." in reply.caption  # summary rides along as the caption
-    assert "<h1>" not in str(wa.sent)  # raw html source was NOT dumped
-
-
-async def test_web_deliverable_falls_back_when_render_unavailable(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    (tmp_path / "index.html").write_text("<h1>Gym Site</h1>")
-
-    async def no_render(html: Path, out_png: Path) -> None:
-        return None  # playwright missing / render failed
-
-    monkeypatch.setattr("gaia.tools.browser.render.render_html_to_png", no_render)
-    wa = _FakeSender()
-    gaia = _gaia({"whatsapp": wa}, UserStore(tmp_path / "u.json"))
-    task = Task(title="Build site", notify_channel="whatsapp", notify_chat="972@x")
-    run = SoulRun(
-        True, "s", "S", False, summary="Built it.", workspace=str(tmp_path), files=["index.html"]
-    )
-
-    await notify_result(gaia, task, run)  # no crash
-
     assert wa.sent and isinstance(wa.sent[0][1], str) and "Built it." in wa.sent[0][1]
+    assert "<h1>" not in str(wa.sent)  # raw html source was NOT dumped
+    assert not any(isinstance(r, Media) for _, r in wa.sent)  # no bespoke render
 
 
 async def test_image_artifacts_sent_as_media(tmp_path: Path) -> None:

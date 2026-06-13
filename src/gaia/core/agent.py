@@ -53,6 +53,7 @@ class Gaia:
         self.skills_dir = self.container.skills_dir()
         self.souls = self.container.souls()
         self.users = self.container.users()
+        self.tasks = self.container.tasks()  # the shared missions board (TaskStore)
         self.tools = self.container.tools()
         self.factory = self.container.factory()
         # Live proactive senders (connector name → object with ``send_to``); the launcher
@@ -167,7 +168,6 @@ class Gaia:
         style = bound.communication_style or self.config.default_communication_style
         instruction = apply_communication_style(instruction, style)
 
-        from gaia.missions import TaskStore
         from gaia.souls import make_delegate
         from gaia.tools.message import make_message_user
         from gaia.tools.task import make_task_plan
@@ -188,7 +188,7 @@ class Gaia:
                 *self.tools.all(),
                 make_delegate(self),
                 make_message_user(self.users, self.connectors),
-                make_task_plan(TaskStore()),
+                make_task_plan(self.tasks),
                 *self.container.mcp_toolsets(),
                 *self.container.skill_toolsets(),
             ],

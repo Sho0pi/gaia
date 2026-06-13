@@ -56,7 +56,7 @@ class MissionDispatcher:
         poll_seconds: float = 2.0,
     ) -> None:
         self._gaia = gaia
-        self._store = store or TaskStore()
+        self._store = store if store is not None else gaia.tasks  # the DI-shared board
         self._poll_seconds = poll_seconds
         self._max_concurrent = max_concurrent
         self._sem = asyncio.Semaphore(max_concurrent)
