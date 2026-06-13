@@ -149,8 +149,10 @@ class MissionDispatcher:
             task.status = TaskStatus.FAILED
             self._store.update(task)
             log_event("task_failed", task=task.id, error=run.error)
-        # Notify on the live loop (best-effort); never block finishing.
-        fresh = self._store.get(task.id) or task
-        notice = asyncio.create_task(notify_result(self._gaia, fresh, run))
-        self._workers.add(notice)
-        notice.add_done_callback(self._workers.discard)
+        # Deliver only the mission's *deliverables*: a task that feeds another is an internal
+        # step (its result stays on the board). Failures always notify so nothing is silent.
+        if not run.ok or not self._store.has_dependents(task.id):
+            fresh = self._store.get(task.id) or task
+            notice = asyncio.create_task(notify_result(self._gaia, fresh, run))
+            self._workers.add(notice)
+            notice.add_done_callback(self._workers.discard)

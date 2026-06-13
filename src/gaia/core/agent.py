@@ -149,21 +149,23 @@ class Gaia:
             "recipient may be a known user's name/id or a raw phone; combine it with the "
             "cron tool for 'in 5 minutes text Grace ...'-style tasks.\n"
             "For multi-step or long-running work that should run in the background and "
-            "survive restarts, use the task board (task_create): a daemon worker runs each "
-            "task on a soul and delivers the result. CRUCIAL for chained work — when one "
-            "step needs another's output, create the upstream task FIRST, read the id from "
-            "its result, then create the dependent task with blocked_by=<that id> (the "
-            "worker feeds the finished upstream result + files into the dependent's run). "
-            "Do not encode the dependency only in prose; set blocked_by, or the steps run "
-            "in parallel and the hand-off won't happen."
+            "survive restarts, use the task board: a daemon worker runs each task on a "
+            "specialist soul and delivers the result. For a mission with MORE THAN ONE step "
+            "— especially when one step needs another's output — call task_plan with the "
+            "whole plan as JSON (tasks with local refs + depends_on); it wires the real "
+            "dependency edges so a step waits for its inputs and receives their results + "
+            "files. Use task_create only for a single standalone task. Never put a made-up "
+            "id in blocked_by — let task_plan resolve dependencies."
         )
         bound = self.config.agents.get("gaia", AgentBinding())
         instruction = attach_skills(base_instruction, bound.skills, self.skills_dir)
         style = bound.communication_style or self.config.default_communication_style
         instruction = apply_communication_style(instruction, style)
 
+        from gaia.missions import TaskStore
         from gaia.souls import make_delegate
         from gaia.tools.message import make_message_user
+        from gaia.tools.task import make_task_plan
 
         # delegate_to_soul and message_user are attached to the root only — souls (built
         # from self.tools) never receive them, so a soul can neither spawn souls nor text
@@ -181,6 +183,7 @@ class Gaia:
                 *self.tools.all(),
                 make_delegate(self),
                 make_message_user(self.users, self.connectors),
+                make_task_plan(TaskStore()),
                 *self.container.mcp_toolsets(),
                 *self.container.skill_toolsets(),
             ],

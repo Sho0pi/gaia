@@ -279,6 +279,20 @@ class TaskStore:
             ).fetchall()
         return [_to_task(r) for r in rows]
 
+    def has_dependents(self, task_id: str) -> bool:
+        """True if any other task lists ``task_id`` in its ``blocked_by`` (an internal step).
+
+        Used to decide delivery: a task feeding another is an internal step (its result stays
+        on the board); only leaf tasks — the mission's deliverables — get pushed to the user.
+        """
+        like = f'%"{task_id}"%'  # blocked_by is a JSON array of id strings
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM tasks WHERE id != ? AND blocked_by LIKE ? LIMIT 1",
+                (task_id, like),
+            ).fetchone()
+        return row is not None
+
     def ready_tasks(self) -> TaskList:
         """The dispatcher's inbox (P2): waiting tasks whose every ``blocked_by`` is done.
 
