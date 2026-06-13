@@ -164,7 +164,15 @@ class Gaia:
             self.factory.create_or_reuse(self.souls.get(key))  # type: ignore[arg-type]
             for key in self.known_souls()
         ]
+        from datetime import datetime
+
+        # Time-aware prompt (god PR #26): scheduled turns ("what day is it") and
+        # cron-tool date math need the model to know now. Built per root-agent build;
+        # the handler keeps the Runner (and thus this timestamp) for the session, so
+        # it's approximate within a long-lived conversation — good enough for dates.
+        now = datetime.now().strftime("%A, %Y-%m-%d %H:%M %Z").strip()
         base_instruction = (
+            f"Current date and time: {now}.\n"
             "You are Gaia. Answer simple questions yourself, calling your own tools when one "
             "fits rather than guessing. For a complex or creative build/creation task (e.g. "
             "designing a website, writing a program), call delegate_to_soul(task) — it finds "
@@ -172,7 +180,10 @@ class Gaia:
             "the user which soul handled it (say so explicitly when 'created' is true), then "
             "report the workspace path and the list of files the soul produced. You can open "
             "those deliverables directly (fs_read takes the absolute paths under the souls' "
-            "workspaces), so read/verify/summarize them yourself when the user asks."
+            "workspaces), so read/verify/summarize them yourself when the user asks. To "
+            "schedule work for later or on a recurring basis (reminders, daily briefs), use "
+            "the cron tool — it runs your message at the scheduled time and delivers the "
+            "result to the user's chat."
         )
         bound = self.config.agents.get("gaia", AgentBinding())
         instruction = attach_skills(base_instruction, bound.skills, self.skills_dir)

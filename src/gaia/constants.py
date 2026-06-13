@@ -34,6 +34,8 @@ SESSION_DB = HOME_DIR / "whatsapp.db"
 AGENT_REGISTRY_DIR = HOME_DIR / "agent_registry"
 # Pidfile for the background daemon (gaia start/stop/status).
 PID_FILE = HOME_DIR / f"{APP_NAME}.pid"
+# Scheduled jobs (the cron store; managed by the cron tool / `gaia cron`).
+CRON_FILE = HOME_DIR / "cron.json"
 # Per-agent state. Each agent's sandboxed filesystem workspace lives at
 # AGENTS_DIR / <agent_name> / "workspace" (see tools/filesystem.py).
 AGENTS_DIR = HOME_DIR / "agents"

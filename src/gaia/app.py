@@ -225,7 +225,7 @@ async def _serve(settings: Settings, gaia: Gaia, selected: list[str], *, hold: b
 
 
 async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -> None:
-    """Run the enabled async connectors concurrently until interrupted.
+    """Run the enabled async connectors (and the cron scheduler) until interrupted.
 
     ``async with gaia`` scopes the async resources to this coroutine: they are closed
     on the still-running loop on every exit path — clean return, exception, or the
@@ -234,6 +234,8 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
     async with gaia:
         handler = build_handler(gaia)
         tasks: list[asyncio.Task[None]] = []
+        # Live connectors by name — the cron runner delivers proactive replies through it.
+        running: dict[str, Any] = {}
 
         if "whatsapp" in selected:
             from gaia.voice import build_transcriber
@@ -243,6 +245,7 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
             )
             if isinstance(connector, WhatsAppWebConnector):
                 tasks.append(asyncio.create_task(connector.start()))
+                running[WhatsAppWebConnector.NAME] = connector
             else:
                 # Business backend delivers inbound over an HTTP webhook that isn't wired
                 # yet (issue #3). Build the client so config is validated, but say so loudly.
@@ -259,10 +262,14 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
                     "telegram enabled but no token (set GAIA_TELEGRAM_BOT_TOKEN) — skipping"
                 )
             else:
-                tasks.append(asyncio.create_task(TelegramConnector(token, handler).start()))
+                telegram = TelegramConnector(token, handler)
+                tasks.append(asyncio.create_task(telegram.start()))
+                running[TelegramConnector.NAME] = telegram
 
         if not tasks:
             return
+
+        scheduler = _start_cron(gaia, running)
         try:
             await asyncio.gather(*tasks)
         except asyncio.CancelledError:
@@ -274,8 +281,22 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
             await asyncio.gather(*tasks, return_exceptions=True)
             raise
         finally:
+            if scheduler is not None:
+                scheduler.shutdown()
             # Drain any turns still buffered for memory before the process exits, so a
             # Ctrl-C doesn't drop the tail of the conversation (best-effort).
             flush = getattr(handler, "flush", None)
             if flush is not None:
                 await flush()
+
+
+def _start_cron(gaia: Gaia, running: dict[str, Any]) -> Any:
+    """Start the cron scheduler for the daemon (None when disabled)."""
+    if not gaia.config.cron.enabled:
+        return None
+    from gaia.cron import CronScheduler, CronStore
+    from gaia.cron.runner import make_runner
+
+    scheduler = CronScheduler(CronStore(), make_runner(gaia, running))
+    scheduler.start()
+    return scheduler

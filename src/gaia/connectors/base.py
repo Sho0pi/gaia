@@ -15,8 +15,15 @@ actual attachment. A connector that can't send media falls back to the path as t
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
+
+#: Which (channel, chat id) the handler is currently serving. Connectors set this just
+#: before invoking the handler, so a tool that schedules a *later* reply (the cron
+#: tool) can capture where to deliver it — the god PR's ``UserInfo.ChatID`` in
+#: contextvar form. ``("", "")`` outside any chat (TUI, tests).
+current_chat: ContextVar[tuple[str, str]] = ContextVar("current_chat", default=("", ""))
 
 
 @dataclass(frozen=True)
