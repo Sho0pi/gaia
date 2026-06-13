@@ -96,3 +96,35 @@ async def test_approve_unknown_ref(tmp_path: Path) -> None:
     out = await _run("approve", _ctx(_store(tmp_path), args="ghost user"))
 
     assert "No user" in out
+
+
+async def test_remove_deletes_user(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    store.register("whatsapp", "972@s.whatsapp.net", "Grace", role="user")
+
+    out = await _run("remove", _ctx(store, args="grace"))
+
+    assert "Removed grace" in out
+    assert store.get("grace") is None
+    # the identity no longer resolves — a later message is a brand-new (gated) sender
+    assert store.resolve("whatsapp", "972@s.whatsapp.net") is None
+
+
+async def test_remove_self_is_refused(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    store.register("whatsapp", "111@s.whatsapp.net", "Itay", role="admin")
+
+    out = await _run("remove", _ctx(store, args="itay"))  # caller is "itay"
+
+    assert "yourself" in out.lower()
+    assert store.get("itay") is not None
+
+
+async def test_remove_requires_admin(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    store.register("whatsapp", "972@s.whatsapp.net", "Grace", role="user")
+
+    out = await _run("remove", _ctx(store, args="grace", role="user"))
+
+    assert "admin" in out.lower()
+    assert store.get("grace") is not None  # untouched

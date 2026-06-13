@@ -71,6 +71,28 @@ class ApproveCommand(Command):
         return f"{updated.id} is now {updated.role}."
 
 
+class RemoveCommand(Command):
+    name = "remove"
+    summary = "Delete a user from the store. Usage: /remove <id|channel:sender> (admin)."
+    usage = "<id|channel:sender>"
+    aliases = ("deluser",)
+
+    async def run(self, ctx: CommandContext) -> str:
+        if refusal := _require_admin(ctx):
+            return refusal
+        ref = ctx.args.strip()
+        if not ref:
+            return "Usage: /remove <id|channel:sender>"
+        user_id = _find(ctx, ref)
+        if user_id is None:
+            return f"No user matching {ref!r} (try /users)."
+        if user_id == ctx.user_id:
+            return "You can't remove yourself."
+        removed = ctx.gaia.users.remove(user_id)
+        assert removed is not None
+        return f"Removed {removed.id} — they'll be treated as a new (gated) sender next time."
+
+
 class NameCommand(Command):
     name = "name"
     summary = "Set a user's display name. Usage: /name <id|channel:sender> <name>."

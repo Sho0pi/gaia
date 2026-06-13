@@ -99,6 +99,21 @@ class UserStore:
         """Change a user's role; returns the updated user (or ``None`` if unknown)."""
         return self._mutate(user_id, lambda u: u.model_copy(update={"role": role}))
 
+    def remove(self, user_id: str) -> User | None:
+        """Delete a user entirely; returns the removed user (or ``None`` if unknown).
+
+        Forgets the person from the store — their identities no longer resolve, so a
+        later message from any of them is treated as a brand-new (gated) sender. Their
+        long-term memory (mem0, keyed on ``user.id``) is *not* touched here; clear that
+        separately if needed.
+        """
+        users = self.list()
+        removed = next((u for u in users if u.id == user_id), None)
+        if removed is None:
+            return None
+        self._write([u for u in users if u.id != user_id])
+        return removed
+
     def set_name(self, user_id: str, name: str) -> User | None:
         """Change a user's display name; returns the updated user (or ``None``)."""
         return self._mutate(user_id, lambda u: u.model_copy(update={"name": name.strip()}))

@@ -17,7 +17,13 @@ from gaia.commands.memories import MemoriesCommand
 from gaia.commands.remember import RememberCommand
 from gaia.commands.reset import ResetCommand
 from gaia.commands.status import StatusCommand
-from gaia.commands.users import ApproveCommand, LinkCommand, NameCommand, UsersCommand
+from gaia.commands.users import (
+    ApproveCommand,
+    LinkCommand,
+    NameCommand,
+    RemoveCommand,
+    UsersCommand,
+)
 from gaia.commands.whoami import WhoamiCommand
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -35,6 +41,7 @@ _BUILTINS: tuple[Command, ...] = (
     ForgetCommand(),
     UsersCommand(),
     ApproveCommand(),
+    RemoveCommand(),
     NameCommand(),
     LinkCommand(),
 )
