@@ -39,30 +39,33 @@ def _context_info(message: Any) -> Any:
     return getattr(extended, "contextInfo", None)
 
 
-def _is_mentioned(message: Any, own_jid: str) -> bool:
-    """Whether Gaia's own number appears in the message's ``mentionedJID`` list."""
-    if not own_jid:
+def _is_mentioned(message: Any, own_ids: set[str]) -> bool:
+    """Whether one of Gaia's own ids appears in the message's ``mentionedJID`` list.
+
+    WhatsApp may carry the bot's mention as its phone JID *or* its ``@lid`` identity, so
+    ``own_ids`` holds both number-parts and we match against either.
+    """
+    if not own_ids:
         return False
     context = _context_info(message)
     mentioned = getattr(context, "mentionedJID", None) or []
-    me = _user_part(own_jid)
-    return any(_user_part(str(jid)) == me for jid in mentioned)
+    return any(_user_part(str(jid)) in own_ids for jid in mentioned)
 
 
-def _is_reply_to(message: Any, own_jid: str) -> bool:
+def _is_reply_to(message: Any, own_ids: set[str]) -> bool:
     """Whether the message replies to (quotes) a message Gaia authored.
 
-    The quoted message's author is carried on ``contextInfo.participant``; when that is
-    Gaia's own number, the user replied to Gaia.
+    The quoted message's author is carried on ``contextInfo.participant``; when that is one
+    of Gaia's own ids (phone or ``@lid``), the user replied to Gaia.
     """
-    if not own_jid:
+    if not own_ids:
         return False
     context = _context_info(message)
     participant = getattr(context, "participant", "") or ""
-    return bool(participant) and _user_part(str(participant)) == _user_part(own_jid)
+    return bool(participant) and _user_part(str(participant)) in own_ids
 
 
-def _group_decision(message: Any, source: Any, own_jid: str, cfg: GroupTrigger) -> bool:
+def _group_decision(message: Any, source: Any, own_ids: set[str], cfg: GroupTrigger) -> bool:
     """Whether Gaia should *consider* this group message (was it addressed to Gaia?).
 
     DMs always pass (the gate is group-only). In a group Gaia engages only when it is
@@ -74,7 +77,7 @@ def _group_decision(message: Any, source: Any, own_jid: str, cfg: GroupTrigger) 
         return True
     if not cfg.respond_in_groups:
         return False
-    addressed = _is_mentioned(message, own_jid) or _is_reply_to(message, own_jid)
+    addressed = _is_mentioned(message, own_ids) or _is_reply_to(message, own_ids)
     return addressed or not cfg.mention_only
 
 
@@ -195,7 +198,7 @@ class WhatsAppWebConnector:
 
             group_trigger = GroupTrigger()
         self._group_trigger = group_trigger
-        self._own_jid = ""  # the bot's own "user@server"; fetched lazily on first need
+        self._own_ids: set[str] = set()  # bot's own number-parts (phone + @lid); lazy-loaded
         self._client: Any = None  # the live client while start() runs (for send_to)
 
     def build_client(self) -> NewAClient:
@@ -269,27 +272,35 @@ class WhatsAppWebConnector:
         """
         if not getattr(source, "IsGroup", False):
             return True
-        own_jid = await self._ensure_own_jid(client)
-        if _group_decision(message, source, own_jid, self._group_trigger):
+        own_ids = await self._ensure_own_ids(client)
+        if _group_decision(message, source, own_ids, self._group_trigger):
             return True
         context = _context_info(message)
         logger.info(
-            "group message ignored — not addressed. own_jid=%s mentioned=%s reply_author=%s",
-            own_jid,
+            "group message ignored — not addressed. own_ids=%s mentioned=%s reply_author=%s",
+            sorted(own_ids),
             list(getattr(context, "mentionedJID", None) or []),
             getattr(context, "participant", ""),
         )
         return False
 
-    async def _ensure_own_jid(self, client: Any) -> str:
-        """Gaia's own ``user@server`` JID (cached); ``""`` if it can't be determined."""
-        if not self._own_jid:
+    async def _ensure_own_ids(self, client: Any) -> set[str]:
+        """Gaia's own number-parts — phone JID **and** ``@lid`` — cached.
+
+        WhatsApp may address the bot in a group by either identity, so a mention only
+        matches if we know both. ``get_me()`` returns a Device carrying ``JID`` (phone) and
+        ``LID``. Empty/unset ids are skipped; an empty set means we couldn't resolve them.
+        """
+        if not self._own_ids:
             try:
                 me = await client.get_me()
-                self._own_jid = _jid_to_str(me.JID)
+                for jid in (getattr(me, "JID", None), getattr(me, "LID", None)):
+                    part = _user_part(_jid_to_str(jid)) if jid is not None else ""
+                    if part:
+                        self._own_ids.add(part)
             except Exception:  # pragma: no cover - identity lookup is best-effort
-                logger.debug("could not resolve own JID for group mention check", exc_info=True)
-        return self._own_jid
+                logger.debug("could not resolve own ids for group mention check", exc_info=True)
+        return self._own_ids
 
     async def _transcribe_voice(self, client: Any, message: Any) -> str:
         """Transcript of an inbound voice note, or ``""`` (no audio / no transcriber / error).

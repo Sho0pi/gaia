@@ -95,7 +95,11 @@ class _FakeClient:
         self.images.append((to, file, caption))
 
     async def get_me(self) -> SimpleNamespace:
-        return SimpleNamespace(JID=SimpleNamespace(User="bot", Server="s.whatsapp.net"))
+        # Device carries both the phone JID and the @lid identity.
+        return SimpleNamespace(
+            JID=SimpleNamespace(User="bot", Server="s.whatsapp.net"),
+            LID=SimpleNamespace(User="lidbot", Server="lid"),
+        )
 
 
 @pytest.fixture
@@ -399,6 +403,8 @@ from gaia.config import GroupTrigger  # noqa: E402
 from gaia.connectors.whatsapp_web import _group_decision  # noqa: E402
 
 _BOT = "bot@s.whatsapp.net"
+_BOT_LID = "lidbot@lid"
+_BOT_IDS = {"bot", "lidbot"}  # the bot's own number-parts (phone + @lid)
 
 
 def _gt(**kw: Any) -> GroupTrigger:
@@ -407,38 +413,45 @@ def _gt(**kw: Any) -> GroupTrigger:
 
 def test_group_decision_dm_always_passes() -> None:
     dm = SimpleNamespace(IsGroup=False)
-    assert _group_decision(_msg(conversation="hi"), dm, _BOT, _gt()) is True
+    assert _group_decision(_msg(conversation="hi"), dm, _BOT_IDS, _gt()) is True
 
 
 def test_group_decision_requires_addressing() -> None:
     # Who is *allowed* is the role system's job; here we only gate on being addressed.
     src = _group_source("555@s.whatsapp.net")
     # mentioned → handle
-    assert _group_decision(_msg(mentioned=(_BOT,)), src, _BOT, _gt()) is True
+    assert _group_decision(_msg(mentioned=(_BOT,)), src, _BOT_IDS, _gt()) is True
     # not addressed → drop (mention_only default)
-    assert _group_decision(_msg(conversation="hello"), src, _BOT, _gt()) is False
+    assert _group_decision(_msg(conversation="hello"), src, _BOT_IDS, _gt()) is False
     # mention of someone else → still not addressed
-    assert _group_decision(_msg(mentioned=("999@s.whatsapp.net",)), src, _BOT, _gt()) is False
+    assert _group_decision(_msg(mentioned=("999@s.whatsapp.net",)), src, _BOT_IDS, _gt()) is False
+
+
+def test_group_decision_matches_lid_mention() -> None:
+    # WhatsApp often carries the bot's mention as its @lid, not its phone JID.
+    src = _group_source("555@s.whatsapp.net")
+    assert _group_decision(_msg(mentioned=(_BOT_LID,)), src, _BOT_IDS, _gt()) is True
 
 
 def test_group_decision_reply_to_gaia_counts_as_addressed() -> None:
     src = _group_source("555@s.whatsapp.net")
-    assert _group_decision(_msg(reply_author=_BOT), src, _BOT, _gt()) is True
+    assert _group_decision(_msg(reply_author=_BOT), src, _BOT_IDS, _gt()) is True
     # a reply to someone else is not addressing Gaia
-    assert _group_decision(_msg(reply_author="333@s.whatsapp.net"), src, _BOT, _gt()) is False
+    assert _group_decision(_msg(reply_author="333@s.whatsapp.net"), src, _BOT_IDS, _gt()) is False
 
 
 def test_group_decision_respond_in_groups_off() -> None:
     src = _group_source("555@s.whatsapp.net")
     assert (
-        _group_decision(_msg(mentioned=(_BOT,)), src, _BOT, _gt(respond_in_groups=False)) is False
+        _group_decision(_msg(mentioned=(_BOT,)), src, _BOT_IDS, _gt(respond_in_groups=False))
+        is False
     )
 
 
 def test_group_decision_mention_only_off_passes_any() -> None:
     src = _group_source("555@s.whatsapp.net")
     # mention_only off → any group message is considered (role gate decides who)
-    assert _group_decision(_msg(conversation="hey"), src, _BOT, _gt(mention_only=False)) is True
+    assert _group_decision(_msg(conversation="hey"), src, _BOT_IDS, _gt(mention_only=False)) is True
 
 
 async def test_group_message_dropped_when_not_addressed(
