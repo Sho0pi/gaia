@@ -23,6 +23,29 @@ def test_openai_key_reads_env_and_configures_adk(monkeypatch: pytest.MonkeyPatch
     assert os.environ["OPENAI_API_KEY"] == "sk-test"
 
 
+def test_configure_adk_env_disables_telemetry(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("DO_NOT_TRACK", "OTEL_SDK_DISABLED", "ANONYMIZED_TELEMETRY", "MEM0_TELEMETRY"):
+        monkeypatch.delenv(name, raising=False)
+
+    configure_adk_env(Settings())
+    import os
+
+    assert os.environ["OTEL_SDK_DISABLED"] == "true"
+    assert os.environ["ANONYMIZED_TELEMETRY"] == "False"
+    assert os.environ["MEM0_TELEMETRY"] == "false"
+    assert os.environ["DO_NOT_TRACK"] == "1"
+
+
+def test_configure_adk_env_telemetry_is_overridable(monkeypatch: pytest.MonkeyPatch) -> None:
+    # setdefault: an operator who explicitly opts back in wins.
+    monkeypatch.setenv("OTEL_SDK_DISABLED", "false")
+
+    configure_adk_env(Settings())
+    import os
+
+    assert os.environ["OTEL_SDK_DISABLED"] == "false"
+
+
 def test_defaults_come_from_constants() -> None:
     settings = Settings()
 

@@ -42,6 +42,12 @@ _REDACTED = "***REDACTED***"
 # google_genai are deliberately left at INFO so model request/response stay visible.)
 _NOISY = ("httpx", "httpcore", "urllib3", "grpc", "asyncio", "neonize", "telegram")
 
+# Loggers muted below WARNING — ADK's OTel metrics emitter warns on every non-Gemini
+# turn ("Skipping missing token usage metadata", harmless: OpenAI reports usage in a
+# shape ADK's meter doesn't read). Telemetry itself is off (see _TELEMETRY_OFF); this
+# just hides the residual log line.
+_MUTED = ("google_adk.google.adk.telemetry",)
+
 # Standard LogRecord attributes — anything else on a record is a user-supplied field.
 _STD_ATTRS = frozenset(
     logging.makeLogRecord({}).__dict__.keys() | {"message", "asctime", "taskName"}
@@ -305,6 +311,8 @@ def setup_logging(
 
     for name in _NOISY:
         logging.getLogger(name).setLevel(logging.WARNING)
+    for name in _MUTED:
+        logging.getLogger(name).setLevel(logging.ERROR)
 
     return log_dir
 
