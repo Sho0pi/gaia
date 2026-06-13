@@ -72,10 +72,6 @@ class LifecycleManager:
                 logger.debug("lifecycle close failed", exc_info=True)
 
 
-def _current_config(supplier: ConfigSupplier) -> GaiaConfig:
-    return supplier.current
-
-
 def _build_memory_service(settings: Settings, config: GaiaConfig) -> Mem0MemoryService:
     """Build the mem0-backed memory service. Caller gates on ``config.memory.enabled``."""
     from gaia.memory import Mem0MemoryService, build_mem0
@@ -139,7 +135,9 @@ class Container(containers.DeclarativeContainer):
     settings: providers.Dependency[Settings] = providers.Dependency()
     config_supplier: providers.Dependency[ConfigSupplier] = providers.Dependency()
 
-    config: providers.Callable[GaiaConfig] = providers.Callable(_current_config, config_supplier)
+    config: providers.Callable[GaiaConfig] = providers.Callable(
+        lambda supplier: supplier.current, config_supplier
+    )
 
     lifecycle: providers.Singleton[LifecycleManager] = providers.Singleton(LifecycleManager)
 
