@@ -22,6 +22,18 @@ from gaia.tools.cron import NAME as CRON
 from gaia.tools.cron import make_cron
 from gaia.tools.remember import NAME as REMEMBER
 from gaia.tools.remember import make_remember
+from gaia.tools.task import (
+    TASK_COMPLETE,
+    TASK_CREATE,
+    TASK_GET,
+    TASK_LIST,
+    TASK_UPDATE,
+    make_task_complete,
+    make_task_create,
+    make_task_get,
+    make_task_list,
+    make_task_update,
+)
 from gaia.tools.web_fetch import NAME as WEB_FETCH
 from gaia.tools.web_fetch import httpx_fetcher, make_web_fetch
 from gaia.tools.web_search import NAME as WEB_SEARCH
@@ -189,6 +201,25 @@ def _register_shell_tools(registry: ToolRegistry, config: GaiaConfig | None) -> 
         registry.register(shell.LIST, shell.make_exec_list(manager))
 
 
+def _register_task_tools(registry: ToolRegistry, config: GaiaConfig | None) -> None:
+    """Register the five missions task_* tools (one shared store), each gated by its flag."""
+    from gaia.missions import TaskStore
+
+    factories = (
+        (TASK_CREATE, make_task_create),
+        (TASK_LIST, make_task_list),
+        (TASK_GET, make_task_get),
+        (TASK_UPDATE, make_task_update),
+        (TASK_COMPLETE, make_task_complete),
+    )
+    if not any(_is_enabled(config, name) for name, _ in factories):
+        return
+    store = TaskStore()  # builds/opens ~/.gaia/tasks.db once for all five
+    for name, make in factories:
+        if _is_enabled(config, name):
+            registry.register(name, make(store))
+
+
 def default_registry(config: GaiaConfig | None = None) -> ToolRegistry:
     """Build the registry with all of gaia's built-in tools, configured from ``config``.
 
@@ -202,6 +233,10 @@ def default_registry(config: GaiaConfig | None = None) -> ToolRegistry:
 
     if _is_enabled(config, CRON):
         registry.register(CRON, make_cron())
+
+    # Missions task board (P1): the five task_* tools share one TaskStore so they all hit
+    # the same ~/.gaia/tasks.db. Gaia-only for now; souls get them in P3.
+    _register_task_tools(registry, config)
 
     engine = _tool_setting(config, WEB_SEARCH, "engine")
     if engine and _is_enabled(config, WEB_SEARCH):

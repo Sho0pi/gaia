@@ -24,6 +24,7 @@ def test_default_registry_has_every_builtin() -> None:
         "remove",
         "name",
         "link",
+        "tasks",
     }
 
 
