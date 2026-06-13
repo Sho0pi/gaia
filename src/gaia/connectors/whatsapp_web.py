@@ -121,9 +121,9 @@ class WhatsAppWebConnector:
 
     ``transcriber`` (a :class:`gaia.voice.Transcriber`) turns inbound voice notes into
     text for the handler; ``None`` means voice messages are ignored (prior behaviour).
-    ``read_receipts`` marks an inbound message read (blue tick) the moment Gaia starts on
-    it; ``typing_indicator`` shows "typing…" (or "recording audio…" for a voice note) for
-    the duration of the turn. Both are best-effort and degrade silently.
+    ``show_active`` makes Gaia *look active* while it works: it marks an inbound message
+    read (blue tick) the moment it starts and shows the "typing…" (or "recording audio…")
+    indicator for the duration of the turn. Best-effort — degrades silently.
     """
 
     #: Connector id used in cron job channel fields / the daemon's connector registry.
@@ -139,14 +139,13 @@ class WhatsAppWebConnector:
         dispatch: Dispatch,
         *,
         transcriber: Transcriber | None = None,
-        read_receipts: bool = True,
-        typing_indicator: bool = True,
+        show_active: bool = True,
     ) -> None:
         self._session_db = session_db
         self._dispatch = dispatch  # channel-bound: (sender_id, name, text, send)
         self._transcriber = transcriber
-        self._read_receipts = read_receipts
-        self._typing_indicator = typing_indicator
+        # Blue-tick + typing presence always travel together — one flag drives both.
+        self._show_active = show_active
         self._client: Any = None  # the live client while start() runs (for send_to)
 
     def build_client(self) -> NewAClient:
@@ -169,7 +168,7 @@ class WhatsAppWebConnector:
             logger.info("whatsapp connected")
             # WhatsApp only delivers our read receipts / typing presence to the other party
             # once we've announced ourselves available; send it once on connect.
-            if self._read_receipts or self._typing_indicator:
+            if self._show_active:
                 try:
                     from neonize.utils import Presence
 
@@ -226,7 +225,7 @@ class WhatsAppWebConnector:
         Read receipts key off the message's real chat + sender JIDs (not the ``@lid``
         rewrite used when *sending* media), so the raw inbound JIDs are correct here.
         """
-        if not self._read_receipts:
+        if not self._show_active:
             return
         try:
             from neonize.utils import ReceiptType
@@ -246,7 +245,7 @@ class WhatsAppWebConnector:
         runs), then returns a task that re-sends it on :attr:`_TYPING_REFRESH_SECONDS` until
         cancelled by :meth:`_end_typing` — WhatsApp's composing state otherwise expires.
         """
-        if not self._typing_indicator:
+        if not self._show_active:
             return None
         await self._send_presence(client, chat, composing=True, was_voice=was_voice)
         return asyncio.create_task(self._typing_loop(client, chat, was_voice))
@@ -267,7 +266,7 @@ class WhatsAppWebConnector:
                 await typing
             except asyncio.CancelledError:  # pragma: no cover - expected on cancel
                 pass
-        if self._typing_indicator:
+        if self._show_active:
             await self._send_presence(client, chat, composing=False, was_voice=False)
 
     async def _send_presence(

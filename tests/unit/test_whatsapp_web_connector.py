@@ -431,9 +431,7 @@ async def test_presence_disabled_makes_no_calls(
     async def dispatch(_s: str, _n: str, _t: str, send: Send) -> None:
         await send("ok")
 
-    connector = WhatsAppWebConnector(
-        tmp_path / "wa.db", dispatch, read_receipts=False, typing_indicator=False
-    )
+    connector = WhatsAppWebConnector(tmp_path / "wa.db", dispatch, show_active=False)
     client = connector.build_client()
     await client.handlers[fake_neonize["ConnectedEv"]](client, object())
     await client.handlers[fake_neonize["MessageEv"]](client, _msg(conversation="hello"))
