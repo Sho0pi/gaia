@@ -62,25 +62,20 @@ def _is_reply_to(message: Any, own_jid: str) -> bool:
     return bool(participant) and _user_part(str(participant)) == _user_part(own_jid)
 
 
-def _group_decision(
-    message: Any, source: Any, own_jid: str, cfg: GroupTrigger, allowed: list[str]
-) -> bool:
-    """Whether Gaia should handle this message given the group policy.
+def _group_decision(message: Any, source: Any, own_jid: str, cfg: GroupTrigger) -> bool:
+    """Whether Gaia should *consider* this group message (was it addressed to Gaia?).
 
-    DMs always pass (the gate is group-only). In a group, Gaia responds only when it is
-    *addressed* (mentioned or replied-to, when ``mention_only``) **and** the sender is on
-    the connector's ``allow`` list — an empty allow-list means no one.
+    DMs always pass (the gate is group-only). In a group Gaia engages only when it is
+    *addressed* — @mentioned or someone replies to one of its messages — when ``mention_only``
+    is set. **Who** is allowed to trigger Gaia is **not** decided here: that is the user/role
+    system (``users.json`` + the dispatcher's guest-drop), so we don't duplicate an allow-list.
     """
     if not getattr(source, "IsGroup", False):
         return True
     if not cfg.respond_in_groups:
         return False
     addressed = _is_mentioned(message, own_jid) or _is_reply_to(message, own_jid)
-    if cfg.mention_only and not addressed:
-        return False
-    sender = _sender_jid(source)
-    allow = {_user_part(a) for a in allowed}
-    return _user_part(sender) in allow
+    return addressed or not cfg.mention_only
 
 
 def _jid_to_str(jid: Any) -> str:
@@ -176,9 +171,9 @@ class WhatsAppWebConnector:
 
     ``transcriber`` (a :class:`gaia.voice.Transcriber`) turns inbound voice notes into
     text for the handler; ``None`` means voice messages are ignored (prior behaviour).
-    ``group_trigger`` decides when Gaia answers inside a group chat (mention/reply); the
-    sender must also be on ``allowed_users`` (the connector's ``allow`` list). ``None`` /
-    empty fall back to the default quiet policy.
+    ``group_trigger`` decides when Gaia answers inside a group chat (mention/reply); *who*
+    may trigger it is left to the user/role system (``users.json`` + the dispatcher's
+    guest-drop), not a separate allow-list. ``None`` falls back to the default quiet policy.
     """
 
     #: Connector id used in cron job channel fields / the daemon's connector registry.
@@ -191,7 +186,6 @@ class WhatsAppWebConnector:
         *,
         transcriber: Transcriber | None = None,
         group_trigger: GroupTrigger | None = None,
-        allowed_users: list[str] | None = None,
     ) -> None:
         self._session_db = session_db
         self._dispatch = dispatch  # channel-bound: (sender_id, name, text, send)
@@ -201,7 +195,6 @@ class WhatsAppWebConnector:
 
             group_trigger = GroupTrigger()
         self._group_trigger = group_trigger
-        self._allowed_users = allowed_users or []  # the connector's `allow` list (group gate)
         self._own_jid = ""  # the bot's own "user@server"; fetched lazily on first need
         self._client: Any = None  # the live client while start() runs (for send_to)
 
@@ -236,7 +229,7 @@ class WhatsAppWebConnector:
             if text:
                 source = message.Info.MessageSource
                 if not await self._should_handle(client, message, source):
-                    return  # group message Gaia isn't addressed in / sender not allowed
+                    return  # a group message Gaia wasn't addressed in (mention/reply)
                 chat = source.Chat  # JID to send media replies to
                 # Record where this turn came from, so scheduling tools (cron) can
                 # capture the chat for later proactive delivery (phone-number JID, not
@@ -269,9 +262,9 @@ class WhatsAppWebConnector:
         if not getattr(source, "IsGroup", False):
             return True
         own_jid = await self._ensure_own_jid(client)
-        if _group_decision(message, source, own_jid, self._group_trigger, self._allowed_users):
+        if _group_decision(message, source, own_jid, self._group_trigger):
             return True
-        logger.debug("group message ignored (not addressed / sender not allowed)")
+        logger.debug("group message ignored — Gaia not addressed (no mention / reply)")
         return False
 
     async def _ensure_own_jid(self, client: Any) -> str:

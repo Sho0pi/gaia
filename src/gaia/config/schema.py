@@ -221,8 +221,9 @@ class GroupTrigger(BaseModel):
     """When Gaia should respond inside a group chat.
 
     Default is deliberately quiet: in a group Gaia answers only when it is *addressed*
-    (@mentioned or someone replies to one of its messages) **and** the sender is on the
-    connector's ``allow`` list. An empty ``allow`` list means Gaia stays silent in groups.
+    (@mentioned or someone replies to one of its messages). *Who* may trigger it is the
+    user/role system's job (``users.json`` + the dispatcher's guest-drop) — known users
+    pass, unknown senders are guests and are dropped — so there is no second allow-list here.
     """
 
     respond_in_groups: bool = Field(
@@ -244,8 +245,7 @@ class WhatsAppConnectorConfig(BaseModel):
     )
     allow: list[str] = Field(
         default_factory=list,
-        description="Allowed sender ids (phone numbers). Used as the allow-list for group "
-        "chats (see group_trigger): empty = no one may trigger Gaia in a group.",
+        description="Allowed sender ids; empty = everyone (enforcement is a follow-up).",
     )
     group_trigger: GroupTrigger = Field(default_factory=GroupTrigger)
     default_soul: str = Field(default="gaia", description="Soul used for new chats.")

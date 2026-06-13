@@ -46,7 +46,6 @@ def select_connector(
     *,
     transcriber: Any = None,
     group_trigger: Any = None,
-    allowed_users: list[str] | None = None,
 ) -> WhatsAppConnector | WhatsAppWebConnector:
     """Choose the WhatsApp backend from configured credentials.
 
@@ -63,7 +62,6 @@ def select_connector(
         dispatch,
         transcriber=transcriber,
         group_trigger=group_trigger,
-        allowed_users=allowed_users,
     )
 
 
@@ -260,7 +258,6 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
                 dispatcher.for_channel(WhatsAppWebConnector.NAME),
                 transcriber=gaia.container.transcriber(),
                 group_trigger=gaia.config.connectors.whatsapp.group_trigger,
-                allowed_users=gaia.config.connectors.whatsapp.allow,
             )
             if isinstance(connector, WhatsAppWebConnector):
                 tasks.append(asyncio.create_task(connector.start()))
