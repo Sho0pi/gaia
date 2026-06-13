@@ -28,6 +28,7 @@ from gaia.config.schema import (
     RoleConfig,
     TelegramConnectorConfig,
     ToolConfig,
+    VoiceConfig,
     WhatsAppConnectorConfig,
 )
 from gaia.config.settings import Settings, configure_adk_env, get_settings
@@ -52,6 +53,7 @@ __all__ = [
     "Settings",
     "TelegramConnectorConfig",
     "ToolConfig",
+    "VoiceConfig",
     "WhatsAppConnectorConfig",
     "configure_adk_env",
     "get_settings",

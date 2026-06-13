@@ -16,10 +16,13 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from gaia import constants
 from gaia.connectors.base import Handler, Media, Reply
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from neonize.aioze.client import NewAClient
+
+    from gaia.voice import Transcriber
 
 logger = logging.getLogger(__name__)
 
@@ -77,11 +80,18 @@ def _message_text(message: Any) -> str:
 
 
 class WhatsAppWebConnector:
-    """Bridges regular-account WhatsApp messages to a Gaia handler coroutine."""
+    """Bridges regular-account WhatsApp messages to a Gaia handler coroutine.
 
-    def __init__(self, session_db: Path, handler: Handler) -> None:
+    ``transcriber`` (a :class:`gaia.voice.Transcriber`) turns inbound voice notes into
+    text for the handler; ``None`` means voice messages are ignored (prior behaviour).
+    """
+
+    def __init__(
+        self, session_db: Path, handler: Handler, *, transcriber: Transcriber | None = None
+    ) -> None:
         self._session_db = session_db
         self._handler = handler
+        self._transcriber = transcriber
 
     def build_client(self) -> NewAClient:
         """Create a neonize client wired to the handler.
@@ -109,6 +119,8 @@ class WhatsAppWebConnector:
         @client.event(MessageEv)  # type: ignore[untyped-decorator]
         async def _on_message(client: NewAClient, message: MessageEv) -> None:
             text = _message_text(message)
+            if not text:
+                text = await self._transcribe_voice(client, message)
             if text:
                 chat = message.Info.MessageSource.Chat  # JID to send media replies to
 
@@ -125,6 +137,33 @@ class WhatsAppWebConnector:
                 await self._handler(text, send)
 
         return client
+
+    async def _transcribe_voice(self, client: Any, message: Any) -> str:
+        """Transcript of an inbound voice note, or ``""`` (no audio / no transcriber / error).
+
+        The encrypted audio (ogg/opus) is downloaded to ``~/.gaia/cache/voice/<id>.ogg``
+        and transcribed locally; failures are logged and the message dropped — a bad
+        voice note must never take the connector loop down.
+        """
+        if self._transcriber is None:
+            return ""
+        audio = getattr(message.Message, "audioMessage", None)
+        if audio is None or not getattr(audio, "mediaKey", b""):  # no audio payload
+            return ""
+
+        path = constants.CACHE_DIR / "voice" / f"{message.Info.ID}.ogg"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            await client.download_any(message.Message, str(path))
+            transcript = await self._transcriber.transcribe(path)
+        except Exception:
+            logger.warning("voice note dropped: download/transcription failed", exc_info=True)
+            return ""
+        if not transcript:
+            logger.info("voice note transcribed to empty text — ignored")
+            return ""
+        # The prefix tells Gaia the modality, so it answers the spoken content naturally.
+        return f"[voice message] {transcript}"
 
     async def start(self) -> None:
         """Connect (prompting a QR scan on first run) and block receiving events.
