@@ -36,7 +36,7 @@ class CronJob(BaseModel):
     id: str = Field(default_factory=lambda: uuid.uuid4().hex[:8])
     name: str = ""
     kind: str  # cron | every | at
-    expr: str
+    expr: str  # interpreted per `kind`: crontab string | whole seconds | ISO datetime
     message: str
     channel: str = ""  # connector name (telegram/whatsapp); empty = cron.deliver default
     chat: str = ""  # connector-specific chat id (telegram chat / whatsapp JID)
