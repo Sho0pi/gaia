@@ -47,3 +47,67 @@ def test_root_agent_attaches_all_registered_tools(
     names = {getattr(t, "__name__", t) for t in tools}  # type: ignore[union-attr]
     expected = {"web_fetch", "web_search", "fs_read", "fs_write", "fs_edit", "delegate_to_soul"}
     assert expected <= names
+
+
+def test_root_agent_attaches_skill_toolset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # On-demand skills: when skills_dir holds a skill, the root agent gets a SkillToolset.
+    skills = tmp_path / "skills"
+    (skills / "web-research").mkdir(parents=True)
+    (skills / "web-research" / "SKILL.md").write_text(
+        "---\nname: web-research\ndescription: search\n---\n\nbody\n"
+    )
+    config_path = tmp_path / "gaia.yaml"
+    config_path.write_text(f"skills_dir: {skills}\n")
+    settings = Settings(agent_registry_dir=tmp_path / "registry", config_path=config_path)
+    gaia = Gaia(settings)
+
+    from google.adk.tools.skill_toolset import SkillToolset
+
+    kwargs = _capture_root_kwargs(gaia, monkeypatch)
+    assert any(isinstance(t, SkillToolset) for t in kwargs["tools"])  # type: ignore[union-attr]
+
+
+async def test_close_runs_tool_cleanup_and_mcp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Gaia.close must release the tool managers (shell/browser) AND the MCP toolsets on
+    # the running loop — even if one of them raises — and be idempotent.
+    gaia = _gaia(tmp_path)
+    calls: list[str] = []
+
+    async def fake_aclose() -> None:
+        calls.append("tools")
+
+    monkeypatch.setattr(gaia.tools, "aclose", fake_aclose)
+
+    class _Toolset:
+        async def close(self) -> None:
+            calls.append("mcp")
+
+    gaia._mcp = [_Toolset()]  # type: ignore[list-item]
+
+    await gaia.close()
+    await gaia.close()  # idempotent: second call does nothing
+
+    assert calls == ["tools", "mcp"]
+
+
+async def test_async_context_manager_closes_even_on_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # ``async with gaia`` is the launchers' lifetime scope: close must run on exit,
+    # exception paths included (that's the whole point over a manual close call).
+    gaia = _gaia(tmp_path)
+    calls: list[str] = []
+
+    async def fake_aclose() -> None:
+        calls.append("tools")
+
+    monkeypatch.setattr(gaia.tools, "aclose", fake_aclose)
+
+    with pytest.raises(RuntimeError):
+        async with gaia as entered:
+            assert entered is gaia
+            raise RuntimeError("boom")
+
+    assert calls == ["tools"]

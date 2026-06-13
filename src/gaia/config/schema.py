@@ -52,7 +52,7 @@ class MCPServerConfig(BaseModel):
     """One external MCP (Model Context Protocol) server to attach as tools.
 
     **Trust:** an MCP server is third-party code — a ``stdio`` server spawns a local
-    process (e.g. via ``npx``). Only configure servers you trust. **Secrets:** never put
+    process (e.g. via ``bunx``). Only configure servers you trust. **Secrets:** never put
     api keys in this file; list the env var names in ``env_passthrough`` and export them
     in the environment instead (they're copied into the server's process env).
     """
@@ -63,7 +63,7 @@ class MCPServerConfig(BaseModel):
         default="stdio", description="How to reach the server: stdio (local process), sse, or http."
     )
     # stdio transport
-    command: str | None = Field(default=None, description="stdio: the executable (e.g. 'npx').")
+    command: str | None = Field(default=None, description="stdio: the executable (e.g. 'bunx').")
     args: list[str] = Field(default_factory=list, description="stdio: arguments to the command.")
     env: dict[str, str] = Field(
         default_factory=dict, description="stdio: literal (NON-secret) env vars for the server."
@@ -177,6 +177,15 @@ class VoiceConfig(BaseModel):
     language: str | None = Field(
         default=None,
         description="Force a transcription language (e.g. 'en', 'he'); empty = auto-detect.",
+    )
+    device: str = Field(
+        default="cpu",
+        description="Where to run the model: 'cpu' (anywhere) or 'cuda' (NVIDIA GPU).",
+    )
+    compute_type: str = Field(
+        default="int8",
+        description="Weight quantisation: 'int8' (smallest/fastest on CPU); GPUs usually "
+        "pair device 'cuda' with 'float16'.",
     )
 
 

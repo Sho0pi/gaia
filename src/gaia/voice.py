@@ -2,9 +2,10 @@
 
 Connector-agnostic: a connector downloads the audio (WhatsApp voice notes are
 ogg/opus — faster-whisper decodes them natively through its bundled PyAV, no ffmpeg
-binary) and hands the file here. The model is CTranslate2 Whisper running on CPU
-(``compute_type="int8"`` — Pi-viable); weights auto-download from Hugging Face on the
-first transcription and are cached under ``~/.cache``.
+binary) and hands the file here. The model is CTranslate2 Whisper; weights auto-download
+from Hugging Face on the first transcription and are cached under ``~/.cache``. The
+``device``/``compute_type`` default to ``cpu``/``int8`` (runs anywhere, down to a Pi)
+but are config-driven, so a machine with a GPU can set ``cuda``/``float16`` for speed.
 
 faster-whisper is an optional dependency (the ``voice`` group) and is imported lazily,
 so gaia imports cleanly without it — callers check :attr:`Transcriber.available` and
@@ -27,11 +28,27 @@ logger = logging.getLogger(__name__)
 
 
 class Transcriber:
-    """Speech-to-text over a lazily-built, instance-cached WhisperModel."""
+    """Speech-to-text over a lazily-built, instance-cached WhisperModel.
 
-    def __init__(self, model: str = "base", language: str | None = None) -> None:
+    The model is held on the instance (built on first :meth:`transcribe`), so one
+    Transcriber loads the weights once and reuses them. Inject it where it's needed
+    (the connector takes it as a constructor arg) — there is no module-level singleton.
+    """
+
+    def __init__(
+        self,
+        model: str = "base",
+        language: str | None = None,
+        device: str = "cpu",
+        compute_type: str = "int8",
+    ) -> None:
+        # device: where CTranslate2 runs the model — "cpu" (anywhere) or "cuda" (NVIDIA GPU).
+        # compute_type: weight quantisation — "int8" is the smallest/fastest on CPU (8-bit
+        # integer math, ~Pi-viable); GPUs typically pair "cuda" with "float16".
         self._model_size = model
         self._language = language
+        self._device = device
+        self._compute_type = compute_type
         self._model: Any = None
 
     @property
@@ -46,16 +63,23 @@ class Transcriber:
             from faster_whisper import WhisperModel
 
             logger.info(
-                "loading whisper model %r (first call may download weights)", self._model_size
+                "loading whisper model %r on %s (first call may download weights)",
+                self._model_size,
+                self._device,
             )
-            self._model = WhisperModel(self._model_size, device="cpu", compute_type="int8")
+            self._model = WhisperModel(
+                self._model_size, device=self._device, compute_type=self._compute_type
+            )
         return self._model
 
     async def transcribe(self, path: Path) -> str:
         """The spoken text of the audio file at ``path`` (empty string when silent).
 
-        Model load + inference are blocking CTranslate2 calls, so both run in a worker
-        thread; the event loop (and the connector receiving messages) stays free.
+        Loading the model and running inference are *synchronous, CPU-bound* CTranslate2
+        calls that would block the event loop (freezing the connector — no other messages
+        get handled) for the whole transcription. ``asyncio.to_thread`` runs that blocking
+        work on a worker thread and ``await``s its result, so this coroutine yields the
+        loop back to other tasks until the transcript is ready.
         """
 
         def _run() -> str:
@@ -66,24 +90,26 @@ class Transcriber:
         return await asyncio.to_thread(_run)
 
 
-_transcriber: Transcriber | None = None
+def build_transcriber(config: GaiaConfig) -> Transcriber | None:
+    """Build a transcriber from ``voice`` config, or ``None`` when off/uninstalled.
 
-
-def get_transcriber(config: GaiaConfig) -> Transcriber | None:
-    """The process-wide transcriber per ``voice`` config, or ``None`` when off/missing.
-
-    ``None`` when ``voice.enabled`` is false or faster-whisper isn't installed (warned
-    once, naming the remedy) — connectors then ignore voice notes, today's behaviour.
+    A plain factory — no caching, no module global. The single caller (the daemon, at
+    connector startup) hands the result to the connector, which owns it for its lifetime
+    (constructor injection); the model is then loaded once and reused on that instance.
+    ``None`` when ``voice.enabled`` is false or faster-whisper isn't installed (warned,
+    naming the remedy) — connectors then ignore voice notes, today's behaviour.
     """
-    global _transcriber
     if not config.voice.enabled:
         return None
-    if _transcriber is None:
-        candidate = Transcriber(model=config.voice.model, language=config.voice.language)
-        if not candidate.available:
-            logger.warning(
-                "voice notes ignored: faster-whisper not installed (run 'uv sync --group voice')"
-            )
-            return None
-        _transcriber = candidate
-    return _transcriber
+    transcriber = Transcriber(
+        model=config.voice.model,
+        language=config.voice.language,
+        device=config.voice.device,
+        compute_type=config.voice.compute_type,
+    )
+    if not transcriber.available:
+        logger.warning(
+            "voice notes ignored: faster-whisper not installed (run 'uv sync --group voice')"
+        )
+        return None
+    return transcriber

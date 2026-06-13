@@ -11,6 +11,7 @@ unit tests can exercise the wiring without the native whatsmeow binary.
 
 from __future__ import annotations
 
+import inspect
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -165,8 +166,39 @@ class WhatsAppWebConnector:
         return f"[voice message] {transcript}"
 
     async def start(self) -> None:
-        """Connect (prompting a QR scan on first run) and block receiving events."""
+        """Connect (prompting a QR scan on first run) and block receiving events.
+
+        On cancellation (Ctrl-C / ``gaia stop``) the ``finally`` calls :func:`_stop_client`.
+        This is load-bearing: ``idle()`` awaits neonize's background ``connect_task``, whose
+        blocking ``Neonize()`` Go call runs in a **non-daemon** worker thread. A plain
+        ``disconnect()`` only closes the websocket — the worker thread keeps running and the
+        interpreter then hangs forever joining it at exit. ``stop()`` (Go-side ``Stop``) is
+        what actually unblocks that call so the thread can exit.
+        """
         client = self.build_client()
         logger.info("whatsapp starting — scan the QR if prompted (session: %s)", self._session_db)
         await client.connect()
-        await client.idle()  # blocks, keeps receiving events
+        try:
+            await client.idle()  # blocks, keeps receiving events
+        finally:
+            await _stop_client(client)
+
+
+async def _stop_client(client: Any) -> None:
+    """Stop a neonize client so its non-daemon worker thread exits (best-effort).
+
+    Prefers ``stop()`` (``Stop`` — unblocks the blocking Go call AND disconnects); falls
+    back to ``disconnect()`` for any client that lacks it. Tolerates sync or async methods.
+    """
+    for name in ("stop", "disconnect"):
+        method = getattr(client, name, None)
+        if method is None:
+            continue
+        try:
+            result = method()
+            if inspect.isawaitable(result):
+                await result
+            return
+        except Exception:  # pragma: no cover - shutdown best-effort
+            logger.debug("whatsapp %s failed", name, exc_info=True)
+            return

@@ -11,7 +11,7 @@ import pytest
 
 import gaia.voice as voice_mod
 from gaia.config import GaiaConfig
-from gaia.voice import Transcriber, get_transcriber
+from gaia.voice import Transcriber, build_transcriber
 
 
 class _FakeModel:
@@ -71,35 +71,40 @@ def test_available_false_without_dep(monkeypatch: pytest.MonkeyPatch) -> None:
     assert Transcriber().available is False
 
 
-def test_get_transcriber_disabled_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(voice_mod, "_transcriber", None)
+def test_build_transcriber_disabled_returns_none() -> None:
     cfg = GaiaConfig.model_validate({"voice": {"enabled": False}})
 
-    assert get_transcriber(cfg) is None
+    assert build_transcriber(cfg) is None
 
 
-def test_get_transcriber_missing_dep_warns_none(
+def test_build_transcriber_missing_dep_warns_none(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    monkeypatch.setattr(voice_mod, "_transcriber", None)
     monkeypatch.delitem(sys.modules, "faster_whisper", raising=False)
     monkeypatch.setattr(voice_mod.importlib.util, "find_spec", lambda name: None)
 
     import logging
 
     with caplog.at_level(logging.WARNING, logger="gaia.voice"):
-        result = get_transcriber(GaiaConfig())
+        result = build_transcriber(GaiaConfig())
 
     assert result is None
     assert "uv sync --group voice" in caplog.text
 
 
-def test_get_transcriber_singleton(
-    fake_whisper: type[_FakeModel], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(voice_mod, "_transcriber", None)
+def test_build_transcriber_returns_fresh_instances(fake_whisper: type[_FakeModel]) -> None:
+    # No module singleton: each call builds its own Transcriber (the caller owns it).
+    first = build_transcriber(GaiaConfig())
+    second = build_transcriber(GaiaConfig())
 
-    first = get_transcriber(GaiaConfig())
-    second = get_transcriber(GaiaConfig())
+    assert first is not None and second is not None and first is not second
 
-    assert first is not None and first is second
+
+def test_build_transcriber_passes_device_and_compute_type(fake_whisper: type[_FakeModel]) -> None:
+    cfg = GaiaConfig.model_validate({"voice": {"device": "cuda", "compute_type": "float16"}})
+
+    transcriber = build_transcriber(cfg)
+
+    assert transcriber is not None
+    assert transcriber._device == "cuda"
+    assert transcriber._compute_type == "float16"

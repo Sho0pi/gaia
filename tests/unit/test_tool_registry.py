@@ -161,3 +161,37 @@ def test_default_registry_rejects_unknown_engine() -> None:
 
     with pytest.raises(ValueError, match="unknown web_search engine 'bing'"):
         default_registry(config)
+
+
+async def test_aclose_runs_every_closeable_even_when_one_raises() -> None:
+    registry = ToolRegistry()
+    calls: list[str] = []
+
+    async def ok() -> None:
+        calls.append("ok")
+
+    async def boom() -> None:
+        calls.append("boom")
+        raise RuntimeError("cleanup failed")
+
+    async def ok2() -> None:
+        calls.append("ok2")
+
+    registry.register_closeable(ok)
+    registry.register_closeable(boom)
+    registry.register_closeable(ok2)
+
+    await registry.aclose()  # best-effort: boom must not stop ok2
+
+    assert calls == ["ok", "boom", "ok2"]
+
+
+def test_default_registry_registers_tool_manager_cleanups(monkeypatch: pytest.MonkeyPatch) -> None:
+    # shell ProcessManager + browser SessionManager must surface close_all so Gaia.close
+    # can release them on the live loop (the shutdown fix).
+    import shutil as _shutil
+
+    monkeypatch.setattr(_shutil, "which", lambda _name: "/usr/bin/fake")  # pretend fd/rg exist
+    registry = default_registry(GaiaConfig(browser=BrowserConfig(backend="native")))
+
+    assert len(registry._closeables) >= 2  # shell + browser

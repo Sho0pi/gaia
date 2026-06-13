@@ -68,3 +68,38 @@ def test_attach_skills_no_ids_returns_base(tmp_path: Path) -> None:
 def test_resolve_skills_dir_default_and_override(tmp_path: Path) -> None:
     assert resolve_skills_dir(GaiaConfig()) == constants.SKILLS_DIR
     assert resolve_skills_dir(GaiaConfig(skills_dir=tmp_path)) == tmp_path
+
+
+def test_build_skill_toolset_exposes_progressive_tools(tmp_path: Path) -> None:
+    import asyncio
+
+    from gaia.skills import build_skill_toolset
+
+    _make_skill(tmp_path, "web-research", "Search before answering.")
+
+    toolset = build_skill_toolset(tmp_path)
+
+    assert toolset is not None
+    tool_names = {t.name for t in asyncio.run(toolset.get_tools())}
+    assert {"list_skills", "load_skill"} <= tool_names  # discovery + load on demand
+
+
+def test_build_skill_toolset_none_when_empty_or_missing(tmp_path: Path) -> None:
+    from gaia.skills import build_skill_toolset
+
+    assert build_skill_toolset(tmp_path / "missing") is None  # no such dir
+    (tmp_path / "empty").mkdir()
+    assert build_skill_toolset(tmp_path / "empty") is None  # dir with no skills
+
+
+def test_build_skill_toolset_skips_malformed_skill(tmp_path: Path) -> None:
+    from gaia.skills import build_skill_toolset
+
+    _make_skill(tmp_path, "good", "fine body")
+    bad = tmp_path / "bad"  # folder name != frontmatter name → ADK loader rejects it
+    bad.mkdir()
+    (bad / "SKILL.md").write_text("---\nname: different\ndescription: x\n---\n\nbody\n")
+
+    toolset = build_skill_toolset(tmp_path)  # the good one still yields a toolset
+
+    assert toolset is not None
