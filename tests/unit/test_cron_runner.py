@@ -87,9 +87,7 @@ async def test_missing_connector_drops_with_log(
     assert "dropped" in caplog.text
 
 
-async def test_two_gaias_keep_separate_connectors(
-    tmp_path: Any, fake_handler: list[str]
-) -> None:
+async def test_two_gaias_keep_separate_connectors(tmp_path: Any, fake_handler: list[str]) -> None:
     """Each Gaia's runner delivers through ITS OWN connectors (per-instance isolation).
 
     Regression guard for the #146 @inject spike: the conclusion was to read

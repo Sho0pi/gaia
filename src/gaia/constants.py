@@ -38,6 +38,8 @@ PID_FILE = HOME_DIR / f"{APP_NAME}.pid"
 CRON_FILE = HOME_DIR / "cron.json"
 # Known users: (channel, sender) -> canonical user identity + role (the user store).
 USERS_FILE = HOME_DIR / "users.json"
+# Missions task board (SQLite, WAL); managed by the task_* tools / `gaia tasks`.
+TASKS_DB = HOME_DIR / "tasks.db"
 # Per-agent state. Each agent's sandboxed filesystem workspace lives at
 # AGENTS_DIR / <agent_name> / "workspace" (see tools/filesystem.py).
 AGENTS_DIR = HOME_DIR / "agents"

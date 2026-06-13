@@ -17,6 +17,7 @@ from gaia.commands.memories import MemoriesCommand
 from gaia.commands.remember import RememberCommand
 from gaia.commands.reset import ResetCommand
 from gaia.commands.status import StatusCommand
+from gaia.commands.tasks import TasksCommand
 from gaia.commands.users import (
     ApproveCommand,
     LinkCommand,
@@ -44,6 +45,7 @@ _BUILTINS: tuple[Command, ...] = (
     RemoveCommand(),
     NameCommand(),
     LinkCommand(),
+    TasksCommand(),
 )
 
 
