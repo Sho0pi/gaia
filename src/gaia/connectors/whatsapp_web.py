@@ -27,6 +27,18 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 logger = logging.getLogger(__name__)
 
 
+def _build_jid(chat: str) -> Any:
+    """A neonize JID from a ``user@server`` string (default server ``s.whatsapp.net``).
+
+    The phone-number address media sends must target — sending to a ``…@lid`` identity
+    drops silently. Shared by the inbound media reply path and proactive ``send_to``.
+    """
+    from neonize.utils import build_jid
+
+    user, _, server = chat.partition("@")
+    return build_jid(user, server or "s.whatsapp.net")
+
+
 def _jid_to_str(jid: Any) -> str:
     """Round-trippable ``user@server`` form of a neonize JID (for the cron store)."""
     user = getattr(jid, "User", "")
@@ -173,7 +185,11 @@ class WhatsAppWebConnector:
                 was_voice = bool(text)  # inbound was a (transcribed) voice note
             if text:
                 source = message.Info.MessageSource
-                chat = source.Chat  # JID to send media replies to
+                # Media (image / voice note) must go to the *deliverable* JID, not the raw
+                # ``source.Chat``: in a DM that Chat is a ``…@lid`` identity and a media send
+                # to it vanishes silently (the user gets nothing — not even the text). Build
+                # the phone-number JID the same way proactive ``send_to`` does.
+                chat = _build_jid(_deliverable_chat(source))
                 # Record where this turn came from, so scheduling tools (cron) can
                 # capture the chat for later proactive delivery (phone-number JID, not
                 # the undeliverable @lid identity).
@@ -272,10 +288,7 @@ class WhatsAppWebConnector:
         """
         if self._client is None:
             raise RuntimeError("whatsapp connector is not running")
-        from neonize.utils import build_jid
-
-        user, _, server = chat.partition("@")
-        jid = build_jid(user, server or "s.whatsapp.net")
+        jid = _build_jid(chat)
         if isinstance(reply, Media):
             await self._client.send_image(jid, str(reply.path), caption=reply.caption or None)
         else:

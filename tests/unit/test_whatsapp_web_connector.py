@@ -36,7 +36,11 @@ def _msg(*, conversation: str = "", extended: str = "", quoted: str = "") -> Sim
             conversation=conversation,
             extendedTextMessage=SimpleNamespace(text=extended, contextInfo=context_info),
         ),
-        Info=SimpleNamespace(MessageSource=SimpleNamespace(Chat="chat-jid")),
+        Info=SimpleNamespace(
+            MessageSource=SimpleNamespace(
+                Chat=SimpleNamespace(User="chat", Server="s.whatsapp.net")
+            )
+        ),
     )
 
 
@@ -84,11 +88,17 @@ def fake_neonize(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     events_mod.MessageEv = message_ev  # type: ignore[attr-defined]
     events_mod.PairStatusEv = pair_status_ev  # type: ignore[attr-defined]
 
+    # neonize.utils.build_jid: stand in with a "user@server" string so media-send targets
+    # are assertable without the native lib.
+    utils_mod = ModuleType("neonize.utils")
+    utils_mod.build_jid = lambda user, server: f"{user}@{server}"  # type: ignore[attr-defined]
+
     for name, mod in {
         "neonize": ModuleType("neonize"),
         "neonize.aioze": ModuleType("neonize.aioze"),
         "neonize.aioze.client": client_mod,
         "neonize.aioze.events": events_mod,
+        "neonize.utils": utils_mod,
     }.items():
         monkeypatch.setitem(sys.modules, name, mod)
 
@@ -158,7 +168,8 @@ async def test_media_reply_sent_as_image(fake_neonize: dict[str, Any], tmp_path:
     await client.handlers[fake_neonize["MessageEv"]](client, _msg(conversation="shot"))
 
     assert [text for text, _ in client.replies] == ["here:"]  # text reply still sent
-    assert client.images == [("chat-jid", "/tmp/shot.png", "screenshot")]  # image via send_image
+    # image goes to the *deliverable* phone JID (built from the DM Chat), not a raw @lid
+    assert client.images == [("chat@s.whatsapp.net", "/tmp/shot.png", "screenshot")]
 
 
 async def test_empty_message_is_ignored(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
