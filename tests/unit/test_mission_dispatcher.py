@@ -107,33 +107,50 @@ async def test_failure_marks_failed_and_records_error(
     assert got is not None and got.status is TaskStatus.FAILED and "boom" in got.notes
 
 
-async def test_only_leaf_tasks_are_pushed(
+async def test_only_leaf_success_is_presented(
     store: TaskStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # T2 depends on T1 → only T2 (the deliverable) is pushed; T1 (internal step) is not.
-    class _Sender:
-        def __init__(self) -> None:
-            self.sent: list[Any] = []
+    # T2 depends on T1 → only T2 (the deliverable) is presented; T1 (internal step) is not.
+    presented: list[str] = []
 
-        async def send_to(self, chat: str, reply: Any) -> None:
-            self.sent.append(reply)
+    async def spy_present(_g: Any, task: Any, _run: Any) -> None:
+        presented.append(task.id)
 
+    monkeypatch.setattr(disp_mod, "present_result", spy_present)
     _fake_run(monkeypatch, lambda _t: SoulRun(True, "s", "S", False, summary="out"))
-    wa = _Sender()
-    gaia = _gaia(store)
-    gaia.connectors = {"whatsapp": wa}
-    t1 = store.create(Task(title="step", notify_channel="whatsapp", notify_chat="x"))
-    store.create(
-        Task(title="deliverable", notify_channel="whatsapp", notify_chat="x", blocked_by=[t1.id])
-    )
-    d = MissionDispatcher(gaia, store=store)
+    t1 = store.create(Task(title="step"))
+    t2 = store.create(Task(title="deliverable", blocked_by=[t1.id]))
+    d = MissionDispatcher(_gaia(store), store=store)
 
-    await _drain(d)  # T1
-    await _drain(d)  # T2
-    # let the fire-and-forget notify tasks finish
+    await _drain(d)  # T1 (internal)
+    await _drain(d)  # T2 (leaf)
     await asyncio.gather(*d._workers, return_exceptions=True)
 
-    assert len(wa.sent) == 1  # only the leaf deliverable, not the internal step
+    assert presented == [t2.id]  # only the leaf deliverable was presented
+
+
+async def test_failure_is_notified_not_presented(
+    store: TaskStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    presented: list[str] = []
+    notified: list[str] = []
+
+    async def spy_present(_g: Any, task: Any, _run: Any) -> None:
+        presented.append(task.id)
+
+    async def spy_notify(_g: Any, task: Any, _run: Any) -> None:
+        notified.append(task.id)
+
+    monkeypatch.setattr(disp_mod, "present_result", spy_present)
+    monkeypatch.setattr(disp_mod, "notify_result", spy_notify)
+    _fake_run(monkeypatch, lambda _t: SoulRun(False, "s", "S", False, error="boom"))
+    t = store.create(Task(title="x"))
+    d = MissionDispatcher(_gaia(store), store=store)
+
+    await _drain(d)
+    await asyncio.gather(*d._workers, return_exceptions=True)
+
+    assert notified == [t.id] and presented == []  # failure → text notice, no present-turn
 
 
 def test_recover_resets_running_to_inbox(store: TaskStore) -> None:

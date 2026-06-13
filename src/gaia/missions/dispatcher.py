@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 
 from gaia.logs import log_event
 from gaia.missions.notify import notify_result
+from gaia.missions.present import present_result
 from gaia.missions.store import Task, TaskStatus, TaskStore
 from gaia.souls.run import SoulRun, decide_soul, execute_decision
 
@@ -150,9 +151,15 @@ class MissionDispatcher:
             self._store.update(task)
             log_event("task_failed", task=task.id, error=run.error)
         # Deliver only the mission's *deliverables*: a task that feeds another is an internal
-        # step (its result stays on the board). Failures always notify so nothing is silent.
-        if not run.ok or not self._store.has_dependents(task.id):
-            fresh = self._store.get(task.id) or task
-            notice = asyncio.create_task(notify_result(self._gaia, fresh, run))
-            self._workers.add(notice)
-            notice.add_done_callback(self._workers.discard)
+        # step (its result stays on the board). A finished deliverable is *presented* by Gaia
+        # (opens + screenshots it); a failure is a short text notice so nothing is silent.
+        fresh = self._store.get(task.id) or task
+        if run.ok and not self._store.has_dependents(task.id):
+            deliver = present_result(self._gaia, fresh, run)
+        elif not run.ok:
+            deliver = notify_result(self._gaia, fresh, run)
+        else:
+            return  # internal step — its result feeds a dependent, no user delivery
+        notice = asyncio.create_task(deliver)
+        self._workers.add(notice)
+        notice.add_done_callback(self._workers.discard)
