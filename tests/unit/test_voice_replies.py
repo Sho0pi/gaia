@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -27,8 +28,15 @@ class _FakeClient:
         self.audio: list[tuple[Any, str, bool]] = []
         self.text: list[str] = []
 
-    async def send_audio(self, chat: Any, file: str, ptt: bool = False) -> None:
-        self.audio.append((chat, file, ptt))
+    async def build_audio_message(self, file: str, ptt: bool = False) -> SimpleNamespace:
+        # Mirror neonize: a Message with an audioMessage carrying a (wrong) sniffed mimetype.
+        self.audio.append(("__build__", file, ptt))
+        return SimpleNamespace(
+            audioMessage=SimpleNamespace(mimetype="audio/ogg", PTT=ptt, _file=file)
+        )
+
+    async def send_message(self, chat: Any, msg: Any) -> None:
+        self.audio.append((chat, msg.audioMessage._file, msg.audioMessage.mimetype))
 
     async def reply_message(self, text: str, message: Any) -> None:
         self.text.append(text)
@@ -79,7 +87,12 @@ async def test_speak_sends_ptt_audio(tmp_path: Path) -> None:
     spoke = await _connector(_FakeSynth(ogg))._speak(client, "chat-jid", "hello there")
 
     assert spoke is True
-    assert client.audio == [("chat-jid", str(ogg), True)]  # delivered as a PTT voice note
+    # built as PTT, then sent with the WhatsApp-required opus mimetype (corrected from the
+    # bare 'audio/ogg' neonize would otherwise sniff — which silently fails to render).
+    assert client.audio == [
+        ("__build__", str(ogg), True),
+        ("chat-jid", str(ogg), "audio/ogg; codecs=opus"),
+    ]
 
 
 async def test_speak_falls_back_when_synthesis_fails(tmp_path: Path) -> None:

@@ -227,7 +227,13 @@ class WhatsAppWebConnector:
             ogg = await self._synthesizer.synthesize(text)
             if ogg is None:
                 return False
-            await client.send_audio(chat, str(ogg), ptt=True)
+            # neonize's send_audio stamps the mimetype from a libmagic sniff, which yields a
+            # bare 'audio/ogg'. WhatsApp only renders a PTT voice note when the mimetype is
+            # 'audio/ogg; codecs=opus' — with the bare type it accepts the upload but the
+            # recipient gets nothing. Build the message, then correct that one field.
+            msg = await client.build_audio_message(str(ogg), ptt=True)
+            msg.audioMessage.mimetype = "audio/ogg; codecs=opus"
+            await client.send_message(chat, msg)
             return True
         except Exception:  # pragma: no cover - never lose the reply to a bad voice send
             logger.warning("voice reply failed; falling back to text", exc_info=True)
