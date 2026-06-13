@@ -17,6 +17,7 @@ from gaia.config.schema import AgentBinding
 from gaia.models import resolve_model
 from gaia.skills import attach_skills, build_skill_toolset, resolve_skills_dir
 from gaia.tools import default_registry
+from gaia.users import UserStore
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,8 @@ class Gaia:
         self.config_supplier = ConfigSupplier(self.settings.config_path)
         self.skills_dir = resolve_skills_dir(self.config)
         self.souls = SoulRegistry(self.settings.agent_registry_dir)
+        self.users = UserStore()
+        self.users.seed_admins(self.config.admin)
         self.tools = default_registry(self.config)
         self.factory = AgentFactory(
             self.souls,

@@ -24,7 +24,13 @@ unsure which library, delegate to the `lib-researcher` subagent.
 
 ## Architecture (src/gaia/)
 - `core/` — `agent.py` Gaia (root orchestrator), `handler.py` text↔ADK-Runner glue
-  (one handler == one conversation), `plugins.py` tool-call logging.
+  (one handler == one conversation), `dispatch.py` resolves an inbound sender to a
+  `users.User` + role, gates guests, routes to a cached per-user handler, `plugins.py`
+  tool-call logging.
+- `users/` — cross-channel identities: `(channel, sender)` → canonical `user_id` + role
+  (admin/user/guest), persisted to `~/.gaia/users.json`. Memory/sessions key off
+  `user.id`, so one person shares memory across channels. Admins seeded from
+  `config.admin`; others learned at first contact + managed by chat commands.
 - `souls/` — the spawn/reuse loop: `smith.py` decides reuse-vs-forge (structured
   output); `delegate.py` is the root-only `delegate_to_soul` tool (nested Runner,
   sandboxed workspace, before/after file diff).
@@ -41,7 +47,9 @@ unsure which library, delegate to the `lib-researcher` subagent.
 - `memory/` — `backend.py` builds mem0, `service.py` adapts it to ADK's
   `BaseMemoryService` (auto-ingest batching + `remember`/`load_memory` tools).
 - `connectors/` — thin I/O adapters only (cli TUI, telegram, whatsapp, whatsapp_web);
-  all speak the `Handler`/`Send` contract in `base.py`. → `new-connector` skill.
+  each extracts the sender id + display name and calls a channel-bound `Dispatch`
+  callable `(sender_id, name, text, send)` from `base.py` (the dispatcher resolves the
+  user); `Send`/`Reply`/`Handler` also live there. → `new-connector` skill.
 - `config/` — `settings.py` secrets (env only), `schema.py` gaia.yaml (hot-reloaded
   by `store.py`); the commented default file is **generated from the schema**
   (`scaffold.py`) — never hand-maintain a second copy.

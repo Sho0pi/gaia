@@ -116,6 +116,51 @@ async def test_text_only_turn_runs_no_tool(
     assert not [r for r in caplog.records if r.getMessage() == "tool_used"]
 
 
+async def test_two_users_get_separate_memory_partitions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The multi-user payoff: two senders dispatched through the same process land in
+    # distinct mem0 partitions (keyed by their canonical user_id), with no key leakage.
+    from gaia.core.dispatch import Dispatcher
+
+    monkeypatch.setattr(constants, "AGENTS_DIR", tmp_path / "agents")
+    config_path = tmp_path / "gaia.yaml"
+    # memory on + flush every turn so each turn's add is observable
+    config_path.write_text(
+        "memory:\n  enabled: true\n  auto_ingest: true\n  ingest_batch_size: 1\n"
+    )
+    gaia = Gaia(Settings(agent_registry_dir=tmp_path / "reg", config_path=config_path))
+    gaia.users.register("whatsapp", "111@s.whatsapp.net", "Itay", role="admin")
+    gaia.users.register("whatsapp", "972@s.whatsapp.net", "Grace", role="user")
+
+    from google.adk.memory.base_memory_service import BaseMemoryService, SearchMemoryResponse
+
+    partitions: list[str] = []
+
+    class _RecordingMemory(BaseMemoryService):  # ADK validates the Runner's memory_service type
+        async def add_session_to_memory(self, session: Any) -> None:  # pragma: no cover
+            return None
+
+        async def search_memory(self, *, app_name: str, user_id: str, query: str) -> Any:
+            return SearchMemoryResponse(memories=[])
+
+        async def add_events_to_memory(self, *, app_name: str, user_id: str, **_kw: Any) -> None:
+            partitions.append(user_id)
+
+    recorder = _RecordingMemory()
+    monkeypatch.setattr(type(gaia), "memory_service", property(lambda _self: recorder))
+    _install(monkeypatch, FakeLlm(responses=[_text("hi Itay"), _text("hi Grace")]))
+
+    async def send(_reply: Any) -> None:
+        return None
+
+    wa = Dispatcher(gaia).for_channel("whatsapp")
+    await wa("111@s.whatsapp.net", "Itay", "remember me", send)
+    await wa("972@s.whatsapp.net", "Grace", "remember me", send)
+
+    assert set(partitions) == {"itay", "grace"}  # two people, two memory partitions
+
+
 async def test_tool_error_turn_still_completes(
     gaia: Gaia, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:

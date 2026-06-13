@@ -15,20 +15,29 @@ import asyncio
 from typing import TYPE_CHECKING, ClassVar
 
 from gaia import constants
-from gaia.connectors.base import Handler, Reply, as_text
+from gaia.connectors.base import Dispatch, Reply, as_text
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from textual.app import App
 
 
 class CLIConnector:
-    """Bridges a terminal chat UI to a Gaia handler coroutine."""
+    """Bridges a terminal chat UI to the dispatcher as the local operator.
 
-    def __init__(self, handler: Handler) -> None:
-        self._handler = handler
+    The local cli sender is the fixed identity ``local`` (resolved by the dispatcher to
+    the trusted ``admin`` role via the cli connector's ``default_role``).
+    """
+
+    #: Connector id used in the dispatcher / connector registry.
+    NAME = "cli"
+    #: The single local sender id; the operator who owns the terminal.
+    SENDER = "local"
+
+    def __init__(self, dispatch: Dispatch) -> None:
+        self._dispatch = dispatch
 
     def build_app(self) -> App[None]:
-        """Build the Textual chat app wired to the handler. Imports Textual lazily."""
+        """Build the Textual chat app wired to the dispatcher. Imports Textual lazily."""
         from textual.app import App, ComposeResult
         from textual.binding import BindingType
         from textual.containers import VerticalScroll
@@ -41,7 +50,8 @@ class CLIConnector:
             Static,
         )
 
-        handler = self._handler
+        dispatch = self._dispatch
+        sender = self.SENDER
 
         class ChatApp(App):  # type: ignore[type-arg]
             TITLE = constants.APP_NAME
@@ -88,7 +98,7 @@ class CLIConnector:
                     log.scroll_end(animate=False)
 
                 try:
-                    await handler(text, send)
+                    await dispatch(sender, "operator", text, send)
                 finally:
                     await loading.remove()
 

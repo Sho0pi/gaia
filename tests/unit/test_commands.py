@@ -40,6 +40,7 @@ def _ctx(
         memory_service=memory,
         known_souls=lambda: agents or [],
         tools=SimpleNamespace(names=lambda: ["web_fetch", "fs_read"]),
+        users=SimpleNamespace(get=lambda _uid: None),
     )
     return CommandContext(
         args=args,

@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from gaia import constants
-from gaia.connectors.base import Handler, Media, Reply, current_chat
+from gaia.connectors.base import Dispatch, Media, Reply, current_chat
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from neonize.aioze.client import NewAClient
@@ -47,6 +47,20 @@ def _deliverable_chat(source: Any) -> str:
         if getattr(alt, "User", ""):
             return _jid_to_str(alt)
     return _jid_to_str(chat)
+
+
+def _sender_jid(source: Any) -> str:
+    """The phone-number JID of *who sent* the message — the identity key.
+
+    For a DM this is the same person as the chat; the proto hides the number behind a
+    ``…@lid`` ``Sender``, so prefer ``SenderAlt`` (the real number) when present. In a
+    group the chat is shared but the sender is the individual, so always use the sender.
+    """
+    alt = getattr(source, "SenderAlt", None)
+    if getattr(alt, "User", ""):
+        return _jid_to_str(alt)
+    sender = getattr(source, "Sender", None)
+    return _jid_to_str(sender) if getattr(sender, "User", "") else _deliverable_chat(source)
 
 
 def patch_protobuf_version_guard() -> None:
@@ -102,7 +116,7 @@ def _message_text(message: Any) -> str:
 
 
 class WhatsAppWebConnector:
-    """Bridges regular-account WhatsApp messages to a Gaia handler coroutine.
+    """Bridges regular-account WhatsApp messages to the dispatcher (per-sender identity).
 
     ``transcriber`` (a :class:`gaia.voice.Transcriber`) turns inbound voice notes into
     text for the handler; ``None`` means voice messages are ignored (prior behaviour).
@@ -112,15 +126,15 @@ class WhatsAppWebConnector:
     NAME = "whatsapp"
 
     def __init__(
-        self, session_db: Path, handler: Handler, *, transcriber: Transcriber | None = None
+        self, session_db: Path, dispatch: Dispatch, *, transcriber: Transcriber | None = None
     ) -> None:
         self._session_db = session_db
-        self._handler = handler
+        self._dispatch = dispatch  # channel-bound: (sender_id, name, text, send)
         self._transcriber = transcriber
         self._client: Any = None  # the live client while start() runs (for send_to)
 
     def build_client(self) -> NewAClient:
-        """Create a neonize client wired to the handler.
+        """Create a neonize client wired to the dispatcher.
 
         The session db's parent dir is created if missing. On first connect neonize
         prints a QR code to the terminal; ``PairStatusEv``/``ConnectedEv`` log the
@@ -148,11 +162,12 @@ class WhatsAppWebConnector:
             if not text:
                 text = await self._transcribe_voice(client, message)
             if text:
-                chat = message.Info.MessageSource.Chat  # JID to send media replies to
+                source = message.Info.MessageSource
+                chat = source.Chat  # JID to send media replies to
                 # Record where this turn came from, so scheduling tools (cron) can
                 # capture the chat for later proactive delivery (phone-number JID, not
                 # the undeliverable @lid identity).
-                current_chat.set((self.NAME, _deliverable_chat(message.Info.MessageSource)))
+                current_chat.set((self.NAME, _deliverable_chat(source)))
 
                 async def send(reply: Reply) -> None:
                     # An image reply goes out as a real WhatsApp image; text replies
@@ -164,7 +179,10 @@ class WhatsAppWebConnector:
                     else:
                         await client.reply_message(reply, message)
 
-                await self._handler(text, send)
+                # Identity is the *sender* (who), not the chat (where to reply); they
+                # coincide for DMs, differ in groups. PushName is WhatsApp's display name.
+                name = getattr(message.Info, "Pushname", "") or ""
+                await self._dispatch(_sender_jid(source), name, text, send)
 
         return client
 

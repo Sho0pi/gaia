@@ -19,6 +19,10 @@ def test_default_registry_has_every_builtin() -> None:
         "remember",
         "memories",
         "forget",
+        "users",
+        "approve",
+        "name",
+        "link",
     }
 
 

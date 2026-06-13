@@ -234,7 +234,11 @@ class WhatsAppConnectorConfig(BaseModel):
     )
     group_trigger: GroupTrigger = Field(default_factory=GroupTrigger)
     default_soul: str = Field(default="gaia", description="Soul used for new chats.")
-    default_role: str = Field(default="user", description="Role assigned to senders.")
+    default_role: str = Field(
+        default="guest",
+        description="Role for a first-seen sender (admin/user/guest). 'guest' is gated "
+        "until an admin approves; seed admins via the top-level 'admin' list.",
+    )
 
 
 class CLIConnectorConfig(BaseModel):
@@ -253,6 +257,11 @@ class TelegramConnectorConfig(BaseModel):
     enabled: bool = Field(default=False, description="Run the Telegram connector.")
     token: str | None = Field(
         default=None, description="Bot token; set via env GAIA_TELEGRAM_BOT_TOKEN, not here."
+    )
+    default_role: str = Field(
+        default="guest",
+        description="Role for a first-seen sender (admin/user/guest). 'guest' is gated "
+        "until an admin approves; seed admins via the top-level 'admin' list.",
     )
 
 
@@ -385,7 +394,10 @@ class GaiaConfig(BaseModel):
 
     llm: LLMConfig = Field(default_factory=LLMConfig)
     admin: list[str] = Field(
-        default_factory=list, description="Sender ids with admin privileges (reserved)."
+        default_factory=list,
+        description="Channel-qualified sender ids seeded as admins, e.g. "
+        "'whatsapp:972...@s.whatsapp.net' or 'telegram:12345'. Each is ensured to map to "
+        "an admin user on startup; everyone else is learned at first contact.",
     )
     connectors: ConnectorsConfig = Field(default_factory=ConnectorsConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)

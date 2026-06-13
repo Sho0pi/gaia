@@ -13,7 +13,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from gaia import constants
-from gaia.connectors.base import Handler, Send
+from gaia.connectors.base import Send
 from gaia.logs import log_event
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -40,11 +40,19 @@ class GaiaHandler:
     """
 
     def __init__(
-        self, gaia: Gaia, *, user_id: str = "gaia-user", session_id: str = "gaia-session"
+        self,
+        gaia: Gaia,
+        *,
+        user_id: str = "gaia-user",
+        session_id: str = "gaia-session",
+        role: str = "admin",
     ) -> None:
         self._gaia = gaia
         self._user_id = user_id
         self._session_id = session_id
+        # The caller's role; commands gate on it (e.g. admin-only /approve). Defaults to
+        # admin so single-user / cron / test callers that don't resolve a user are trusted.
+        self._role = role
         self._runner: Any | None = None
         # Auto-ingest buffer: turns accumulate here and flush in batches (by count or
         # age) so mem0's per-add extraction LLM call fires once per batch, not per turn.
@@ -150,6 +158,7 @@ class GaiaHandler:
             registry=registry,
             user_id=self._user_id,
             session_id=self._session_id,
+            role=self._role,
         )
         reply = await command.run(ctx)
         log_event("command_used", command=command.name, status="ok")
@@ -198,7 +207,11 @@ class GaiaHandler:
 
 
 def build_handler(
-    gaia: Gaia, *, user_id: str = "gaia-user", session_id: str = "gaia-session"
-) -> Handler:
-    """Return a :data:`Handler` coroutine that runs ``text`` through Gaia."""
-    return GaiaHandler(gaia, user_id=user_id, session_id=session_id)
+    gaia: Gaia,
+    *,
+    user_id: str = "gaia-user",
+    session_id: str = "gaia-session",
+    role: str = "admin",
+) -> GaiaHandler:
+    """Return a :class:`GaiaHandler` that runs ``text`` through Gaia as ``user_id``."""
+    return GaiaHandler(gaia, user_id=user_id, session_id=session_id, role=role)

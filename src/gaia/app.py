@@ -32,26 +32,27 @@ from gaia.connectors import (
     WhatsAppConnector,
     WhatsAppWebConnector,
 )
-from gaia.connectors.base import Handler
+from gaia.connectors.base import Dispatch
 from gaia.core import Gaia
-from gaia.core.handler import build_handler
+from gaia.core.dispatch import build_dispatcher
 from gaia.logs import setup_logging
 
 logger = logging.getLogger(__name__)
 
 
 def select_connector(
-    settings: Settings, handler: Handler, *, transcriber: Any = None
+    settings: Settings, dispatch: Dispatch, *, transcriber: Any = None
 ) -> WhatsAppConnector | WhatsAppWebConnector:
     """Choose the WhatsApp backend from configured credentials.
 
-    ``transcriber`` (``gaia.voice.Transcriber`` or None) turns inbound voice notes into
-    text on the web backend; the business backend has no voice path yet (webhook, #3).
+    ``dispatch`` is the whatsapp-channel-bound dispatch callable; ``transcriber``
+    (``gaia.voice.Transcriber`` or None) turns inbound voice notes into text on the web
+    backend; the business backend has no voice path yet (webhook, #3).
     """
     if settings.has_whatsapp_business:
         assert settings.whatsapp_phone_id and settings.whatsapp_token  # narrowed by property
-        return WhatsAppConnector(settings.whatsapp_phone_id, settings.whatsapp_token, handler)
-    return WhatsAppWebConnector(settings.whatsapp_session_db, handler, transcriber=transcriber)
+        return WhatsAppConnector(settings.whatsapp_phone_id, settings.whatsapp_token, dispatch)
+    return WhatsAppWebConnector(settings.whatsapp_session_db, dispatch, transcriber=transcriber)
 
 
 def plan_launch(config: GaiaConfig, *, daemon: bool = False) -> list[str]:
@@ -96,7 +97,8 @@ def _run_tui(gaia: Gaia) -> None:
 
     async def _main() -> None:
         async with gaia:
-            await CLIConnector(build_handler(gaia)).run_async()
+            dispatch = build_dispatcher(gaia).for_channel(CLIConnector.NAME)
+            await CLIConnector(dispatch).run_async()
 
     asyncio.run(_main())
 
@@ -232,7 +234,7 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
     shutdown cancel (the re-raised ``CancelledError`` still runs ``__aexit__``).
     """
     async with gaia:
-        handler = build_handler(gaia)
+        dispatcher = build_dispatcher(gaia)
         tasks: list[asyncio.Task[None]] = []
         # Live connectors by name — the cron runner delivers proactive replies through it.
         running: dict[str, Any] = {}
@@ -241,7 +243,9 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
             from gaia.voice import build_transcriber
 
             connector = select_connector(
-                settings, handler, transcriber=build_transcriber(gaia.config)
+                settings,
+                dispatcher.for_channel(WhatsAppWebConnector.NAME),
+                transcriber=build_transcriber(gaia.config),
             )
             if isinstance(connector, WhatsAppWebConnector):
                 tasks.append(asyncio.create_task(connector.start()))
@@ -262,7 +266,7 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
                     "telegram enabled but no token (set GAIA_TELEGRAM_BOT_TOKEN) — skipping"
                 )
             else:
-                telegram = TelegramConnector(token, handler)
+                telegram = TelegramConnector(token, dispatcher.for_channel(TelegramConnector.NAME))
                 tasks.append(asyncio.create_task(telegram.start()))
                 running[TelegramConnector.NAME] = telegram
 
@@ -285,9 +289,7 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
                 scheduler.shutdown()
             # Drain any turns still buffered for memory before the process exits, so a
             # Ctrl-C doesn't drop the tail of the conversation (best-effort).
-            flush = getattr(handler, "flush", None)
-            if flush is not None:
-                await flush()
+            await dispatcher.flush_all()
 
 
 def _start_cron(gaia: Gaia, running: dict[str, Any]) -> Any:

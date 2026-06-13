@@ -52,10 +52,12 @@ def test_plan_launch_daemon_mode(enabled: dict[str, bool], expected: list[str]) 
 
 
 class _FakeConnector:
-    """Stands in for CLIConnector: accepts the handler, run_async() returns at once."""
+    """Stands in for CLIConnector: accepts the dispatch, run_async() returns at once."""
 
-    def __init__(self, handler: object) -> None:
-        self.handler = handler
+    NAME = "cli"
+
+    def __init__(self, dispatch: object) -> None:
+        self.dispatch = dispatch
 
     async def run_async(self) -> None:
         return None
