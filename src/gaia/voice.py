@@ -160,16 +160,27 @@ class Synthesizer:
 
 
 def _wav_to_ogg(wav_path: Path, ogg_path: Path) -> Path:
-    """Transcode a WAV file to ogg/opus with PyAV (bundled by faster-whisper, no ffmpeg)."""
-    import av
+    """Transcode a WAV file to ogg/opus with PyAV (bundled by faster-whisper, no ffmpeg).
 
+    A WhatsApp PTT voice note wants **mono** opus at 48 kHz (opus' native rate); piper
+    renders mono, but the encoder defaults upmix to stereo, so we resample explicitly to
+    mono/48k. Left stereo, neonize's metadata probe still warns ('tags field') but plays.
+    """
+    import av
+    from av.audio.resampler import AudioResampler
+
+    resampler = AudioResampler(format="s16", layout="mono", rate=48000)
     with av.open(str(wav_path)) as src, av.open(str(ogg_path), "w", format="ogg") as dst:
         in_stream = src.streams.audio[0]
-        out_stream = dst.add_stream("libopus")
+        out_stream = dst.add_stream("libopus", rate=48000, layout="mono")
         for frame in src.decode(in_stream):
-            for packet in out_stream.encode(frame):
+            for rframe in resampler.resample(frame):
+                for packet in out_stream.encode(rframe):
+                    dst.mux(packet)
+        for rframe in resampler.resample(None):  # flush the resampler
+            for packet in out_stream.encode(rframe):
                 dst.mux(packet)
-        for packet in out_stream.encode(None):  # flush
+        for packet in out_stream.encode(None):  # flush the encoder
             dst.mux(packet)
     wav_path.unlink(missing_ok=True)
     return ogg_path
