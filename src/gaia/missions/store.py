@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import uuid
 from contextlib import contextmanager
 from datetime import datetime
@@ -99,6 +100,10 @@ class Task(BaseModel):
     created_by: str = ""  # the agent that filed it (gaia / soul key / cron)
     approval_class: str = ""  # spend | book | send_as_me | destructive (gate is P3)
     budget_used: float = 0.0
+    # Where to deliver the result: the chat that filed the task (captured at creation). Empty
+    # falls back to the owner's identity, then the cron.deliver default. (P2 notify.)
+    notify_channel: str = ""
+    notify_chat: str = ""
     created_at: str = Field(default_factory=_now)
     updated_at: str = Field(default_factory=_now)
 
@@ -106,7 +111,13 @@ class Task(BaseModel):
 _COLUMNS = (
     "id, mission_id, parent_id, title, spec, status, assignee, blocked_by, depth, "
     "artifacts, result, notes, owner, created_by, approval_class, budget_used, "
-    "created_at, updated_at"
+    "notify_channel, notify_chat, created_at, updated_at"
+)
+
+#: Columns added after the initial P1 ship — applied to an existing db via idempotent ALTER.
+_MIGRATIONS: tuple[tuple[str, str], ...] = (
+    ("notify_channel", "TEXT NOT NULL DEFAULT ''"),
+    ("notify_chat", "TEXT NOT NULL DEFAULT ''"),
 )
 
 _SCHEMA = """
@@ -127,6 +138,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     created_by TEXT NOT NULL DEFAULT '',
     approval_class TEXT NOT NULL DEFAULT '',
     budget_used REAL NOT NULL DEFAULT 0,
+    notify_channel TEXT NOT NULL DEFAULT '',
+    notify_chat TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -144,22 +157,50 @@ class TaskStore:
         # Gaia). The db file + schema are created lazily on first use, like CronStore.
         self._path = Path(path) if path is not None else constants.TASKS_DB
         self._ready = False
+        self._init_lock = threading.Lock()
+
+    def _ensure_ready(self) -> None:
+        """One-time, thread-safe db setup: WAL (persistent), schema + migration.
+
+        Serialized so concurrent threads can't race the schema/ALTER (which would surface
+        as 'database is locked'). ``journal_mode=WAL`` is a db-level setting stored in the
+        file, so it only needs to run here, not on every connection.
+        """
+        if self._ready:
+            return
+        with self._init_lock:
+            if self._ready:
+                return
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            conn = sqlite3.connect(self._path, isolation_level=None)
+            conn.row_factory = sqlite3.Row  # _migrate reads PRAGMA rows by column name
+            try:
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA busy_timeout=5000")
+                conn.executescript(_SCHEMA)  # CREATE IF NOT EXISTS — idempotent
+                self._migrate(conn)
+            finally:
+                conn.close()
+            self._ready = True
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
-        if not self._ready:
-            self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._ensure_ready()
         conn = sqlite3.connect(self._path, isolation_level=None)  # autocommit
         try:
             conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA busy_timeout=5000")  # wait out a concurrent writer
-            if not self._ready:
-                conn.executescript(_SCHEMA)  # CREATE IF NOT EXISTS — idempotent
-                self._ready = True
             yield conn
         finally:
             conn.close()
+
+    @staticmethod
+    def _migrate(conn: sqlite3.Connection) -> None:
+        """Add post-P1 columns to an existing db (idempotent ALTER; rows preserved)."""
+        have = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)")}
+        for name, decl in _MIGRATIONS:
+            if name not in have:
+                conn.execute(f"ALTER TABLE tasks ADD COLUMN {name} {decl}")
 
     # -- writes ----------------------------------------------------------------------
 
@@ -170,7 +211,8 @@ class TaskStore:
         task.updated_at = _now()
         with self._connect() as conn:
             conn.execute(
-                f"INSERT INTO tasks ({_COLUMNS}) VALUES ({', '.join(['?'] * 18)})",
+                f"INSERT INTO tasks ({_COLUMNS}) "
+                f"VALUES ({', '.join(['?'] * len(_COLUMNS.split(',')))})",
                 _to_row(task),
             )
         return task
@@ -238,16 +280,18 @@ class TaskStore:
         return [_to_task(r) for r in rows]
 
     def ready_tasks(self) -> TaskList:
-        """The dispatcher's inbox (P2): ``inbox`` tasks whose every ``blocked_by`` is done.
+        """The dispatcher's inbox (P2): waiting tasks whose every ``blocked_by`` is done.
 
-        A task with no blockers is immediately ready. Computed in Python (the dep list is a
-        JSON column) — fine at board scale.
+        Considers both ``inbox`` and ``blocked`` tasks (the dispatcher may park a task with
+        unmet deps as ``blocked`` for visibility, then pick it up once they clear). A task
+        with no blockers is immediately ready. Computed in Python (the dep list is a JSON
+        column) — fine at board scale.
         """
-        inbox = self.list(status=TaskStatus.INBOX)
-        if not inbox:
+        waiting = self.list(status=TaskStatus.INBOX) + self.list(status=TaskStatus.BLOCKED)
+        if not waiting:
             return []
         done_ids = {t.id for t in self.list(status=TaskStatus.DONE)}
-        return [t for t in inbox if all(dep in done_ids for dep in t.blocked_by)]
+        return [t for t in waiting if all(dep in done_ids for dep in t.blocked_by)]
 
 
 def _to_row(task: Task) -> tuple[Any, ...]:
@@ -268,6 +312,8 @@ def _to_row(task: Task) -> tuple[Any, ...]:
         task.created_by,
         task.approval_class,
         task.budget_used,
+        task.notify_channel,
+        task.notify_chat,
         task.created_at,
         task.updated_at,
     )

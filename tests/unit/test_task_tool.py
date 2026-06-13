@@ -96,3 +96,17 @@ def test_complete_sets_done_with_result_and_artifacts(tmp_path: Path) -> None:
 def test_get_unknown_id_errors(tmp_path: Path) -> None:
     out = make_task_get(_store(tmp_path))("nope", tool_context=_ctx("itay"))
     assert out["status"] == "error"
+
+
+def test_create_captures_current_chat_as_notify_target(tmp_path: Path) -> None:
+    from gaia.connectors.base import current_chat
+
+    store = _store(tmp_path)
+    token = current_chat.set(("whatsapp", "972@s.whatsapp.net"))
+    try:
+        out = make_task_create(store)("buy flights", tool_context=_ctx("itay"))
+    finally:
+        current_chat.reset(token)
+
+    assert out["task"]["notify_channel"] == "whatsapp"
+    assert out["task"]["notify_chat"] == "972@s.whatsapp.net"

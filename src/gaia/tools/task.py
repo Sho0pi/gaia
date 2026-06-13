@@ -19,6 +19,7 @@ from typing import Any
 
 from google.adk.tools.tool_context import ToolContext
 
+from gaia.connectors.base import current_chat
 from gaia.missions import Task, TaskStatus, TaskStore
 
 #: Tool ids / ADK tool names (match the closure names).
@@ -77,12 +78,16 @@ def make_task_create(store: TaskStore) -> Callable[..., dict[str, Any]]:
         if not title.strip():
             return _err("title must not be empty")
         depth = 0
+        notify_channel, notify_chat = current_chat.get()  # the chat to answer when done
         if parent_id:
             parent = store.get(parent_id)
             if parent is None:
                 return _err(f"no parent task {parent_id!r}")
             depth = parent.depth + 1
             mission_id = mission_id or parent.mission_id
+            # A subtask inherits the parent's reply target when filed outside a live chat.
+            notify_channel = notify_channel or parent.notify_channel
+            notify_chat = notify_chat or parent.notify_chat
         task = store.create(
             Task(
                 title=title.strip(),
@@ -94,6 +99,8 @@ def make_task_create(store: TaskStore) -> Callable[..., dict[str, Any]]:
                 approval_class=approval_class.strip(),
                 owner=_owner(tool_context),
                 created_by="gaia",
+                notify_channel=notify_channel,
+                notify_chat=notify_chat,
             )
         )
         return {"status": "success", "task": task.model_dump(mode="json")}

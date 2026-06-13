@@ -189,6 +189,22 @@ class CronConfig(BaseModel):
     )
 
 
+class MissionsConfig(BaseModel):
+    """The missions task board engine (the dispatcher inside the daemon)."""
+
+    enabled: bool = Field(
+        default=True,
+        description="Run the mission dispatcher inside the daemon — it executes board tasks "
+        "(filed via task_create) on souls and pushes results.",
+    )
+    max_concurrent: int = Field(
+        default=3, description="How many tasks the dispatcher runs in parallel."
+    )
+    poll_seconds: float = Field(
+        default=2.0, description="How often the dispatcher polls the board for ready tasks."
+    )
+
+
 class VoiceConfig(BaseModel):
     """Inbound voice notes: local speech-to-text via faster-whisper (the 'voice' group)."""
 
@@ -410,6 +426,7 @@ class GaiaConfig(BaseModel):
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     browser: BrowserConfig = Field(default_factory=BrowserConfig)
     cron: CronConfig = Field(default_factory=CronConfig)
+    missions: MissionsConfig = Field(default_factory=MissionsConfig)
     voice: VoiceConfig = Field(default_factory=VoiceConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     default_communication_style: str = Field(

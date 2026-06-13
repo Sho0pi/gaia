@@ -14,7 +14,7 @@ from gaia import constants
 from gaia.agents import AgentSpec
 from gaia.config import Settings
 from gaia.core import Gaia
-from gaia.souls.delegate import _run_soul
+from gaia.souls.run import run_soul_agent
 
 pytestmark = [
     pytest.mark.system,
@@ -48,7 +48,7 @@ async def test_soul_writes_html_into_its_workspace(
     )
     soul = gaia.factory.create_or_reuse(spec)
 
-    summary = await _run_soul(
+    summary = await run_soul_agent(
         gaia, soul, spec.key, "Create index.html containing an <h1>Hello</h1>.", "tester"
     )
 
