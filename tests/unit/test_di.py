@@ -21,6 +21,16 @@ from gaia.core import Gaia
 from gaia.di import LifecycleManager
 
 
+@pytest.fixture(autouse=True)
+def _isolate_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep building a real Gaia from leaking into the shared ~/.gaia files.
+
+    `UserStore()` defaults to the constants path, not tmp — so a Gaia built here would seed
+    admins into the real users.json, polluting other tests' clean-home assumptions in CI.
+    """
+    monkeypatch.setattr("gaia.constants.USERS_FILE", tmp_path / "users.json")
+
+
 @pytest.fixture
 def fake_whisper(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub faster_whisper so the transcriber can build without the real model."""

@@ -26,8 +26,10 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 #: playwright-mcp's screenshot tool (the mcp browser backend). Its result is an MCP
 #: ``CallToolResult`` dict (content blocks), not the native tool's ``{"path": ...}``.
 _MCP_SCREENSHOT = "browser_take_screenshot"
-#: Matches a saved image path inside playwright-mcp's text response.
-_IMAGE_PATH_RE = re.compile(r"\S+\.(?:png|jpe?g)", re.IGNORECASE)
+#: Matches a saved image filename/path inside playwright-mcp's text response. It reports
+#: the file as a markdown link, e.g. ``[Screenshot of viewport](./flow.png)`` — the char
+#: class excludes ``[](`` so the match is just the path token.
+_IMAGE_PATH_RE = re.compile(r"[\w./\\-]+\.(?:png|jpe?g)", re.IGNORECASE)
 
 
 def media_for_screenshots(events: list[Any]) -> list[Media]:
@@ -67,19 +69,29 @@ def _screenshot_media(name: str, result: Any) -> Media | None:
 def _mcp_screenshot_path(result: dict[str, Any]) -> Path | None:
     """Extract the saved image file from a playwright-mcp screenshot result.
 
-    Prefers a real file path named in a text block (playwright-mcp saves into the
-    ``--output-dir`` we pin); falls back to decoding an inline base64 image block into
-    the browser workspace so we still deliver the picture if no path is reported.
+    Prefers the file named in a text block. playwright-mcp writes the screenshot relative
+    to its process cwd (which we pin to :func:`gaia.mcp.browser_output_dir`), reporting it
+    as a markdown link like ``[Screenshot of viewport](./flow.png)``; we resolve the
+    token's basename against that workspace. Falls back to decoding an inline base64 image
+    block into the workspace so we still deliver the picture if no path is reported.
     """
+    from gaia.mcp import browser_output_dir
+
     content = result.get("content")
     if not isinstance(content, list):
         return None
+    out = browser_output_dir()
     for item in content:
         if isinstance(item, dict) and item.get("type") == "text":
             for token in _IMAGE_PATH_RE.findall(str(item.get("text", ""))):
-                candidate = Path(token.strip("'\"`.,"))
-                if candidate.is_file():
-                    return candidate
+                # The reported path is relative to the server's cwd; resolve its basename
+                # against the workspace, then accept an absolute path as a fallback.
+                resolved = out / Path(token).name
+                if resolved.is_file():
+                    return resolved
+                absolute = Path(token)
+                if absolute.is_absolute() and absolute.is_file():
+                    return absolute
     for item in content:
         if isinstance(item, dict) and item.get("type") == "image" and item.get("data"):
             from gaia.mcp import browser_output_dir

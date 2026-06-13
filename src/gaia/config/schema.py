@@ -65,6 +65,10 @@ class MCPServerConfig(BaseModel):
     # stdio transport
     command: str | None = Field(default=None, description="stdio: the executable (e.g. 'bunx').")
     args: list[str] = Field(default_factory=list, description="stdio: arguments to the command.")
+    cwd: str | None = Field(
+        default=None,
+        description="stdio: working directory for the server process; empty = gaia's cwd.",
+    )
     env: dict[str, str] = Field(
         default_factory=dict, description="stdio: literal (NON-secret) env vars for the server."
     )
