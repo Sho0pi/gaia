@@ -102,10 +102,14 @@ def msg(
     ctx: typer.Context,
     text: Annotated[str, typer.Argument(help="The message text to send.")],
     user: Annotated[
-        str, typer.Option("--user", help="Sender id, e.g. '972...@s.whatsapp.net' or '12345'.")
+        str,
+        typer.Option(
+            "--user",
+            help="The SENDER id (not a role), e.g. '972...@s.whatsapp.net' or '12345'.",
+        ),
     ],
     channel: Annotated[
-        str, typer.Option("--channel", help="Channel the sender is on.")
+        str, typer.Option("--channel", help="Channel the sender is on (whatsapp/telegram/cli).")
     ] = "whatsapp",
     name: Annotated[str, typer.Option("--name", help="Display name for a first-seen sender.")] = "",
 ) -> None:

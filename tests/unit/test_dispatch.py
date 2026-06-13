@@ -145,6 +145,22 @@ async def test_cli_local_is_trusted_admin(tmp_path: Path, built: list[_FakeHandl
     assert built[0].role == "admin"  # cli default_role
 
 
+async def test_cli_is_admin_even_if_config_says_otherwise(
+    tmp_path: Path, built: list[_FakeHandler]
+) -> None:
+    # The local operator owns the machine — a mis-set connectors.cli.default_role
+    # must never lock them out. cli is always admin, config notwithstanding.
+    gaia = _gaia(tmp_path)
+    gaia.config.connectors.cli.default_role = "guest"  # someone fat-fingers the config
+    d = Dispatcher(gaia)
+    out: list[str] = []
+
+    await d.for_channel("cli")("local", "operator", "hi", await _send_collect(out))
+
+    assert out == ["handled:hi"]  # still not gated
+    assert built[0].role == "admin"
+
+
 async def test_flush_all_drains_every_handler(tmp_path: Path, built: list[_FakeHandler]) -> None:
     gaia = _gaia(tmp_path)
     gaia.users.register("whatsapp", "972@s.whatsapp.net", "Grace", role="user")

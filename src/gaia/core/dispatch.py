@@ -91,9 +91,13 @@ class Dispatcher:
     def _default_role(self, channel: str) -> Role:
         """The role a brand-new sender on ``channel`` gets — the connector's ``default_role``.
 
-        Remote channels default to ``guest`` (gated until approved); the local cli operator
-        is trusted (``admin``). Falls back to ``guest`` for an unconfigured channel.
+        Remote channels default to ``guest`` (gated until approved). The local cli operator
+        owns the machine, so it is **always** ``admin`` — not configurable, so a mis-set
+        ``connectors.cli.default_role`` can never lock the owner out of their own terminal.
+        Falls back to ``guest`` for an unconfigured/unknown channel.
         """
+        if channel == "cli":  # CLIConnector.NAME — the trusted local operator
+            return "admin"
         connectors = self._gaia.config.connectors
         cfg = getattr(connectors, channel, None)
         role = getattr(cfg, "default_role", "guest")
