@@ -248,6 +248,11 @@ class WhatsAppConnectorConfig(BaseModel):
         description="Allowed sender ids; empty = everyone (enforcement is a follow-up).",
     )
     group_trigger: GroupTrigger = Field(default_factory=GroupTrigger)
+    show_active: bool = Field(
+        default=True,
+        description="Look active while working: blue-tick the message and show the 'typing…' "
+        "(or 'recording audio…') indicator for the turn.",
+    )
     default_soul: str = Field(default="gaia", description="Soul used for new chats.")
     default_role: Literal["admin", "user", "guest"] = Field(
         default="guest",

@@ -46,13 +46,15 @@ def select_connector(
     *,
     transcriber: Any = None,
     group_trigger: Any = None,
+    show_active: bool = True,
 ) -> WhatsAppConnector | WhatsAppWebConnector:
     """Choose the WhatsApp backend from configured credentials.
 
     ``dispatch`` is the whatsapp-channel-bound dispatch callable; ``transcriber``
     (``gaia.voice.Transcriber`` or None) turns inbound voice notes into text on the web
     backend; the business backend has no voice path yet (webhook, #3). ``group_trigger``
-    (``gaia.config.GroupTrigger`` or None) drives the web backend's group-chat gating.
+    (``gaia.config.GroupTrigger`` or None) drives the group-chat gating; ``show_active``
+    drives the web backend's blue-tick + "typing…" presence.
     """
     if settings.has_whatsapp_business:
         assert settings.whatsapp_phone_id and settings.whatsapp_token  # narrowed by property
@@ -62,6 +64,7 @@ def select_connector(
         dispatch,
         transcriber=transcriber,
         group_trigger=group_trigger,
+        show_active=show_active,
     )
 
 
@@ -253,11 +256,13 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
         running.clear()
 
         if "whatsapp" in selected:
+            wa_cfg = gaia.config.connectors.whatsapp
             connector = select_connector(
                 settings,
                 dispatcher.for_channel(WhatsAppWebConnector.NAME),
                 transcriber=gaia.container.transcriber(),
-                group_trigger=gaia.config.connectors.whatsapp.group_trigger,
+                group_trigger=wa_cfg.group_trigger,
+                show_active=wa_cfg.show_active,
             )
             if isinstance(connector, WhatsAppWebConnector):
                 tasks.append(asyncio.create_task(connector.start()))

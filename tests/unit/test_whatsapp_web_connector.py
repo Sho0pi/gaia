@@ -49,7 +49,10 @@ def _msg(
             conversation=conversation,
             extendedTextMessage=SimpleNamespace(text=extended, contextInfo=context_info),
         ),
-        Info=SimpleNamespace(MessageSource=SimpleNamespace(Chat="chat-jid")),
+        Info=SimpleNamespace(
+            ID="MSGID",
+            MessageSource=SimpleNamespace(Chat="chat-jid", Sender="sender-jid"),
+        ),
     )
 
 
@@ -71,6 +74,9 @@ class _FakeClient:
         self.images: list[tuple[Any, str, str | None]] = []
         self.connected = False
         self.stopped = False
+        self.reads: list[tuple[str, Any, Any, Any]] = []
+        self.presence: list[tuple[Any, Any, Any]] = []  # (chat, state, media)
+        self.availability: list[Any] = []
 
     async def connect(self) -> None:
         self.connected = True
@@ -101,6 +107,15 @@ class _FakeClient:
             LID=SimpleNamespace(User="lidbot", Server="lid"),
         )
 
+    async def mark_read(self, *ids: str, chat: Any, sender: Any, receipt: Any) -> None:
+        self.reads.append((ids[0], chat, sender, receipt))
+
+    async def send_chat_presence(self, chat: Any, state: Any, media: Any) -> None:
+        self.presence.append((chat, state, media))
+
+    async def send_presence(self, presence: Any) -> None:
+        self.availability.append(presence)
+
 
 @pytest.fixture
 def fake_neonize(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
@@ -114,15 +129,27 @@ def fake_neonize(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     events_mod.MessageEv = message_ev  # type: ignore[attr-defined]
     events_mod.PairStatusEv = pair_status_ev  # type: ignore[attr-defined]
 
+    # neonize.utils: the presence/receipt enums the connector imports lazily.
+    utils_mod = ModuleType("neonize.utils")
+    utils_mod.ReceiptType = SimpleNamespace(READ="read")  # type: ignore[attr-defined]
+    utils_mod.ChatPresence = SimpleNamespace(  # type: ignore[attr-defined]
+        CHAT_PRESENCE_COMPOSING="composing", CHAT_PRESENCE_PAUSED="paused"
+    )
+    utils_mod.ChatPresenceMedia = SimpleNamespace(  # type: ignore[attr-defined]
+        CHAT_PRESENCE_MEDIA_TEXT="text", CHAT_PRESENCE_MEDIA_AUDIO="audio"
+    )
+    utils_mod.Presence = SimpleNamespace(AVAILABLE="available")  # type: ignore[attr-defined]
+
     for name, mod in {
         "neonize": ModuleType("neonize"),
         "neonize.aioze": ModuleType("neonize.aioze"),
         "neonize.aioze.client": client_mod,
         "neonize.aioze.events": events_mod,
+        "neonize.utils": utils_mod,
     }.items():
         monkeypatch.setitem(sys.modules, name, mod)
 
-    return {"MessageEv": message_ev}
+    return {"MessageEv": message_ev, "ConnectedEv": connected_ev}
 
 
 @pytest.mark.parametrize(
@@ -487,3 +514,57 @@ async def test_group_message_handled_when_mentioned(
 
     await client.handlers[fake_neonize["MessageEv"]](client, msg)
     assert seen == ["@gaia status"] and [t for t, _ in client.replies] == ["on it"]
+
+
+# --- read receipts + typing indicator ------------------------------------------------
+
+
+async def test_marks_read_and_shows_typing(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
+    # When Gaia starts a turn: blue-tick the inbound, type while working, clear when done.
+    async def dispatch(_s: str, _n: str, _t: str, send: Send) -> None:
+        await send("hi back")
+
+    client = WhatsAppWebConnector(tmp_path / "wa.db", dispatch).build_client()
+    await client.handlers[fake_neonize["MessageEv"]](client, _msg(conversation="hello"))
+
+    assert client.reads == [("MSGID", "chat-jid", "sender-jid", "read")]  # blue tick
+    # composing first (text media), paused last — the indicator went up then cleared.
+    assert client.presence[0] == ("chat-jid", "composing", "text")
+    assert client.presence[-1] == ("chat-jid", "paused", "text")
+    assert [text for text, _ in client.replies] == ["hi back"]
+
+
+async def test_voice_turn_shows_recording_audio(
+    fake_neonize: dict[str, Any], tmp_path: Path, cache_dir: Path
+) -> None:
+    sys.modules["neonize.aioze.client"].NewAClient = _DownloadClient  # type: ignore[attr-defined]
+
+    async def dispatch(_s: str, _n: str, _t: str, send: Send) -> None:
+        await send("spoken answer")
+
+    connector = WhatsAppWebConnector(tmp_path / "wa.db", dispatch, transcriber=_FakeTranscriber())
+    client = connector.build_client()
+    await client.handlers[fake_neonize["MessageEv"]](client, _voice_msg())
+
+    # voice-in → the indicator uses the audio media ("recording audio…").
+    assert any(state == "composing" and media == "audio" for _c, state, media in client.presence)
+
+
+async def test_presence_announced_on_connect(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
+    client = WhatsAppWebConnector(tmp_path / "wa.db", _noop_dispatch).build_client()
+    await client.handlers[fake_neonize["ConnectedEv"]](client, object())
+    assert client.availability == ["available"]
+
+
+async def test_presence_disabled_makes_no_calls(
+    fake_neonize: dict[str, Any], tmp_path: Path
+) -> None:
+    async def dispatch(_s: str, _n: str, _t: str, send: Send) -> None:
+        await send("ok")
+
+    connector = WhatsAppWebConnector(tmp_path / "wa.db", dispatch, show_active=False)
+    client = connector.build_client()
+    await client.handlers[fake_neonize["ConnectedEv"]](client, object())
+    await client.handlers[fake_neonize["MessageEv"]](client, _msg(conversation="hello"))
+
+    assert client.reads == [] and client.presence == [] and client.availability == []
