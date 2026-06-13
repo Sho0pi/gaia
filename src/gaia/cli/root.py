@@ -107,10 +107,10 @@ def msg(
             "--user",
             help="The SENDER id (not a role), e.g. '972...@s.whatsapp.net' or '12345'.",
         ),
-    ],
+    ] = "local",
     channel: Annotated[
         str, typer.Option("--channel", help="Channel the sender is on (whatsapp/telegram/cli).")
-    ] = "whatsapp",
+    ] = "cli",
     name: Annotated[str, typer.Option("--name", help="Display name for a first-seen sender.")] = "",
 ) -> None:
     """Send one message through the multi-user dispatcher and print the reply.
