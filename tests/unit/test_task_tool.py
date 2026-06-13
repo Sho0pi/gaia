@@ -135,6 +135,20 @@ def test_plan_files_a_dag_with_real_edges(tmp_path: Path) -> None:
     assert store.has_dependents(by_ref["site"]["id"]) is False
 
 
+def test_plan_accepts_python_literal_single_quotes(tmp_path: Path) -> None:
+    # The live bug: the model emitted single-quoted pseudo-JSON, which json.loads rejects.
+    store = _store(tmp_path)
+    plan = (
+        "[{'ref': 'pt', 'title': 'Plan program', 'spec': 'do it'}, "
+        "{'ref': 'site', 'title': 'Build site', 'depends_on': ['pt']}]"
+    )
+    out = make_task_plan(store)(plan, tool_context=_ctx("itay"))
+
+    assert out["status"] == "success"
+    by_ref = {t["ref"]: t for t in out["tasks"]}
+    assert by_ref["site"]["blocked_by"] == [by_ref["pt"]["id"]]
+
+
 def test_plan_rejects_cycle(tmp_path: Path) -> None:
     plan = json.dumps(
         [

@@ -119,6 +119,29 @@ def make_task_create(store: TaskStore) -> Callable[..., dict[str, Any]]:
     return task_create
 
 
+def _parse_plan(plan: Any) -> Any:
+    """Parse the model's plan arg leniently — JSON, a Python-literal string, or already a list.
+
+    Models often emit single-quoted pseudo-JSON (``[{'ref': ...}]``) or ADK may hand the
+    argument through already parsed. Accept all of these; return ``None`` if unparseable.
+    """
+    if isinstance(plan, list):
+        return plan
+    if not isinstance(plan, str):
+        return None
+    text = plan.strip()
+    try:
+        return json.loads(text)
+    except (ValueError, TypeError):
+        pass
+    try:
+        import ast
+
+        return ast.literal_eval(text)  # tolerant of single quotes / Python repr
+    except (ValueError, SyntaxError):
+        return None
+
+
 def _order_refs(plan: list[dict[str, Any]]) -> list[str] | str:
     """Topological order of refs, or an error string (unknown ref / duplicate / cycle)."""
     refs = [str(item.get("ref", "")).strip() for item in plan]
@@ -171,12 +194,11 @@ def make_task_plan(store: TaskStore) -> Callable[..., dict[str, Any]]:
                 [{"ref":"program","title":"Design the A/B gym program","spec":"..."},
                  {"ref":"site","title":"Build the site","spec":"...","depends_on":["program"]}]
         """
-        try:
-            items = json.loads(plan)
-        except (ValueError, TypeError) as exc:
-            return _err(f"plan must be a JSON array of tasks: {exc}")
+        items = _parse_plan(plan)
+        if items is None:
+            return _err("plan must be a JSON (or Python-literal) array of task objects")
         if not isinstance(items, list) or not items:
-            return _err("plan must be a non-empty JSON array")
+            return _err("plan must be a non-empty array")
         if not all(isinstance(i, dict) and str(i.get("title", "")).strip() for i in items):
             return _err("each task needs at least a 'title'")
 
