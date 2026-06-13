@@ -236,8 +236,11 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
     async with gaia:
         dispatcher = build_dispatcher(gaia)
         tasks: list[asyncio.Task[None]] = []
-        # Live connectors by name — the cron runner delivers proactive replies through it.
+        # Live connectors by name — the cron runner delivers proactive replies through it,
+        # and the message_user tool sends to other users through it. Shared onto gaia so
+        # tools (which don't otherwise see connectors) can reach the live senders.
         running: dict[str, Any] = {}
+        gaia.connectors = running
 
         if "whatsapp" in selected:
             connector = select_connector(

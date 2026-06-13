@@ -1,0 +1,83 @@
+"""message_user: resolve a recipient (id/name/raw) and send via the live connector."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+
+from gaia.connectors.base import current_chat
+from gaia.tools.message import make_message_user
+from gaia.users import UserStore
+
+
+class _FakeConnector:
+    def __init__(self) -> None:
+        self.sent: list[tuple[str, Any]] = []
+
+    async def send_to(self, chat: str, reply: Any) -> None:
+        self.sent.append((chat, reply))
+
+
+def _gaia(tmp_path: Path, connectors: dict[str, Any]) -> Any:
+    return SimpleNamespace(users=UserStore(tmp_path / "users.json"), connectors=connectors)
+
+
+async def test_sends_to_known_user_by_id(tmp_path: Path) -> None:
+    wa = _FakeConnector()
+    gaia = _gaia(tmp_path, {"whatsapp": wa})
+    gaia.users.register("whatsapp", "972@s.whatsapp.net", "Grace", role="user")
+
+    tool = make_message_user(gaia)
+    out = await tool("grace", "I love you")
+
+    assert out["status"] == "success"
+    assert wa.sent == [("972@s.whatsapp.net", "I love you")]
+
+
+async def test_resolves_by_display_name(tmp_path: Path) -> None:
+    wa = _FakeConnector()
+    gaia = _gaia(tmp_path, {"whatsapp": wa})
+    gaia.users.register("whatsapp", "972@s.whatsapp.net", "Grace", role="user")
+
+    out = await make_message_user(gaia)("Grace", "hi")
+
+    assert out["status"] == "success"
+    assert wa.sent[0][0] == "972@s.whatsapp.net"
+
+
+async def test_raw_phone_uses_given_channel(tmp_path: Path) -> None:
+    wa = _FakeConnector()
+    gaia = _gaia(tmp_path, {"whatsapp": wa})
+
+    out = await make_message_user(gaia)("111@s.whatsapp.net", "yo", channel="whatsapp")
+
+    assert out["status"] == "success"
+    assert wa.sent == [("111@s.whatsapp.net", "yo")]
+
+
+async def test_channel_not_running_is_clear_error(tmp_path: Path) -> None:
+    gaia = _gaia(tmp_path, {})  # no live connectors (outside the daemon)
+    gaia.users.register("whatsapp", "972@s.whatsapp.net", "Grace", role="user")
+
+    out = await make_message_user(gaia)("grace", "hi")
+
+    assert out["status"] == "error"
+    assert "not running" in out["error_message"]
+
+
+async def test_unknown_recipient_without_channel_errors(tmp_path: Path) -> None:
+    gaia = _gaia(tmp_path, {"whatsapp": _FakeConnector()})
+    current_chat.set(("", ""))  # no ambient channel
+
+    out = await make_message_user(gaia)("nobody", "hi")
+
+    assert out["status"] == "error"
+    assert "unknown recipient" in out["error_message"]
+
+
+async def test_empty_text_rejected(tmp_path: Path) -> None:
+    out = await make_message_user(_gaia(tmp_path, {}))("grace", "   ")
+
+    assert out["status"] == "error"
+    assert "empty" in out["error_message"]

@@ -15,7 +15,7 @@ its config-enabled gate has to run per-access (hot-reload aware). See
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from dependency_injector import providers
 
@@ -68,6 +68,10 @@ class Gaia:
             mcp_toolsets_provider=self.container.mcp_toolsets,
             skill_toolset_provider=self.container.skill_toolsets,
         )
+        # Live proactive senders (connector name → object with ``send_to``), populated
+        # by the launcher once connectors are running. Empty outside the daemon; the
+        # message_user tool degrades with a clear error when a target channel isn't live.
+        self.connectors: dict[str, Any] = {}
         self._closed = False
 
     async def close(self) -> None:
@@ -154,7 +158,10 @@ class Gaia:
             "workspaces), so read/verify/summarize them yourself when the user asks. To "
             "schedule work for later or on a recurring basis (reminders, daily briefs), use "
             "the cron tool — it runs your message at the scheduled time and delivers the "
-            "result to the user's chat."
+            "result to the user's chat. To send a message to a *different* person (not a "
+            "reply to whoever you're talking to), call message_user(recipient, text) — "
+            "recipient may be a known user's name/id or a raw phone; combine it with the "
+            "cron tool for 'in 5 minutes text Grace ...'-style tasks."
         )
         bound = self.config.agents.get("gaia", AgentBinding())
         instruction = attach_skills(base_instruction, bound.skills, self.skills_dir)
@@ -162,9 +169,11 @@ class Gaia:
         instruction = apply_communication_style(instruction, style)
 
         from gaia.souls import make_delegate
+        from gaia.tools.message import make_message_user
 
-        # delegate_to_soul is attached to the root only — souls (built from self.tools)
-        # never receive it, so a soul cannot spawn souls.
+        # delegate_to_soul and message_user are attached to the root only — souls (built
+        # from self.tools) never receive them, so a soul can neither spawn souls nor text
+        # arbitrary users. message_user needs the live connector registry on `self`.
         return LlmAgent(
             name="gaia",
             model=resolve_model(
@@ -177,6 +186,7 @@ class Gaia:
             tools=[
                 *self.tools.all(),
                 make_delegate(self),
+                make_message_user(self),
                 *self.container.mcp_toolsets(),
                 *self.container.skill_toolsets(),
             ],
