@@ -192,3 +192,33 @@ def test_bare_invocation_nothing_selected(home: Path) -> None:
 
     assert result.exit_code == 0
     assert "nothing selected" in result.output
+
+
+async def test_textual_picker_toggles_and_submits() -> None:
+    # The tty path: drive the Textual picker headlessly — space toggles connectors,
+    # the Connect button returns the selected names in display order.
+    from textual.widgets import Button
+
+    app = connect_mod.build_picker()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("space")  # toggle telegram (first, highlighted)
+        await pilot.press("down")
+        await pilot.press("space")  # toggle whatsapp
+        await pilot.pause()
+        app.query_one("#go", Button).press()
+        await pilot.pause()
+
+    assert app.return_value == ["telegram", "whatsapp"]
+
+
+async def test_textual_picker_empty_submit_returns_nothing() -> None:
+    from textual.widgets import Button
+
+    app = connect_mod.build_picker()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.query_one("#go", Button).press()  # confirm with nothing toggled
+        await pilot.pause()
+
+    assert app.return_value == []

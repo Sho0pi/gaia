@@ -23,7 +23,6 @@ dependencies = [
     # The gaia console command (Typer = click + rich help + shell completion).
     "typer>=0.12",
     "rich>=13.0",
-    "questionary>=2.1.1",
     "ruamel-yaml>=0.19.1",
 ]
 
@@ -120,7 +119,7 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "-ra --cov=src/gaia"
+addopts = "-ra"  # coverage runs in CI (--cov=src/gaia); opt in locally with --cov
 markers = [
     "system: needs an external resource (model key, native lib, or browser binary)",
 ]

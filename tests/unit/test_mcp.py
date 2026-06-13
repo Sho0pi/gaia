@@ -26,16 +26,16 @@ def test_stdio_params_merge_literal_and_passthrough_env(monkeypatch: pytest.Monk
     server = MCPServerConfig(
         name="github",
         transport="stdio",
-        command="npx",
-        args=["-y", "@modelcontextprotocol/server-github"],
+        command="bunx",
+        args=["@modelcontextprotocol/server-github"],
         env={"LOG": "debug"},
         env_passthrough=["GH_TOKEN", "MISSING_VAR"],
     )
 
     params = server_to_params(server)
 
-    assert params.server_params.command == "npx"
-    assert params.server_params.args == ["-y", "@modelcontextprotocol/server-github"]
+    assert params.server_params.command == "bunx"
+    assert params.server_params.args == ["@modelcontextprotocol/server-github"]
     # literal env + passthrough copied from the process env; missing var simply skipped.
     assert params.server_params.env == {"LOG": "debug", "GH_TOKEN": "secret-from-env"}
 

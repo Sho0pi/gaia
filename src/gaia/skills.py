@@ -30,6 +30,7 @@ from gaia import constants
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from google.adk.skills import Skill
+    from google.adk.tools.base_toolset import BaseToolset
 
     from gaia.config import GaiaConfig
 
@@ -57,6 +58,32 @@ def load_skill(skills_dir: Path, skill_id: str) -> Skill | None:
     except (FileNotFoundError, ValueError) as exc:
         logger.warning("skill %r not loaded from %s: %s", skill_id, skills_dir, exc)
         return None
+
+
+def build_skill_toolset(skills_dir: Path) -> BaseToolset | None:
+    """Build an ADK ``SkillToolset`` exposing every skill under ``skills_dir`` on demand.
+
+    Returns a toolset that gives the model the progressive-disclosure tools
+    (``list_skills`` / ``load_skill`` / ``load_skill_resource``), so an agent can discover
+    and pull in a skill's instructions only when a task needs them — distinct from the
+    always-on injection of :func:`attach_skills`. ``None`` when the folder is missing or
+    holds no valid skill, so callers never attach an empty toolset. A malformed skill is
+    skipped (warned), never fatal. ADK is imported lazily (heavy-deps convention).
+    """
+    skills_dir = Path(skills_dir)
+    if not skills_dir.is_dir():
+        return None
+    from google.adk.skills import list_skills_in_dir
+    from google.adk.tools.skill_toolset import SkillToolset
+
+    skills: list[Skill] = []
+    for skill_id in list_skills_in_dir(skills_dir):
+        skill = load_skill(skills_dir, skill_id)  # warns + returns None on a bad folder
+        if skill is not None:
+            skills.append(skill)
+    if not skills:
+        return None
+    return SkillToolset(skills=skills)
 
 
 def attach_skills(base_instruction: str, skill_ids: list[str], skills_dir: Path) -> str:

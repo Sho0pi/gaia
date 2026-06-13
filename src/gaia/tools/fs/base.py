@@ -3,7 +3,10 @@
 Every ``fs_*`` tool confines its paths to one :class:`Sandbox`. The sandbox has two roots
 per agent — the agent's workspace (``~/.gaia/agents/<agent>/workspace``) and a scoped
 scratch dir (``/tmp/gaia/<agent>``) — realpath-resolved once so any path that escapes
-them (via ``..``, an absolute path, or a symlink) is rejected.
+them (via ``..``, an absolute path, or a symlink) is rejected. The root orchestrator
+alone also gets the whole agents tree as a root (hierarchical access — see
+``docs/workspace-design.md``), so it can open the deliverables its souls produce while
+each soul stays sealed inside its own workspace.
 """
 
 from __future__ import annotations
@@ -13,6 +16,8 @@ import re
 import subprocess
 from pathlib import Path
 from typing import Any
+
+from gaia import constants
 
 #: Per-read byte cap and result caps for the search tools.
 MAX_READ_BYTES = 10_000_000
@@ -67,9 +72,19 @@ def _safe_dir(agent_name: str) -> str:
 
 
 def sandbox_for(agents_dir: Path, agent_name: str) -> Sandbox:
-    """The sandbox for ``agent_name``: its workspace plus a scoped ``/tmp`` scratch dir."""
+    """The sandbox for ``agent_name``: its workspace plus a scoped ``/tmp`` scratch dir.
+
+    Hierarchical access (issue #121, design in ``docs/workspace-design.md``): the **root
+    orchestrator** additionally gets the whole agents tree as an extra root, so it can
+    read/verify/relay the deliverables ``delegate_to_soul`` reports (each soul's own
+    workspace). Souls stay confined to their own workspace — a confused or
+    prompt-injected soul can never touch a sibling's files.
+    """
     name = _safe_dir(agent_name)
-    return Sandbox(agents_dir / name / "workspace", (Path("/tmp/gaia") / name,))
+    extra: tuple[Path, ...] = (Path("/tmp/gaia") / name,)
+    if name == constants.APP_NAME:  # the root agent ("gaia") owns the whole agents tree
+        extra = (*extra, agents_dir)
+    return Sandbox(agents_dir / name / "workspace", extra)
 
 
 def is_denied(path: Path) -> bool:

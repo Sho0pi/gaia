@@ -1,10 +1,10 @@
 """System test: build a real MCP toolset from a reference server and list its tools.
 
 Triple-gated so CI stays green without the optional bits: skip if the ``mcp`` package
-isn't installed, skip if ``npx`` isn't on PATH, and skip unless ``GAIA_MCP_RUN_LIVE``
-is set (npx downloads packages from the npm registry, which requires network access and
+isn't installed, skip if ``bunx`` isn't on PATH, and skip unless ``GAIA_MCP_RUN_LIVE``
+is set (bunx downloads packages from the registry, which requires network access and
 may be flaky in CI). Spawns ``@modelcontextprotocol/server-everything`` over stdio —
-no gaia code.
+no gaia code. bun is the repo's standard JS runtime (same as the browser backend).
 """
 
 from __future__ import annotations
@@ -24,18 +24,18 @@ pytestmark = pytest.mark.system
 
 @pytest.mark.skipif(
     not os.environ.get("GAIA_MCP_RUN_LIVE"),
-    reason="spawns npx + downloads from npm; set GAIA_MCP_RUN_LIVE to run",
+    reason="spawns bunx + downloads the reference server; set GAIA_MCP_RUN_LIVE to run",
 )
 async def test_real_stdio_server_lists_tools() -> None:
-    if shutil.which("npx") is None:
-        pytest.skip("npx not on PATH (node runtime needed for the reference MCP server)")
+    if shutil.which("bunx") is None:
+        pytest.skip("bunx not on PATH (bun runtime needed for the reference MCP server)")
 
     cfg = MCPConfig(
         servers=[
             MCPServerConfig(
                 name="everything",
-                command="npx",
-                args=["-y", "@modelcontextprotocol/server-everything"],
+                command="bunx",
+                args=["@modelcontextprotocol/server-everything"],
             )
         ]
     )
@@ -46,7 +46,7 @@ async def test_real_stdio_server_lists_tools() -> None:
         tools = await toolsets[0].get_tools()
         assert tools, "the reference server should expose at least one tool"
     finally:
-        await close_mcp_toolsets(toolsets)  # no orphaned npx process
+        await close_mcp_toolsets(toolsets)  # no orphaned bunx process
 
 
 @pytest.mark.skipif(

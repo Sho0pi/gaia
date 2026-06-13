@@ -16,10 +16,13 @@ from gaia.config import Settings
 from gaia.core import Gaia
 from gaia.souls.delegate import _run_soul
 
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("GEMINI_API_KEY"),
-    reason="needs a Gemini key (set GEMINI_API_KEY in .env)",
-)
+pytestmark = [
+    pytest.mark.system,
+    pytest.mark.skipif(
+        not os.environ.get("GEMINI_API_KEY"),
+        reason="needs a Gemini key (set GEMINI_API_KEY in .env)",
+    ),
+]
 
 
 def _gaia(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Gaia:

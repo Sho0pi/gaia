@@ -64,8 +64,9 @@ _DENYLIST: tuple[tuple[re.Pattern[str], str], ...] = (
 _CHAIN_RE = re.compile(r"(;|&&|\|\||\||`|\$\()")
 
 #: Sensible default allowlist (read-ish dev tooling). Overridable via gaia.yaml.
+#: bun/bunx is the repo's standard JS runtime (same as the browser/MCP backends).
 DEFAULT_ALLOWLIST = (
-    "ls", "cat", "echo", "pwd", "git", "python", "python3", "node", "npm",
+    "ls", "cat", "echo", "pwd", "git", "python", "python3", "node", "bun", "bunx",
     "pip", "pip3", "uv", "pytest", "grep", "find", "head", "tail", "wc", "make",
 )  # fmt: skip
 

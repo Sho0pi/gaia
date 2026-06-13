@@ -235,6 +235,62 @@ def test_agents_get_separate_workspaces(tmp_path: Path) -> None:
     assert not (tmp_path / "bob" / "workspace" / "a.txt").exists()
 
 
+# --- hierarchical access (issue #121): root sees all, souls only their own -----------
+
+
+def test_root_agent_reads_a_souls_workspace(tmp_path: Path) -> None:
+    # A soul writes a deliverable; the root agent ("gaia") opens it via the absolute
+    # path delegate_to_soul reports — the whole point of the hierarchical model.
+    make_fs_write(tmp_path)("index.html", "<h1>hi</h1>", tool_context=_Ctx("web_designer"))
+    deliverable = tmp_path / "web_designer" / "workspace" / "index.html"
+
+    out = make_fs_read(tmp_path)(str(deliverable), tool_context=_Ctx("gaia"))
+
+    assert out["status"] == "success"
+    assert "<h1>hi</h1>" in out["content"]
+
+
+def test_root_agent_writes_into_a_souls_workspace(tmp_path: Path) -> None:
+    # rw, not ro: Gaia must be able to clean up / move / combine deliverables.
+    (tmp_path / "web_designer" / "workspace").mkdir(parents=True)  # the soul has run before
+    target = tmp_path / "web_designer" / "workspace" / "note.txt"
+
+    out = make_fs_write(tmp_path)(str(target), "curated", tool_context=_Ctx("gaia"))
+
+    assert out["status"] == "success"
+    assert target.read_text() == "curated"
+
+
+def test_soul_cannot_read_sibling_or_agents_root(tmp_path: Path) -> None:
+    make_fs_write(tmp_path)("a.txt", "secret", tool_context=_Ctx("alice"))
+    sibling = tmp_path / "alice" / "workspace" / "a.txt"
+
+    via_path = make_fs_read(tmp_path)(str(sibling), tool_context=_Ctx("bob"))
+    via_root = make_fs_read(tmp_path)(str(tmp_path), tool_context=_Ctx("bob"))
+
+    assert via_path["status"] == "error"  # a soul stays sealed in its own workspace
+    assert via_root["status"] == "error"
+
+
+def test_root_agent_still_cannot_leave_the_agents_tree(tmp_path: Path) -> None:
+    outside = tmp_path.parent / "outside.txt"
+
+    out = make_fs_read(tmp_path)(str(outside), tool_context=_Ctx("gaia"))
+
+    assert out["status"] == "error"  # wider view is the agents tree, not the host
+
+
+def test_root_agent_deny_list_still_applies(tmp_path: Path) -> None:
+    # Hierarchical access must not weaken the secrets deny-list.
+    env = tmp_path / "web_designer" / "workspace" / ".env"
+    env.parent.mkdir(parents=True)
+    env.write_text("API_KEY=x")
+
+    out = make_fs_read(tmp_path)(str(env), tool_context=_Ctx("gaia"))
+
+    assert out["status"] == "error"
+
+
 # --- fs_glob / fs_grep (need fd / rg) -----------------------------------------------
 
 

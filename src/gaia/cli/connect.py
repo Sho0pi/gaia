@@ -1,20 +1,20 @@
 """``gaia connect`` — interactive connector setup (openclaw-style onboarding).
 
-Bare invocation opens a checkbox multi-select (questionary) over the available
-connectors; each selected one runs its credential flow: a short tutorial, the
-token prompt / QR pairing, an existing-credentials keep-or-replace gate, then the
+Bare invocation opens a Textual checkbox multi-select over the available connectors;
+each selected one runs its credential flow: a short tutorial, the token prompt / QR
+pairing, an existing-credentials keep-or-replace gate, then the
 ``connectors.<name>.enabled`` flip in ``gaia.yaml`` (comment-preserving). Secrets land
 in ``~/.gaia/.env`` (0600), never in yaml. ``gaia connect telegram`` skips the menu.
 
 Testability (issue #105 rule): every interactive step funnels through the small
-``_choose``/prompt helpers — when stdin isn't a tty (CliRunner, pipes) the questionary
-checkbox degrades to a numbered ``typer.prompt``, so all flows run on scripted input.
+``_choose``/prompt helpers — when stdin isn't a tty (CliRunner, pipes) the Textual
+picker degrades to a numbered ``typer.prompt``, so all flows run on scripted input.
 """
 
 from __future__ import annotations
 
 import sys
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Any
 
 import typer
 
@@ -101,18 +101,9 @@ def connect(
 
 
 def _choose() -> list[str]:
-    """Checkbox multi-select (questionary); numbered-prompt fallback off-tty."""
+    """Checkbox multi-select (Textual); numbered-prompt fallback off-tty."""
     if sys.stdin.isatty():  # pragma: no cover - real-terminal path, exercised manually
-        import questionary
-
-        picked = questionary.checkbox(
-            "Which connectors do you want to set up?",
-            choices=[
-                questionary.Choice(f"{name}  ({hint})", value=name)
-                for name, hint in CONNECTORS.items()
-            ],
-        ).ask()
-        return list(picked or [])
+        return _choose_textual()
 
     out = console()
     names = list(CONNECTORS)
@@ -126,6 +117,53 @@ def _choose() -> list[str]:
         if token_.isdigit() and 1 <= int(token_) <= len(names):
             picked.append(names[int(token_) - 1])
     return picked
+
+
+def _choose_textual() -> list[str]:  # pragma: no cover - thin .run() wrapper, see build_picker
+    """Run the Textual picker; ``[]`` if the user quits with Ctrl-C without confirming."""
+    return build_picker().run() or []
+
+
+def build_picker() -> Any:
+    """The Textual connector picker app: space toggles a connector, Connect submits.
+
+    Returns an ``App[list[str]]`` whose ``return_value`` is the selected names. Split out
+    of :func:`_choose_textual` so it can be driven headlessly (Textual ``run_test``)
+    without a real terminal. Textual is imported lazily so the command tree stays light.
+    """
+    from typing import ClassVar
+
+    from textual.app import App, ComposeResult
+    from textual.binding import BindingType
+    from textual.containers import Center
+    from textual.widgets import Button, Footer, Header, Label, SelectionList
+    from textual.widgets.selection_list import Selection
+
+    class _Picker(App[list[str]]):
+        TITLE = "gaia connect"
+        CSS = """
+        SelectionList { height: auto; margin: 1 2; border: round $primary; padding: 1 2; }
+        Label { margin: 1 2 0 2; }
+        #go { margin: 1 2; }
+        """
+        BINDINGS: ClassVar[list[BindingType]] = [("ctrl+c", "quit", "Cancel")]
+
+        def compose(self) -> ComposeResult:
+            yield Header()
+            yield Label("Which connectors do you want to set up? [dim](space toggles)[/]")
+            yield SelectionList[str](
+                *(Selection(f"{name}  ({hint})", name) for name, hint in CONNECTORS.items())
+            )
+            yield Center(Button("Connect", variant="primary", id="go"))
+            yield Footer()
+
+        def on_mount(self) -> None:
+            self.query_one(SelectionList).focus()
+
+        def on_button_pressed(self, _event: Button.Pressed) -> None:
+            self.exit(list(self.query_one(SelectionList).selected))
+
+    return _Picker()
 
 
 # --- telegram -----------------------------------------------------------------------
