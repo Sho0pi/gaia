@@ -195,3 +195,36 @@ def test_default_registry_registers_tool_manager_cleanups(monkeypatch: pytest.Mo
     registry = default_registry(GaiaConfig(browser=BrowserConfig(backend="native")))
 
     assert len(registry._closeables) >= 2  # shell + browser
+
+
+# --- missing-tool visibility (#61) ---------------------------------------------------
+
+
+def test_missing_fd_rg_warned_and_tracked(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    import gaia.tools.registry as reg
+
+    monkeypatch.setattr(reg.shutil, "which", lambda _name: None)  # no fd, no rg
+    with caplog.at_level("WARNING"):
+        registry = default_registry()
+
+    assert "fs_glob" not in registry.names() and "fs_grep" not in registry.names()
+    assert "fs_glob" in registry.missing and "fd" in registry.missing["fs_glob"]
+    assert "fs_grep" in registry.missing and "rg" in registry.missing["fs_grep"]
+    assert any("fs_glob disabled" in r.message for r in caplog.records)
+
+
+def test_web_search_missing_engine_is_tracked() -> None:
+    # web_search enabled (default) but no engine configured → tracked with the hint.
+    registry = default_registry(GaiaConfig())
+    assert "web_search" not in registry.names()
+    assert "web_search" in registry.missing
+    assert "engine" in registry.missing["web_search"]
+
+
+def test_web_search_with_engine_is_registered_and_not_missing() -> None:
+    config = GaiaConfig(tools={"web_search": ToolConfig(engine="duckduckgo")})
+    registry = default_registry(config)
+    assert "web_search" in registry.names()
+    assert "web_search" not in registry.missing

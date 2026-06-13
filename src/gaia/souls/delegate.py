@@ -99,7 +99,7 @@ def make_delegate(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any]]]:
         soul = gaia.factory.create_or_reuse(spec)  # persist (new) + build the ADK agent
         primary = sandbox_for(constants.AGENTS_DIR, spec.key).primary
         before = _snapshot(primary)
-        user_id = getattr(getattr(tool_context, "_invocation_context", None), "user_id", "gaia")
+        user_id = tool_context.user_id or "gaia"  # ADK public ToolContext API
 
         try:
             summary = await asyncio.wait_for(
