@@ -223,11 +223,19 @@ class WhatsAppWebConnector:
 
         @client.event(MessageEv)  # type: ignore[untyped-decorator]
         async def _on_message(client: NewAClient, message: MessageEv) -> None:
+            source = message.Info.MessageSource
+            # Entry trace: confirms an inbound event arrived at all (esp. for groups) before
+            # any text/gate logic — invaluable when "nothing happens" in a group.
+            logger.info(
+                "inbound whatsapp message: group=%s chat=%s sender=%s",
+                getattr(source, "IsGroup", False),
+                _deliverable_chat(source),
+                _sender_jid(source),
+            )
             text = _message_text(message)
             if not text:
                 text = await self._transcribe_voice(client, message)
             if text:
-                source = message.Info.MessageSource
                 if not await self._should_handle(client, message, source):
                     return  # a group message Gaia wasn't addressed in (mention/reply)
                 chat = source.Chat  # JID to send media replies to
@@ -264,7 +272,7 @@ class WhatsAppWebConnector:
         own_jid = await self._ensure_own_jid(client)
         if _group_decision(message, source, own_jid, self._group_trigger):
             return True
-        logger.debug("group message ignored — Gaia not addressed (no mention / reply)")
+        logger.info("group message ignored — Gaia not addressed (no mention / reply)")
         return False
 
     async def _ensure_own_jid(self, client: Any) -> str:
