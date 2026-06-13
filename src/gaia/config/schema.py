@@ -203,9 +203,10 @@ class VoiceConfig(BaseModel):
         "'voice' group + the espeak-ng binary; falls back to text when unavailable.",
     )
     tts_voice: str = Field(
-        default="en_US-lessac-medium",
-        description="piper voice model for spoken replies (downloaded on first use). See "
-        "github.com/OHF-Voice/piper1-gpl for the voice list (e.g. en_US-amy-medium).",
+        default="en_US-ljspeech-high",
+        description="piper voice model for spoken replies (downloaded on first use). Default "
+        "is a high-quality female voice. See github.com/OHF-Voice/piper1-gpl for the voice "
+        "list (e.g. en_US-amy-medium, en_US-hfc_female-medium).",
     )
     model: str = Field(
         default="base",

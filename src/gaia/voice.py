@@ -108,7 +108,7 @@ class Synthesizer:
     WhatsApp wants for a PTT message.
     """
 
-    def __init__(self, voice: str = "en_US-lessac-medium") -> None:
+    def __init__(self, voice: str = "en_US-ljspeech-high") -> None:
         self._voice = voice
         self._model: Any = None
 
