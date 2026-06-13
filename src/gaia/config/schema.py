@@ -218,10 +218,25 @@ class VoiceConfig(BaseModel):
 
 
 class GroupTrigger(BaseModel):
-    """When Gaia should respond inside a group chat."""
+    """When Gaia should respond inside a group chat.
 
+    Default is deliberately quiet: in a group Gaia answers only when it is *addressed*
+    (@mentioned or someone replies to one of its messages) **and** the sender is on the
+    ``allowed_users`` list. An empty list means Gaia stays silent in every group.
+    """
+
+    respond_in_groups: bool = Field(
+        default=True,
+        description="Master switch for group chats; false = ignore all group messages.",
+    )
     mention_only: bool = Field(
-        default=True, description="Only respond in groups when Gaia is mentioned."
+        default=True,
+        description="Only respond in groups when Gaia is @mentioned or replied to.",
+    )
+    allowed_users: list[str] = Field(
+        default_factory=list,
+        description="Sender ids (phone numbers) allowed to trigger Gaia in groups; "
+        "empty = no one (Gaia stays silent in groups).",
     )
 
 
