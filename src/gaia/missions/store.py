@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import uuid
 from contextlib import contextmanager
 from datetime import datetime
@@ -144,19 +145,36 @@ class TaskStore:
         # Gaia). The db file + schema are created lazily on first use, like CronStore.
         self._path = Path(path) if path is not None else constants.TASKS_DB
         self._ready = False
+        self._init_lock = threading.Lock()
+
+    def _ensure_ready(self) -> None:
+        """One-time, thread-safe setup: WAL (persistent) + schema; serialized vs the race.
+
+        Two threads both running the schema init surfaces as 'database is locked'; WAL is a
+        db-level setting, so it only needs running here, not per connection.
+        """
+        if self._ready:
+            return
+        with self._init_lock:
+            if self._ready:
+                return
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            conn = sqlite3.connect(self._path, isolation_level=None)
+            try:
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA busy_timeout=5000")
+                conn.executescript(_SCHEMA)  # CREATE IF NOT EXISTS — idempotent
+            finally:
+                conn.close()
+            self._ready = True
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
-        if not self._ready:
-            self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._ensure_ready()
         conn = sqlite3.connect(self._path, isolation_level=None)  # autocommit
         try:
             conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA busy_timeout=5000")  # wait out a concurrent writer
-            if not self._ready:
-                conn.executescript(_SCHEMA)  # CREATE IF NOT EXISTS — idempotent
-                self._ready = True
             yield conn
         finally:
             conn.close()

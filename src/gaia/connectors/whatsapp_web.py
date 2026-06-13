@@ -11,6 +11,7 @@ unit tests can exercise the wiring without the native whatsmeow binary.
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
 from pathlib import Path
@@ -120,17 +121,31 @@ class WhatsAppWebConnector:
 
     ``transcriber`` (a :class:`gaia.voice.Transcriber`) turns inbound voice notes into
     text for the handler; ``None`` means voice messages are ignored (prior behaviour).
+    ``show_active`` makes Gaia *look active* while it works: it marks an inbound message
+    read (blue tick) the moment it starts and shows the "typing…" (or "recording audio…")
+    indicator for the duration of the turn. Best-effort — degrades silently.
     """
 
     #: Connector id used in cron job channel fields / the daemon's connector registry.
     NAME = "whatsapp"
 
+    #: WhatsApp's "composing" state auto-expires after ~10-25s, so the typing indicator is
+    #: re-sent on this interval until the turn finishes.
+    _TYPING_REFRESH_SECONDS = 8.0
+
     def __init__(
-        self, session_db: Path, dispatch: Dispatch, *, transcriber: Transcriber | None = None
+        self,
+        session_db: Path,
+        dispatch: Dispatch,
+        *,
+        transcriber: Transcriber | None = None,
+        show_active: bool = True,
     ) -> None:
         self._session_db = session_db
         self._dispatch = dispatch  # channel-bound: (sender_id, name, text, send)
         self._transcriber = transcriber
+        # Blue-tick + typing presence always travel together — one flag drives both.
+        self._show_active = show_active
         self._client: Any = None  # the live client while start() runs (for send_to)
 
     def build_client(self) -> NewAClient:
@@ -149,8 +164,17 @@ class WhatsAppWebConnector:
         client = NewAClient(str(self._session_db))
 
         @client.event(ConnectedEv)  # type: ignore[untyped-decorator]
-        async def _on_connected(_client: NewAClient, _event: ConnectedEv) -> None:
+        async def _on_connected(connected: NewAClient, _event: ConnectedEv) -> None:
             logger.info("whatsapp connected")
+            # WhatsApp only delivers our read receipts / typing presence to the other party
+            # once we've announced ourselves available; send it once on connect.
+            if self._show_active:
+                try:
+                    from neonize.utils import Presence
+
+                    await connected.send_presence(Presence.AVAILABLE)
+                except Exception:  # pragma: no cover - presence is best-effort
+                    logger.debug("send_presence(available) failed", exc_info=True)
 
         @client.event(PairStatusEv)  # type: ignore[untyped-decorator]
         async def _on_pair(_client: NewAClient, event: PairStatusEv) -> None:
@@ -159,8 +183,10 @@ class WhatsAppWebConnector:
         @client.event(MessageEv)  # type: ignore[untyped-decorator]
         async def _on_message(client: NewAClient, message: MessageEv) -> None:
             text = _message_text(message)
+            was_voice = False
             if not text:
                 text = await self._transcribe_voice(client, message)
+                was_voice = bool(text)  # inbound was a (transcribed) voice note
             if text:
                 source = message.Info.MessageSource
                 chat = source.Chat  # JID to send media replies to
@@ -179,12 +205,90 @@ class WhatsAppWebConnector:
                     else:
                         await client.reply_message(reply, message)
 
+                # Acknowledge the moment work starts: blue-tick the message and start the
+                # "typing…" indicator (best-effort; never blocks or breaks the turn).
+                await self._mark_read(client, source, message.Info.ID)
+                typing = await self._begin_typing(client, chat, was_voice)
                 # Identity is the *sender* (who), not the chat (where to reply); they
                 # coincide for DMs, differ in groups. PushName is WhatsApp's display name.
                 name = getattr(message.Info, "Pushname", "") or ""
-                await self._dispatch(_sender_jid(source), name, text, send)
+                try:
+                    await self._dispatch(_sender_jid(source), name, text, send)
+                finally:
+                    await self._end_typing(client, chat, typing)
 
         return client
+
+    async def _mark_read(self, client: Any, source: Any, msg_id: str) -> None:
+        """Blue-tick the inbound message (best-effort). Uses the message's own chat/sender.
+
+        Read receipts key off the message's real chat + sender JIDs (not the ``@lid``
+        rewrite used when *sending* media), so the raw inbound JIDs are correct here.
+        """
+        if not self._show_active:
+            return
+        try:
+            from neonize.utils import ReceiptType
+
+            await client.mark_read(
+                msg_id, chat=source.Chat, sender=source.Sender, receipt=ReceiptType.READ
+            )
+        except Exception:  # pragma: no cover - receipts are best-effort
+            logger.debug("mark_read failed", exc_info=True)
+
+    async def _begin_typing(
+        self, client: Any, chat: Any, was_voice: bool
+    ) -> asyncio.Task[None] | None:
+        """Show "typing…" (or "recording audio…" for a voice reply) and keep it alive.
+
+        Sends the first ``composing`` synchronously (so the indicator is up before the turn
+        runs), then returns a task that re-sends it on :attr:`_TYPING_REFRESH_SECONDS` until
+        cancelled by :meth:`_end_typing` — WhatsApp's composing state otherwise expires.
+        """
+        if not self._show_active:
+            return None
+        await self._send_presence(client, chat, composing=True, was_voice=was_voice)
+        return asyncio.create_task(self._typing_loop(client, chat, was_voice))
+
+    async def _typing_loop(self, client: Any, chat: Any, was_voice: bool) -> None:
+        try:
+            while True:
+                await asyncio.sleep(self._TYPING_REFRESH_SECONDS)
+                await self._send_presence(client, chat, composing=True, was_voice=was_voice)
+        except asyncio.CancelledError:  # pragma: no cover - cancelled when the turn ends
+            pass
+
+    async def _end_typing(self, client: Any, chat: Any, typing: asyncio.Task[None] | None) -> None:
+        """Stop the keepalive and clear the indicator (``paused``)."""
+        if typing is not None:
+            typing.cancel()
+            try:
+                await typing
+            except asyncio.CancelledError:  # pragma: no cover - expected on cancel
+                pass
+        if self._show_active:
+            await self._send_presence(client, chat, composing=False, was_voice=False)
+
+    async def _send_presence(
+        self, client: Any, chat: Any, *, composing: bool, was_voice: bool
+    ) -> None:
+        """Send one chat-presence update (best-effort)."""
+        try:
+            from neonize.utils import ChatPresence, ChatPresenceMedia
+
+            state = (
+                ChatPresence.CHAT_PRESENCE_COMPOSING
+                if composing
+                else ChatPresence.CHAT_PRESENCE_PAUSED
+            )
+            media = (
+                ChatPresenceMedia.CHAT_PRESENCE_MEDIA_AUDIO
+                if was_voice
+                else ChatPresenceMedia.CHAT_PRESENCE_MEDIA_TEXT
+            )
+            await client.send_chat_presence(chat, state, media)
+        except Exception:  # pragma: no cover - presence is best-effort
+            logger.debug("send_chat_presence failed", exc_info=True)
 
     async def _transcribe_voice(self, client: Any, message: Any) -> str:
         """Transcript of an inbound voice note, or ``""`` (no audio / no transcriber / error).
