@@ -35,6 +35,20 @@ MAX_BYTES_CAP = 10_000_000
 #: How many redirects to follow before giving up.
 MAX_REDIRECTS = 5
 
+
+def _user_agent() -> str:
+    """``gaia/<version>`` UA, falling back to ``gaia/0`` when the package isn't installed."""
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        return f"gaia/{version('gaia')} (+https://github.com/Sho0pi/gaia)"
+    except PackageNotFoundError:  # pragma: no cover - editable/uninstalled
+        return "gaia/0 (+https://github.com/Sho0pi/gaia)"
+
+
+#: Browser-like request headers — many sites 403 a header-less client.
+_DEFAULT_HEADERS = {"User-Agent": _user_agent(), "Accept": "text/html,*/*"}
+
 #: Only these URL schemes are ever fetched.
 ALLOWED_SCHEMES = frozenset({"http", "https"})
 
@@ -143,7 +157,8 @@ def httpx_fetcher(url: str, max_bytes: int) -> dict[str, str]:
     """
     import httpx
 
-    with httpx.Client(follow_redirects=False, timeout=30.0) as client:
+    # Many sites 403 a bare client; send a real User-Agent + Accept like a browser would.
+    with httpx.Client(follow_redirects=False, timeout=30.0, headers=_DEFAULT_HEADERS) as client:
 
         def send(target: str) -> tuple[int, dict[str, str], str]:
             with client.stream("GET", target) as response:

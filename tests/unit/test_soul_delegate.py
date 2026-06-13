@@ -39,7 +39,8 @@ def _gaia(registry: SoulRegistry) -> Any:
         config=SimpleNamespace(
             llm=SimpleNamespace(
                 model="m", provider="gemini", openai=SimpleNamespace(use_oauth=False)
-            )
+            ),
+            souls=SimpleNamespace(timeout_seconds=300.0),
         ),
         settings=SimpleNamespace(model="m"),
         souls=registry,
@@ -154,3 +155,23 @@ async def test_smith_failure_is_caught(
 
     assert out["status"] == "error"
     assert "soul-smith failed" in out["error_message"]
+
+
+async def test_honors_configured_soul_timeout(
+    env: tuple[Any, list[Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gaia, _ = env
+    gaia.config.souls.timeout_seconds = 0.01  # tiny budget so the slow run trips it
+    _stub_decision(monkeypatch, SoulDecision(action="forge", reason="r", spec=_SPEC))
+
+    async def slow_run(gaia: Any, soul: Any, key: str, task: str, user_id: str) -> str:
+        import asyncio
+
+        await asyncio.sleep(1.0)
+        return "too late"
+
+    monkeypatch.setattr(delegate, "_run_soul", slow_run)
+
+    out = await make_delegate(gaia)("task", tool_context=None)
+
+    assert out["status"] == "error" and "timed out" in out["error_message"]

@@ -104,3 +104,35 @@ def test_pidfile_removed_when_serve_raises(
         app.run_daemon(settings)
 
     assert not pid_file.exists()  # finally cleaned up
+
+
+def test_run_auth_does_not_build_gaia(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    # Logging in must not construct a whole Gaia (tool registry, souls, container) just to
+    # read the logging config — it reads the config supplier directly.
+    monkeypatch.setattr(
+        app, "get_settings", lambda _e=None: Settings(config_path=tmp_path / "g.yaml")
+    )
+    monkeypatch.setattr(app, "setup_logging", lambda *a, **k: None)
+
+    def _boom(*_a: Any, **_k: Any) -> Any:
+        raise AssertionError("run_auth must not build Gaia")
+
+    monkeypatch.setattr(app, "Gaia", _boom)
+    saved: dict[str, Any] = {}
+
+    class _Creds:
+        account_id = "acct-1"
+
+        def save(self) -> None:
+            saved["ok"] = True
+
+    async def _fake_login() -> Any:
+        return _Creds()
+
+    import gaia.providers.openai as openai_pkg
+
+    monkeypatch.setattr(openai_pkg, "login", _fake_login)
+
+    app.run_auth("openai")  # must not raise (Gaia._boom never called)
+
+    assert saved.get("ok") is True
