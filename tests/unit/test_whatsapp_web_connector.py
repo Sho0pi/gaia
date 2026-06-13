@@ -276,7 +276,11 @@ async def test_voice_note_transcribed_to_handler(
 
     await client.handlers[fake_neonize["MessageEv"]](client, _voice_msg())
 
-    assert seen == ["[voice message] what is the weather"]
+    # The transcript leads (so the model acts on it + uses tools); the voice-modality note
+    # trails as an instruction, not a leading "[voice message]" tag that suppressed tools.
+    assert len(seen) == 1
+    assert seen[0].startswith("what is the weather")
+    assert "voice message" in seen[0] and "using your tools" in seen[0]
     saved = cache_dir / "voice" / "VOICE123.ogg"
     assert saved.read_bytes() == b"OGGDATA"  # audio cached under ~/.gaia/cache/voice/
     assert transcriber.paths == [saved]

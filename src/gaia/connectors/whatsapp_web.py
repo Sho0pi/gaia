@@ -263,8 +263,17 @@ class WhatsAppWebConnector:
         if not transcript:
             logger.info("voice note transcribed to empty text — ignored")
             return ""
-        # The prefix tells Gaia the modality, so it answers the spoken content naturally.
-        return f"[voice message] {transcript}"
+        # Hand the spoken words over as a normal request. A *leading* "[voice message]" tag
+        # made the model treat it as casual chat and answer in one shot without ever calling
+        # tools (verified: voice turns skipped web_search etc. that the same typed question
+        # triggered). Put the query first and the modality as a trailing instruction that
+        # explicitly preserves tool use, only asking for a concise (spoken-friendly) answer.
+        return (
+            f"{transcript}\n\n"
+            "(This arrived as a voice message — handle it exactly like a typed request, "
+            "using your tools whenever they help; just keep the reply concise since it will "
+            "be read aloud.)"
+        )
 
     async def start(self) -> None:
         """Connect (prompting a QR scan on first run) and block receiving events.
