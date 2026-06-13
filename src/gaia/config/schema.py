@@ -237,6 +237,14 @@ class WhatsAppConnectorConfig(BaseModel):
         description="Allowed sender ids; empty = everyone (enforcement is a follow-up).",
     )
     group_trigger: GroupTrigger = Field(default_factory=GroupTrigger)
+    read_receipts: bool = Field(
+        default=True,
+        description="Mark an inbound message read (blue tick) when Gaia starts on it.",
+    )
+    typing_indicator: bool = Field(
+        default=True,
+        description="Show the 'typing…' (or 'recording audio…') indicator while Gaia works.",
+    )
     default_soul: str = Field(default="gaia", description="Soul used for new chats.")
     default_role: Literal["admin", "user", "guest"] = Field(
         default="guest",

@@ -41,18 +41,30 @@ logger = logging.getLogger(__name__)
 
 
 def select_connector(
-    settings: Settings, dispatch: Dispatch, *, transcriber: Any = None
+    settings: Settings,
+    dispatch: Dispatch,
+    *,
+    transcriber: Any = None,
+    read_receipts: bool = True,
+    typing_indicator: bool = True,
 ) -> WhatsAppConnector | WhatsAppWebConnector:
     """Choose the WhatsApp backend from configured credentials.
 
     ``dispatch`` is the whatsapp-channel-bound dispatch callable; ``transcriber``
     (``gaia.voice.Transcriber`` or None) turns inbound voice notes into text on the web
-    backend; the business backend has no voice path yet (webhook, #3).
+    backend; the business backend has no voice path yet (webhook, #3). ``read_receipts`` /
+    ``typing_indicator`` drive the web backend's blue-tick + "typing…" presence.
     """
     if settings.has_whatsapp_business:
         assert settings.whatsapp_phone_id and settings.whatsapp_token  # narrowed by property
         return WhatsAppConnector(settings.whatsapp_phone_id, settings.whatsapp_token, dispatch)
-    return WhatsAppWebConnector(settings.whatsapp_session_db, dispatch, transcriber=transcriber)
+    return WhatsAppWebConnector(
+        settings.whatsapp_session_db,
+        dispatch,
+        transcriber=transcriber,
+        read_receipts=read_receipts,
+        typing_indicator=typing_indicator,
+    )
 
 
 def plan_launch(config: GaiaConfig, *, daemon: bool = False) -> list[str]:
@@ -243,10 +255,13 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
         running.clear()
 
         if "whatsapp" in selected:
+            wa_cfg = gaia.config.connectors.whatsapp
             connector = select_connector(
                 settings,
                 dispatcher.for_channel(WhatsAppWebConnector.NAME),
                 transcriber=gaia.container.transcriber(),
+                read_receipts=wa_cfg.read_receipts,
+                typing_indicator=wa_cfg.typing_indicator,
             )
             if isinstance(connector, WhatsAppWebConnector):
                 tasks.append(asyncio.create_task(connector.start()))
