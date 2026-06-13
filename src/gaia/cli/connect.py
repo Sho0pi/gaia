@@ -125,7 +125,8 @@ def _choose_textual() -> list[str]:  # pragma: no cover - thin .run() wrapper, s
 
 
 def build_picker() -> Any:
-    """The Textual connector picker app: space toggles a connector, Connect submits.
+    """A minimal full-screen multi-select (Claude-Code style): ↑/↓ move, space toggles,
+    enter confirms, ctrl+c cancels — no chrome.
 
     Returns an ``App[list[str]]`` whose ``return_value`` is the selected names. Split out
     of :func:`_choose_textual` so it can be driven headlessly (Textual ``run_test``)
@@ -134,34 +135,31 @@ def build_picker() -> Any:
     from typing import ClassVar
 
     from textual.app import App, ComposeResult
-    from textual.binding import BindingType
-    from textual.containers import Center
-    from textual.widgets import Button, Footer, Header, Label, SelectionList
+    from textual.binding import Binding, BindingType
+    from textual.widgets import Label, SelectionList
     from textual.widgets.selection_list import Selection
 
+    class _List(SelectionList[str]):
+        # OptionList binds enter to toggle; override it (priority) so enter = confirm.
+        BINDINGS: ClassVar[list[BindingType]] = [
+            Binding("enter", "submit", "confirm", priority=True),
+        ]
+
+        def action_submit(self) -> None:
+            self.app.exit(list(self.selected))
+
     class _Picker(App[list[str]]):
-        TITLE = "gaia connect"
-        CSS = """
-        SelectionList { height: auto; margin: 1 2; border: round $primary; padding: 1 2; }
-        Label { margin: 1 2 0 2; }
-        #go { margin: 1 2; }
-        """
+        CSS = "_List { border: none; padding: 0 1; } Label { padding: 1 1 0 1; }"
         BINDINGS: ClassVar[list[BindingType]] = [("ctrl+c", "quit", "Cancel")]
 
         def compose(self) -> ComposeResult:
-            yield Header()
-            yield Label("Which connectors do you want to set up? [dim](space toggles)[/]")
-            yield SelectionList[str](
+            yield Label("Which connectors do you want to set up? [dim](space, enter)[/]")
+            yield _List(
                 *(Selection(f"{name}  ({hint})", name) for name, hint in CONNECTORS.items())
             )
-            yield Center(Button("Connect", variant="primary", id="go"))
-            yield Footer()
 
         def on_mount(self) -> None:
-            self.query_one(SelectionList).focus()
-
-        def on_button_pressed(self, _event: Button.Pressed) -> None:
-            self.exit(list(self.query_one(SelectionList).selected))
+            self.query_one(_List).focus()
 
     return _Picker()
 
