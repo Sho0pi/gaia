@@ -52,7 +52,7 @@ class MCPServerConfig(BaseModel):
     """One external MCP (Model Context Protocol) server to attach as tools.
 
     **Trust:** an MCP server is third-party code — a ``stdio`` server spawns a local
-    process (e.g. via ``npx``). Only configure servers you trust. **Secrets:** never put
+    process (e.g. via ``bunx``). Only configure servers you trust. **Secrets:** never put
     api keys in this file; list the env var names in ``env_passthrough`` and export them
     in the environment instead (they're copied into the server's process env).
     """
@@ -63,7 +63,7 @@ class MCPServerConfig(BaseModel):
         default="stdio", description="How to reach the server: stdio (local process), sse, or http."
     )
     # stdio transport
-    command: str | None = Field(default=None, description="stdio: the executable (e.g. 'npx').")
+    command: str | None = Field(default=None, description="stdio: the executable (e.g. 'bunx').")
     args: list[str] = Field(default_factory=list, description="stdio: arguments to the command.")
     env: dict[str, str] = Field(
         default_factory=dict, description="stdio: literal (NON-secret) env vars for the server."
@@ -182,6 +182,34 @@ class CronConfig(BaseModel):
     deliver: CronDeliver = Field(
         default_factory=CronDeliver,
         description="Fallback delivery target for jobs created without a chat (e.g. via the CLI).",
+    )
+
+
+class VoiceConfig(BaseModel):
+    """Inbound voice notes: local speech-to-text via faster-whisper (the 'voice' group)."""
+
+    enabled: bool = Field(
+        default=True,
+        description="Transcribe inbound voice messages and answer them like text "
+        "(needs the 'voice' dep group; ignored when faster-whisper isn't installed).",
+    )
+    model: str = Field(
+        default="base",
+        description="faster-whisper model size: tiny/base/small/medium/large-v3. "
+        "Bigger = better transcripts, slower + more RAM. Weights download on first use.",
+    )
+    language: str | None = Field(
+        default=None,
+        description="Force a transcription language (e.g. 'en', 'he'); empty = auto-detect.",
+    )
+    device: str = Field(
+        default="cpu",
+        description="Where to run the model: 'cpu' (anywhere) or 'cuda' (NVIDIA GPU).",
+    )
+    compute_type: str = Field(
+        default="int8",
+        description="Weight quantisation: 'int8' (smallest/fastest on CPU); GPUs usually "
+        "pair device 'cuda' with 'float16'.",
     )
 
 
@@ -364,6 +392,7 @@ class GaiaConfig(BaseModel):
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     browser: BrowserConfig = Field(default_factory=BrowserConfig)
     cron: CronConfig = Field(default_factory=CronConfig)
+    voice: VoiceConfig = Field(default_factory=VoiceConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     default_communication_style: str = Field(
         default="human", description="Fallback voice for agents (human/caveman/ai)."

@@ -11,14 +11,18 @@ unit tests can exercise the wiring without the native whatsmeow binary.
 
 from __future__ import annotations
 
+import inspect
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from gaia import constants
 from gaia.connectors.base import Handler, Media, Reply, current_chat
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from neonize.aioze.client import NewAClient
+
+    from gaia.voice import Transcriber
 
 logger = logging.getLogger(__name__)
 
@@ -98,14 +102,21 @@ def _message_text(message: Any) -> str:
 
 
 class WhatsAppWebConnector:
-    """Bridges regular-account WhatsApp messages to a Gaia handler coroutine."""
+    """Bridges regular-account WhatsApp messages to a Gaia handler coroutine.
+
+    ``transcriber`` (a :class:`gaia.voice.Transcriber`) turns inbound voice notes into
+    text for the handler; ``None`` means voice messages are ignored (prior behaviour).
+    """
 
     #: Connector id used in cron job channel fields / the daemon's connector registry.
     NAME = "whatsapp"
 
-    def __init__(self, session_db: Path, handler: Handler) -> None:
+    def __init__(
+        self, session_db: Path, handler: Handler, *, transcriber: Transcriber | None = None
+    ) -> None:
         self._session_db = session_db
         self._handler = handler
+        self._transcriber = transcriber
         self._client: Any = None  # the live client while start() runs (for send_to)
 
     def build_client(self) -> NewAClient:
@@ -134,6 +145,8 @@ class WhatsAppWebConnector:
         @client.event(MessageEv)  # type: ignore[untyped-decorator]
         async def _on_message(client: NewAClient, message: MessageEv) -> None:
             text = _message_text(message)
+            if not text:
+                text = await self._transcribe_voice(client, message)
             if text:
                 chat = message.Info.MessageSource.Chat  # JID to send media replies to
                 # Record where this turn came from, so scheduling tools (cron) can
@@ -155,8 +168,43 @@ class WhatsAppWebConnector:
 
         return client
 
+    async def _transcribe_voice(self, client: Any, message: Any) -> str:
+        """Transcript of an inbound voice note, or ``""`` (no audio / no transcriber / error).
+
+        The encrypted audio (ogg/opus) is downloaded to ``~/.gaia/cache/voice/<id>.ogg``
+        and transcribed locally; failures are logged and the message dropped — a bad
+        voice note must never take the connector loop down.
+        """
+        if self._transcriber is None:
+            return ""
+        audio = getattr(message.Message, "audioMessage", None)
+        if audio is None or not getattr(audio, "mediaKey", b""):  # no audio payload
+            return ""
+
+        path = constants.CACHE_DIR / "voice" / f"{message.Info.ID}.ogg"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            await client.download_any(message.Message, str(path))
+            transcript = await self._transcriber.transcribe(path)
+        except Exception:
+            logger.warning("voice note dropped: download/transcription failed", exc_info=True)
+            return ""
+        if not transcript:
+            logger.info("voice note transcribed to empty text — ignored")
+            return ""
+        # The prefix tells Gaia the modality, so it answers the spoken content naturally.
+        return f"[voice message] {transcript}"
+
     async def start(self) -> None:
-        """Connect (prompting a QR scan on first run) and block receiving events."""
+        """Connect (prompting a QR scan on first run) and block receiving events.
+
+        On cancellation (Ctrl-C / ``gaia stop``) the ``finally`` calls :func:`_stop_client`.
+        This is load-bearing: ``idle()`` awaits neonize's background ``connect_task``, whose
+        blocking ``Neonize()`` Go call runs in a **non-daemon** worker thread. A plain
+        ``disconnect()`` only closes the websocket — the worker thread keeps running and the
+        interpreter then hangs forever joining it at exit. ``stop()`` (Go-side ``Stop``) is
+        what actually unblocks that call so the thread can exit.
+        """
         client = self.build_client()
         logger.info("whatsapp starting — scan the QR if prompted (session: %s)", self._session_db)
         await client.connect()
@@ -165,6 +213,7 @@ class WhatsAppWebConnector:
             await client.idle()  # blocks, keeps receiving events
         finally:
             self._client = None
+            await _stop_client(client)
 
     async def send_to(self, chat: str, reply: Reply) -> None:
         """Proactively send ``reply`` to ``chat`` (``user@server``) — used by cron.
@@ -182,3 +231,23 @@ class WhatsAppWebConnector:
             await self._client.send_image(jid, str(reply.path), caption=reply.caption or None)
         else:
             await self._client.send_message(jid, reply)
+
+
+async def _stop_client(client: Any) -> None:
+    """Stop a neonize client so its non-daemon worker thread exits (best-effort).
+
+    Prefers ``stop()`` (``Stop`` — unblocks the blocking Go call AND disconnects); falls
+    back to ``disconnect()`` for any client that lacks it. Tolerates sync or async methods.
+    """
+    for name in ("stop", "disconnect"):
+        method = getattr(client, name, None)
+        if method is None:
+            continue
+        try:
+            result = method()
+            if inspect.isawaitable(result):
+                await result
+            return
+        except Exception:  # pragma: no cover - shutdown best-effort
+            logger.debug("whatsapp %s failed", name, exc_info=True)
+            return

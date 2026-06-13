@@ -7,6 +7,7 @@ root-agent wiring is built lazily in :meth:`Gaia.build_root_agent`.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from gaia.agents import AgentFactory, AgentSpec, SoulRegistry
@@ -14,11 +15,14 @@ from gaia.communication import apply_communication_style
 from gaia.config import ConfigSupplier, Settings, configure_adk_env, get_settings
 from gaia.config.schema import AgentBinding
 from gaia.models import resolve_model
-from gaia.skills import attach_skills, resolve_skills_dir
+from gaia.skills import attach_skills, build_skill_toolset, resolve_skills_dir
 from gaia.tools import default_registry
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from google.adk.agents import LlmAgent
+    from google.adk.tools.base_toolset import BaseToolset
     from google.adk.tools.mcp_tool import McpToolset
 
     from gaia.config import GaiaConfig
@@ -44,9 +48,25 @@ class Gaia:
             default_communication_style=self.config.default_communication_style,
             tool_registry=self.tools,
             mcp_toolsets_provider=self.mcp_toolsets,
+            skill_toolset_provider=self.skill_toolsets,
         )
         self._memory_service: Mem0MemoryService | None = None
         self._mcp: list[McpToolset] | None = None
+        self._skill_toolsets: list[BaseToolset] | None = None
+        self._closed = False
+
+    def skill_toolsets(self) -> list[BaseToolset]:
+        """The on-demand skills toolset (ADK SkillToolset), built once and shared.
+
+        Exposes every skill under ``skills_dir`` to the model via ``list_skills`` /
+        ``load_skill`` (progressive disclosure), so agents can reach the skills folder
+        without each id being pinned. ``[]`` when the folder holds no valid skill.
+        Built lazily so constructing Gaia needs no ADK.
+        """
+        if self._skill_toolsets is None:
+            toolset = build_skill_toolset(self.skills_dir)
+            self._skill_toolsets = [toolset] if toolset is not None else []
+        return self._skill_toolsets
 
     def mcp_toolsets(self) -> list[McpToolset]:
         """The configured external MCP toolsets, built once and shared by root + souls.
@@ -73,11 +93,33 @@ class Gaia:
         return self._mcp
 
     async def close(self) -> None:
-        """Shut down any open MCP toolsets (terminates stdio child processes)."""
+        """Release every async resource on the *running* loop (idempotent, best-effort).
+
+        Covers the stateful tool backends (shell processes, browser sessions) via the
+        registry's ``aclose`` and the MCP stdio child processes. Called from each shutdown
+        path while its loop is still alive, so nothing falls through to the tool managers'
+        ``atexit`` hooks — which run after the loop is gone and raise 'Event loop is closed'.
+        """
+        if self._closed:
+            return
+        self._closed = True
+        await self.tools.aclose()
         if self._mcp:
             from gaia.mcp import close_mcp_toolsets
 
             await close_mcp_toolsets(self._mcp)
+        for toolset in self._skill_toolsets or []:
+            try:
+                await toolset.close()
+            except Exception:  # pragma: no cover - shutdown best-effort
+                logger.debug("skill toolset close failed", exc_info=True)
+
+    async def __aenter__(self) -> Gaia:
+        """``async with Gaia(...):`` — :meth:`close` runs on exit, exceptions included."""
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        await self.close()
 
     @property
     def config(self) -> GaiaConfig:
@@ -136,10 +178,12 @@ class Gaia:
             "designing a website, writing a program), call delegate_to_soul(task) — it finds "
             "the right specialist soul or forges a new one and runs it. When it returns, tell "
             "the user which soul handled it (say so explicitly when 'created' is true), then "
-            "report the workspace path and the list of files the soul produced. To schedule "
-            "work for later or on a recurring basis (reminders, daily briefs), use the cron "
-            "tool — it runs your message at the scheduled time and delivers the result to "
-            "the user's chat."
+            "report the workspace path and the list of files the soul produced. You can open "
+            "those deliverables directly (fs_read takes the absolute paths under the souls' "
+            "workspaces), so read/verify/summarize them yourself when the user asks. To "
+            "schedule work for later or on a recurring basis (reminders, daily briefs), use "
+            "the cron tool — it runs your message at the scheduled time and delivers the "
+            "result to the user's chat."
         )
         bound = self.config.agents.get("gaia", AgentBinding())
         instruction = attach_skills(base_instruction, bound.skills, self.skills_dir)
@@ -159,6 +203,11 @@ class Gaia:
             ),
             description="Root orchestrator that routes tasks to specialized subagents.",
             instruction=instruction,
-            tools=[*self.tools.all(), make_delegate(self), *self.mcp_toolsets()],
+            tools=[
+                *self.tools.all(),
+                make_delegate(self),
+                *self.mcp_toolsets(),
+                *self.skill_toolsets(),
+            ],
             sub_agents=sub_agents,
         )

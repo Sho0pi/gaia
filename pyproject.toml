@@ -74,6 +74,13 @@ browser = [
 mcp = [
     "mcp>=1.0",
 ]
+# Inbound voice messages: local speech-to-text via faster-whisper (CTranslate2
+# Whisper, CPU int8 — Pi-viable). Decodes WhatsApp's ogg/opus through its bundled
+# PyAV, so no ffmpeg binary is needed. Model weights download from Hugging Face on
+# the first transcription. Lazy-imported; gaia runs without it (voice notes ignored).
+voice = [
+    "faster-whisper>=1.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -114,13 +121,14 @@ module = [
     "binaryornot.*",
     "mcp.*",
     "apscheduler.*",
+    "faster_whisper.*",
 ]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "-ra --cov=src/gaia"
+addopts = "-ra"  # coverage runs in CI (--cov=src/gaia); opt in locally with --cov
 markers = [
     "system: needs an external resource (model key, native lib, or browser binary)",
 ]

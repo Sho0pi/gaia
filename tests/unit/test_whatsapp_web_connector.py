@@ -8,6 +8,7 @@ reply) without touching the real library.
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -45,6 +46,17 @@ class _FakeClient:
         self.handlers: dict[Any, Any] = {}
         self.replies: list[tuple[str, Any]] = []
         self.images: list[tuple[Any, str, str | None]] = []
+        self.connected = False
+        self.stopped = False
+
+    async def connect(self) -> None:
+        self.connected = True
+
+    async def idle(self) -> None:
+        await asyncio.Event().wait()  # blocks until the task is cancelled
+
+    async def stop(self) -> None:  # the method that unblocks neonize's Go worker thread
+        self.stopped = True
 
     def event(self, event_type: Any) -> Any:
         def register(fn: Any) -> Any:
@@ -197,3 +209,152 @@ async def test_group_chat_keeps_group_jid(fake_neonize: dict[str, Any], tmp_path
     await client.handlers[fake_neonize["MessageEv"]](client, msg)
 
     assert current_chat.get() == ("whatsapp", "12036302byte@g.us")
+
+
+# --- voice notes ---------------------------------------------------------------------
+
+
+def _voice_msg() -> SimpleNamespace:
+    """A fake MessageEv carrying only an audioMessage (no text)."""
+    msg = _msg()  # empty text fields
+    msg.Message.audioMessage = SimpleNamespace(mediaKey=b"key", seconds=3)
+    msg.Info.ID = "VOICE123"
+    return msg
+
+
+class _FakeTranscriber:
+    def __init__(self, text: str = "what is the weather") -> None:
+        self.text = text
+        self.paths: list[Path] = []
+
+    async def transcribe(self, path: Path) -> str:
+        self.paths.append(path)
+        return self.text
+
+
+class _DownloadClient(_FakeClient):
+    def __init__(self, name: str) -> None:
+        super().__init__(name)
+        self.downloads: list[str] = []
+
+    async def download_any(self, message: Any, path: str) -> None:
+        self.downloads.append(path)
+        Path(path).write_bytes(b"OGGDATA")  # noqa: ASYNC240 - tiny fixture write in a fake
+
+
+@pytest.fixture
+def cache_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    cache = tmp_path / "cache"
+    monkeypatch.setattr("gaia.constants.CACHE_DIR", cache)
+    return cache
+
+
+async def test_voice_note_transcribed_to_handler(
+    fake_neonize: dict[str, Any], tmp_path: Path, cache_dir: Path
+) -> None:
+    sys.modules["neonize.aioze.client"].NewAClient = _DownloadClient  # type: ignore[attr-defined]
+    seen: list[str] = []
+
+    async def handler(text: str, send: Send) -> None:
+        seen.append(text)
+
+    transcriber = _FakeTranscriber()
+    connector = WhatsAppWebConnector(tmp_path / "wa.db", handler, transcriber=transcriber)
+    client = connector.build_client()
+
+    await client.handlers[fake_neonize["MessageEv"]](client, _voice_msg())
+
+    assert seen == ["[voice message] what is the weather"]
+    saved = cache_dir / "voice" / "VOICE123.ogg"
+    assert saved.read_bytes() == b"OGGDATA"  # audio cached under ~/.gaia/cache/voice/
+    assert transcriber.paths == [saved]
+
+
+async def test_voice_note_ignored_without_transcriber(
+    fake_neonize: dict[str, Any], tmp_path: Path, cache_dir: Path
+) -> None:
+    async def handler(_text: str, _send: Send) -> None:  # pragma: no cover - must not run
+        raise AssertionError("voice note must be dropped without a transcriber")
+
+    client = WhatsAppWebConnector(tmp_path / "wa.db", handler).build_client()
+
+    await client.handlers[fake_neonize["MessageEv"]](client, _voice_msg())  # no crash
+
+
+async def test_voice_download_failure_drops_message(
+    fake_neonize: dict[str, Any], tmp_path: Path, cache_dir: Path
+) -> None:
+    class _FailingClient(_FakeClient):
+        async def download_any(self, message: Any, path: str) -> None:
+            raise RuntimeError("media gone")
+
+    sys.modules["neonize.aioze.client"].NewAClient = _FailingClient  # type: ignore[attr-defined]
+
+    async def handler(_text: str, _send: Send) -> None:  # pragma: no cover - must not run
+        raise AssertionError
+
+    connector = WhatsAppWebConnector(tmp_path / "wa.db", handler, transcriber=_FakeTranscriber())
+    client = connector.build_client()
+
+    await client.handlers[fake_neonize["MessageEv"]](client, _voice_msg())  # logged, no crash
+
+
+async def test_text_message_pipeline_unchanged_with_transcriber(
+    fake_neonize: dict[str, Any], tmp_path: Path, cache_dir: Path
+) -> None:
+    seen: list[str] = []
+
+    async def handler(text: str, send: Send) -> None:
+        seen.append(text)
+
+    connector = WhatsAppWebConnector(tmp_path / "wa.db", handler, transcriber=_FakeTranscriber())
+    client = connector.build_client()
+
+    await client.handlers[fake_neonize["MessageEv"]](client, _msg(conversation="plain text"))
+
+    assert seen == ["plain text"]  # no [voice message] prefix, no transcription
+
+
+async def test_start_stops_client_on_cancel(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
+    # The shutdown hang: a cancelled start() must call stop() — disconnect() alone leaves
+    # neonize's blocking Go call parked in a non-daemon thread that wedges interpreter exit.
+    async def handler(_text: str, _send: Send) -> None:  # pragma: no cover - never called
+        raise AssertionError
+
+    connector = WhatsAppWebConnector(tmp_path / "wa.db", handler)
+    captured: dict[str, _FakeClient] = {}
+    real_build = connector.build_client
+
+    def _capture() -> _FakeClient:
+        client = real_build()
+        captured["client"] = client
+        return client
+
+    connector.build_client = _capture  # type: ignore[method-assign]
+
+    task = asyncio.create_task(connector.start())
+    await asyncio.sleep(0)  # let it connect + reach idle()
+    client = captured["client"]
+    assert client.connected is True
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert client.stopped is True  # finally ran stop() on the way out
+
+
+async def test_stop_client_falls_back_to_disconnect() -> None:
+    # A client exposing only disconnect() (no stop) must still be torn down.
+    from gaia.connectors.whatsapp_web import _stop_client
+
+    class _OnlyDisconnect:
+        def __init__(self) -> None:
+            self.disconnected = False
+
+        async def disconnect(self) -> None:
+            self.disconnected = True
+
+    client = _OnlyDisconnect()
+    await _stop_client(client)
+    assert client.disconnected is True
