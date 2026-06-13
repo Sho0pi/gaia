@@ -22,7 +22,7 @@ from gaia.connectors.base import Dispatch, Media, Reply, current_chat
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from neonize.aioze.client import NewAClient
 
-    from gaia.voice import Transcriber
+    from gaia.voice import Synthesizer, Transcriber
 
 logger = logging.getLogger(__name__)
 
@@ -120,17 +120,25 @@ class WhatsAppWebConnector:
 
     ``transcriber`` (a :class:`gaia.voice.Transcriber`) turns inbound voice notes into
     text for the handler; ``None`` means voice messages are ignored (prior behaviour).
+    ``synthesizer`` (a :class:`gaia.voice.Synthesizer`) speaks text replies back as a voice
+    note — but only when the inbound message was itself voice (voice-in → voice-out).
     """
 
     #: Connector id used in cron job channel fields / the daemon's connector registry.
     NAME = "whatsapp"
 
     def __init__(
-        self, session_db: Path, dispatch: Dispatch, *, transcriber: Transcriber | None = None
+        self,
+        session_db: Path,
+        dispatch: Dispatch,
+        *,
+        transcriber: Transcriber | None = None,
+        synthesizer: Synthesizer | None = None,
     ) -> None:
         self._session_db = session_db
         self._dispatch = dispatch  # channel-bound: (sender_id, name, text, send)
         self._transcriber = transcriber
+        self._synthesizer = synthesizer
         self._client: Any = None  # the live client while start() runs (for send_to)
 
     def build_client(self) -> NewAClient:
@@ -159,8 +167,10 @@ class WhatsAppWebConnector:
         @client.event(MessageEv)  # type: ignore[untyped-decorator]
         async def _on_message(client: NewAClient, message: MessageEv) -> None:
             text = _message_text(message)
+            was_voice = False
             if not text:
                 text = await self._transcribe_voice(client, message)
+                was_voice = bool(text)  # inbound was a (transcribed) voice note
             if text:
                 source = message.Info.MessageSource
                 chat = source.Chat  # JID to send media replies to
@@ -170,14 +180,17 @@ class WhatsAppWebConnector:
                 current_chat.set((self.NAME, _deliverable_chat(source)))
 
                 async def send(reply: Reply) -> None:
-                    # An image reply goes out as a real WhatsApp image; text replies
-                    # quote the inbound message as before.
+                    # An image reply goes out as a real WhatsApp image. A text reply to a
+                    # *voice* message is spoken back as a voice note (voice-in → voice-out);
+                    # otherwise it quotes the inbound message as before.
                     if isinstance(reply, Media):
                         await client.send_image(
                             chat, str(reply.path), caption=reply.caption or None
                         )
-                    else:
-                        await client.reply_message(reply, message)
+                        return
+                    if was_voice and await self._speak(client, chat, reply):
+                        return
+                    await client.reply_message(reply, message)
 
                 # Identity is the *sender* (who), not the chat (where to reply); they
                 # coincide for DMs, differ in groups. PushName is WhatsApp's display name.
@@ -185,6 +198,24 @@ class WhatsAppWebConnector:
                 await self._dispatch(_sender_jid(source), name, text, send)
 
         return client
+
+    async def _speak(self, client: Any, chat: Any, text: str) -> bool:
+        """Speak ``text`` as a voice note (PTT); True if sent, False to fall back to text.
+
+        Empty/whitespace replies and synthesis failures fall back so the user still gets the
+        answer; a bad TTS must never swallow the reply or take the loop down.
+        """
+        if self._synthesizer is None or not text.strip():
+            return False
+        try:
+            ogg = await self._synthesizer.synthesize(text)
+            if ogg is None:
+                return False
+            await client.send_audio(chat, str(ogg), ptt=True)
+            return True
+        except Exception:  # pragma: no cover - never lose the reply to a bad voice send
+            logger.warning("voice reply failed; falling back to text", exc_info=True)
+            return False
 
     async def _transcribe_voice(self, client: Any, message: Any) -> str:
         """Transcript of an inbound voice note, or ``""`` (no audio / no transcriber / error).

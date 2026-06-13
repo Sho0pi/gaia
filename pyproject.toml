@@ -79,12 +79,15 @@ browser = [
 mcp = [
     "mcp>=1.0",
 ]
-# Inbound voice messages: local speech-to-text via faster-whisper (CTranslate2
-# Whisper, CPU int8 — Pi-viable). Decodes WhatsApp's ogg/opus through its bundled
-# PyAV, so no ffmpeg binary is needed. Model weights download from Hugging Face on
-# the first transcription. Lazy-imported; gaia runs without it (voice notes ignored).
+# Local voice I/O. IN: speech-to-text via faster-whisper (CTranslate2 Whisper, CPU
+# int8 — Pi-viable; decodes WhatsApp ogg/opus via its bundled PyAV, no ffmpeg). OUT:
+# text-to-speech via piper (the OHF-Voice/piper1-gpl fork) — renders WAV, transcoded to
+# ogg/opus with the same PyAV for a WhatsApp voice note. piper also needs the espeak-ng
+# BINARY on PATH (brew/apt install espeak-ng). All lazy-imported; gaia runs without them
+# (voice notes ignored / replies stay text). Models download on first use.
 voice = [
     "faster-whisper>=1.0",
+    "piper-tts>=1.0",
 ]
 
 [build-system]

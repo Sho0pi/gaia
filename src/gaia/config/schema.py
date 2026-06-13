@@ -190,12 +190,22 @@ class CronConfig(BaseModel):
 
 
 class VoiceConfig(BaseModel):
-    """Inbound voice notes: local speech-to-text via faster-whisper (the 'voice' group)."""
+    """Local voice I/O: speech-to-text in (faster-whisper) + text-to-speech out (piper)."""
 
     enabled: bool = Field(
         default=True,
         description="Transcribe inbound voice messages and answer them like text "
         "(needs the 'voice' dep group; ignored when faster-whisper isn't installed).",
+    )
+    reply_with_voice: bool = Field(
+        default=True,
+        description="Answer a voice message with a voice message (piper TTS). Needs the "
+        "'voice' group + the espeak-ng binary; falls back to text when unavailable.",
+    )
+    tts_voice: str = Field(
+        default="en_US-lessac-medium",
+        description="piper voice model for spoken replies (downloaded on first use). See "
+        "github.com/OHF-Voice/piper1-gpl for the voice list (e.g. en_US-amy-medium).",
     )
     model: str = Field(
         default="base",

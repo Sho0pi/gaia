@@ -29,7 +29,7 @@ from gaia.agents import AgentFactory, SoulRegistry
 from gaia.skills import build_skill_toolset, resolve_skills_dir
 from gaia.tools import default_registry
 from gaia.users import UserStore
-from gaia.voice import build_transcriber
+from gaia.voice import build_synthesizer, build_transcriber
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from pathlib import Path
@@ -41,7 +41,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from gaia.config.store import ConfigSupplier
     from gaia.memory import Mem0MemoryService
     from gaia.tools import ToolRegistry
-    from gaia.voice import Transcriber
+    from gaia.voice import Synthesizer, Transcriber
 
     ToolsetProvider = Callable[[], list[Any]]
 
@@ -197,6 +197,9 @@ class Container(containers.DeclarativeContainer):
 
     transcriber: providers.Singleton[Transcriber | None] = providers.Singleton(
         build_transcriber, config
+    )
+    synthesizer: providers.Singleton[Synthesizer | None] = providers.Singleton(
+        build_synthesizer, config
     )
     memory_service: providers.Singleton[Mem0MemoryService] = providers.Singleton(
         _build_memory_service, settings, config
