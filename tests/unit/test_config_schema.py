@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+from pydantic import ValidationError
+
 from gaia.config import GaiaConfig
 
 # Trimmed version of the prior-art POC from issue #10.
@@ -59,3 +62,20 @@ def test_empty_config_is_all_defaults() -> None:
     assert config.connectors.telegram.enabled is False
     assert config.connectors.whatsapp.group_trigger.mention_only is True
     assert config.default_communication_style == "human"
+
+
+def test_remote_channels_default_to_guest_local_to_admin() -> None:
+    # The access gate hinges on these: a first-seen remote sender must land as 'guest'
+    # (gated) by default; the local TUI operator is trusted ('admin').
+    config = GaiaConfig.model_validate({})
+
+    assert config.connectors.whatsapp.default_role == "guest"
+    assert config.connectors.telegram.default_role == "guest"
+    assert config.connectors.cli.default_role == "admin"
+
+
+def test_invalid_default_role_is_rejected() -> None:
+    # default_role is a typed Literal, so a typo (or a stale 'superuser') fails loudly
+    # at load instead of silently opening or closing the gate.
+    with pytest.raises(ValidationError):
+        GaiaConfig.model_validate({"connectors": {"whatsapp": {"default_role": "superuser"}}})

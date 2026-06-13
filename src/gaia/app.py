@@ -300,3 +300,41 @@ def _start_cron(gaia: Gaia, running: dict[str, Any]) -> Any:
     scheduler = CronScheduler(CronStore(), make_runner(gaia, running))
     scheduler.start()
     return scheduler
+
+
+def send_message(
+    channel: str,
+    sender_id: str,
+    text: str,
+    *,
+    name: str = "",
+    settings: Settings | None = None,
+    env_file: Path | None = None,
+) -> list[str]:
+    """Drive one inbound message through the full dispatch path; return the replies as text.
+
+    Same path a live connector takes: resolve ``channel:sender_id`` → user, gate guests,
+    route to the per-user handler. Powers ``gaia msg`` as a sanity check for the
+    multi-user access gate without a live connector. An **empty list** means the sender
+    was gated (an unknown sender on a guest-default channel, or an explicit guest) — no
+    reply was emitted; a non-empty list is a real model reply for a known user/admin.
+    """
+    from gaia.connectors.base import Reply, as_text
+    from gaia.core.dispatch import build_dispatcher
+
+    settings = settings or get_settings(env_file)
+    gaia = Gaia(settings)
+    setup_logging(settings, gaia.config.logging, console=False)
+
+    async def _run() -> list[str]:
+        replies: list[str] = []
+
+        async def send(reply: Reply) -> None:
+            replies.append(as_text(reply))
+
+        async with gaia:
+            dispatch = build_dispatcher(gaia).for_channel(channel)
+            await dispatch(sender_id, name, text, send)
+        return replies
+
+    return asyncio.run(_run())

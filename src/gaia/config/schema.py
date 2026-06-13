@@ -234,7 +234,7 @@ class WhatsAppConnectorConfig(BaseModel):
     )
     group_trigger: GroupTrigger = Field(default_factory=GroupTrigger)
     default_soul: str = Field(default="gaia", description="Soul used for new chats.")
-    default_role: str = Field(
+    default_role: Literal["admin", "user", "guest"] = Field(
         default="guest",
         description="Role for a first-seen sender (admin/user/guest). 'guest' is gated "
         "until an admin approves; seed admins via the top-level 'admin' list.",
@@ -248,7 +248,9 @@ class CLIConnectorConfig(BaseModel):
         default=False, description="Run the local terminal chat; foreground-exclusive."
     )
     default_soul: str = Field(default="gaia", description="Soul used in the CLI session.")
-    default_role: str = Field(default="admin", description="Role for the local operator.")
+    default_role: Literal["admin", "user", "guest"] = Field(
+        default="admin", description="Role for the local operator."
+    )
 
 
 class TelegramConnectorConfig(BaseModel):
@@ -258,7 +260,7 @@ class TelegramConnectorConfig(BaseModel):
     token: str | None = Field(
         default=None, description="Bot token; set via env GAIA_TELEGRAM_BOT_TOKEN, not here."
     )
-    default_role: str = Field(
+    default_role: Literal["admin", "user", "guest"] = Field(
         default="guest",
         description="Role for a first-seen sender (admin/user/guest). 'guest' is gated "
         "until an admin approves; seed admins via the top-level 'admin' list.",

@@ -98,6 +98,35 @@ def dev(
 
 
 @app.command()
+def msg(
+    ctx: typer.Context,
+    text: Annotated[str, typer.Argument(help="The message text to send.")],
+    user: Annotated[
+        str, typer.Option("--user", help="Sender id, e.g. '972...@s.whatsapp.net' or '12345'.")
+    ],
+    channel: Annotated[
+        str, typer.Option("--channel", help="Channel the sender is on.")
+    ] = "whatsapp",
+    name: Annotated[str, typer.Option("--name", help="Display name for a first-seen sender.")] = "",
+) -> None:
+    """Send one message through the multi-user dispatcher and print the reply.
+
+    Sanity check for the access gate: an unknown sender on a guest-default channel is
+    gated and prints nothing; a known user/admin gets a real model reply. Exits 1 when
+    gated, 0 when a reply came back — so it scripts as a pass/fail check.
+    """
+    from gaia.app import send_message
+
+    replies = send_message(channel, user, text, name=name, env_file=state(ctx).env_file)
+    out = console()
+    if not replies:
+        out.print(f"[yellow]gated[/] — no reply for {channel}:{user} (guest or unknown sender)")
+        raise typer.Exit(code=1)
+    for reply in replies:
+        out.print(reply)
+
+
+@app.command()
 def version(ctx: typer.Context) -> None:
     """Print the gaia version, Python version, and install location."""
     import platform
