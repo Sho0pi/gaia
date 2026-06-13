@@ -222,7 +222,7 @@ class GroupTrigger(BaseModel):
 
     Default is deliberately quiet: in a group Gaia answers only when it is *addressed*
     (@mentioned or someone replies to one of its messages) **and** the sender is on the
-    ``allowed_users`` list. An empty list means Gaia stays silent in every group.
+    connector's ``allow`` list. An empty ``allow`` list means Gaia stays silent in groups.
     """
 
     respond_in_groups: bool = Field(
@@ -232,11 +232,6 @@ class GroupTrigger(BaseModel):
     mention_only: bool = Field(
         default=True,
         description="Only respond in groups when Gaia is @mentioned or replied to.",
-    )
-    allowed_users: list[str] = Field(
-        default_factory=list,
-        description="Sender ids (phone numbers) allowed to trigger Gaia in groups; "
-        "empty = no one (Gaia stays silent in groups).",
     )
 
 
@@ -249,7 +244,8 @@ class WhatsAppConnectorConfig(BaseModel):
     )
     allow: list[str] = Field(
         default_factory=list,
-        description="Allowed sender ids; empty = everyone (enforcement is a follow-up).",
+        description="Allowed sender ids (phone numbers). Used as the allow-list for group "
+        "chats (see group_trigger): empty = no one may trigger Gaia in a group.",
     )
     group_trigger: GroupTrigger = Field(default_factory=GroupTrigger)
     default_soul: str = Field(default="gaia", description="Soul used for new chats.")

@@ -232,7 +232,8 @@ async def test_group_chat_keeps_group_jid(fake_neonize: dict[str, Any], tmp_path
     connector = WhatsAppWebConnector(
         tmp_path / "wa.db",
         _noop_dispatch,
-        group_trigger=GroupTrigger(mention_only=False, allowed_users=["111"]),
+        group_trigger=GroupTrigger(mention_only=False),
+        allowed_users=["111"],
     )
     client = connector.build_client()
     msg = _msg(conversation="hi")
@@ -401,47 +402,50 @@ from gaia.connectors.whatsapp_web import _group_decision  # noqa: E402
 _BOT = "bot@s.whatsapp.net"
 
 
+_ALLOW = ["555"]  # the connector's `allow` list, reused as the group allow-list
+
+
 def _gt(**kw: Any) -> GroupTrigger:
     return GroupTrigger(**kw)
 
 
 def test_group_decision_dm_always_passes() -> None:
     dm = SimpleNamespace(IsGroup=False)
-    assert _group_decision(_msg(conversation="hi"), dm, _BOT, _gt(allowed_users=[])) is True
+    assert _group_decision(_msg(conversation="hi"), dm, _BOT, _gt(), []) is True
 
 
 def test_group_decision_requires_mention_and_allow() -> None:
     src = _group_source("555@s.whatsapp.net")
-    cfg = _gt(allowed_users=["555"])
     # mentioned + allowed → handle
-    assert _group_decision(_msg(mentioned=(_BOT,)), src, _BOT, cfg) is True
+    assert _group_decision(_msg(mentioned=(_BOT,)), src, _BOT, _gt(), _ALLOW) is True
     # mentioned but NOT allowed → drop
-    assert _group_decision(_msg(mentioned=(_BOT,)), src, _BOT, _gt(allowed_users=["999"])) is False
+    assert _group_decision(_msg(mentioned=(_BOT,)), src, _BOT, _gt(), ["999"]) is False
     # allowed but NOT addressed → drop
-    assert _group_decision(_msg(conversation="hello"), src, _BOT, cfg) is False
+    assert _group_decision(_msg(conversation="hello"), src, _BOT, _gt(), _ALLOW) is False
     # empty allow-list → drop even when mentioned
-    assert _group_decision(_msg(mentioned=(_BOT,)), src, _BOT, _gt(allowed_users=[])) is False
+    assert _group_decision(_msg(mentioned=(_BOT,)), src, _BOT, _gt(), []) is False
 
 
 def test_group_decision_reply_to_gaia_counts_as_addressed() -> None:
     src = _group_source("555@s.whatsapp.net")
-    cfg = _gt(allowed_users=["555"])
-    assert _group_decision(_msg(reply_author=_BOT), src, _BOT, cfg) is True
+    assert _group_decision(_msg(reply_author=_BOT), src, _BOT, _gt(), _ALLOW) is True
     # a reply to someone else is not addressing Gaia
-    assert _group_decision(_msg(reply_author="333@s.whatsapp.net"), src, _BOT, cfg) is False
+    assert (
+        _group_decision(_msg(reply_author="333@s.whatsapp.net"), src, _BOT, _gt(), _ALLOW) is False
+    )
 
 
 def test_group_decision_respond_in_groups_off() -> None:
     src = _group_source("555@s.whatsapp.net")
-    cfg = _gt(respond_in_groups=False, allowed_users=["555"])
-    assert _group_decision(_msg(mentioned=(_BOT,)), src, _BOT, cfg) is False
+    cfg = _gt(respond_in_groups=False)
+    assert _group_decision(_msg(mentioned=(_BOT,)), src, _BOT, cfg, _ALLOW) is False
 
 
 def test_group_decision_mention_only_off_allows_any_from_listed_user() -> None:
     src = _group_source("555@s.whatsapp.net")
-    cfg = _gt(mention_only=False, allowed_users=["555"])
+    cfg = _gt(mention_only=False)
     # not addressed, but mention_only is off → a listed user triggers Gaia
-    assert _group_decision(_msg(conversation="hey"), src, _BOT, cfg) is True
+    assert _group_decision(_msg(conversation="hey"), src, _BOT, cfg, _ALLOW) is True
 
 
 async def test_group_message_dropped_end_to_end(
@@ -452,9 +456,7 @@ async def test_group_message_dropped_end_to_end(
     async def dispatch(_s: str, _n: str, text: str, _send: Send) -> None:
         seen.append(text)
 
-    connector = WhatsAppWebConnector(
-        tmp_path / "wa.db", dispatch, group_trigger=GroupTrigger(allowed_users=["555"])
-    )
+    connector = WhatsAppWebConnector(tmp_path / "wa.db", dispatch, allowed_users=["555"])
     client = connector.build_client()
     msg = _msg(conversation="just chatting")  # no mention
     msg.Info.MessageSource = _group_source("555@s.whatsapp.net")
@@ -472,9 +474,7 @@ async def test_group_message_handled_when_mentioned_and_allowed(
         seen.append(text)
         await send("on it")
 
-    connector = WhatsAppWebConnector(
-        tmp_path / "wa.db", dispatch, group_trigger=GroupTrigger(allowed_users=["555"])
-    )
+    connector = WhatsAppWebConnector(tmp_path / "wa.db", dispatch, allowed_users=["555"])
     client = connector.build_client()
     msg = _msg(conversation="@gaia status", mentioned=(_BOT,))
     msg.Info.MessageSource = _group_source("555@s.whatsapp.net")

@@ -62,12 +62,14 @@ def _is_reply_to(message: Any, own_jid: str) -> bool:
     return bool(participant) and _user_part(str(participant)) == _user_part(own_jid)
 
 
-def _group_decision(message: Any, source: Any, own_jid: str, cfg: GroupTrigger) -> bool:
+def _group_decision(
+    message: Any, source: Any, own_jid: str, cfg: GroupTrigger, allowed: list[str]
+) -> bool:
     """Whether Gaia should handle this message given the group policy.
 
     DMs always pass (the gate is group-only). In a group, Gaia responds only when it is
     *addressed* (mentioned or replied-to, when ``mention_only``) **and** the sender is on
-    ``allowed_users`` — an empty allow-list means no one.
+    the connector's ``allow`` list — an empty allow-list means no one.
     """
     if not getattr(source, "IsGroup", False):
         return True
@@ -77,8 +79,8 @@ def _group_decision(message: Any, source: Any, own_jid: str, cfg: GroupTrigger) 
     if cfg.mention_only and not addressed:
         return False
     sender = _sender_jid(source)
-    allowed = {_user_part(a) for a in cfg.allowed_users}
-    return _user_part(sender) in allowed
+    allow = {_user_part(a) for a in allowed}
+    return _user_part(sender) in allow
 
 
 def _jid_to_str(jid: Any) -> str:
@@ -174,8 +176,9 @@ class WhatsAppWebConnector:
 
     ``transcriber`` (a :class:`gaia.voice.Transcriber`) turns inbound voice notes into
     text for the handler; ``None`` means voice messages are ignored (prior behaviour).
-    ``group_trigger`` decides when Gaia answers inside a group chat (mention/reply +
-    allowed-users); ``None`` falls back to the default policy.
+    ``group_trigger`` decides when Gaia answers inside a group chat (mention/reply); the
+    sender must also be on ``allowed_users`` (the connector's ``allow`` list). ``None`` /
+    empty fall back to the default quiet policy.
     """
 
     #: Connector id used in cron job channel fields / the daemon's connector registry.
@@ -188,6 +191,7 @@ class WhatsAppWebConnector:
         *,
         transcriber: Transcriber | None = None,
         group_trigger: GroupTrigger | None = None,
+        allowed_users: list[str] | None = None,
     ) -> None:
         self._session_db = session_db
         self._dispatch = dispatch  # channel-bound: (sender_id, name, text, send)
@@ -197,6 +201,7 @@ class WhatsAppWebConnector:
 
             group_trigger = GroupTrigger()
         self._group_trigger = group_trigger
+        self._allowed_users = allowed_users or []  # the connector's `allow` list (group gate)
         self._own_jid = ""  # the bot's own "user@server"; fetched lazily on first need
         self._client: Any = None  # the live client while start() runs (for send_to)
 
@@ -264,7 +269,7 @@ class WhatsAppWebConnector:
         if not getattr(source, "IsGroup", False):
             return True
         own_jid = await self._ensure_own_jid(client)
-        if _group_decision(message, source, own_jid, self._group_trigger):
+        if _group_decision(message, source, own_jid, self._group_trigger, self._allowed_users):
             return True
         logger.debug("group message ignored (not addressed / sender not allowed)")
         return False
