@@ -37,10 +37,14 @@ def _prompt(task: Task, run: SoulRun) -> str:
         f"Deliverable files are in this workspace: {run.workspace}",
         f"Files produced: {files}",
         "",
-        "Give the user a short, useful summary of what was produced (read the files if "
-        "helpful — you can access the workspace). If the deliverable is a website, OPEN it in "
-        "your browser via its local file path (file://<workspace>/<the .html file>) and take a "
-        "screenshot so they can see it. Do NOT create new tasks or delegate — just present.",
+        "Do ALL of this YOURSELF in THIS turn — you have file access to every soul's "
+        "workspace (use the absolute paths above). Do NOT transfer_to_agent, do NOT "
+        "delegate_to_soul, do NOT create tasks, and do NOT hand off to any specialist: if "
+        "you transfer, the screenshot never reaches the user. Read the files if helpful, then "
+        "give a short, useful summary of what was produced. If the deliverable is a website, "
+        "OPEN it in your browser via its absolute local path "
+        "(file://<workspace>/<the .html file>) and take a screenshot RIGHT AWAY so the user "
+        "sees it — open + screenshot + summarize, all here, then stop.",
     ]
     return "\n".join(parts)
 
