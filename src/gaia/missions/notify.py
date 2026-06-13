@@ -30,6 +30,35 @@ logger = logging.getLogger(__name__)
 #: Suffixes we deliver inline as an image rather than just naming the path.
 _IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".webp")
 
+#: Text deliverables whose *content* we send back (the soul writes the real answer to a
+#: file and only summarizes "done" — the user wants the content, not the filename).
+_TEXT_SUFFIXES = (".md", ".txt", ".html", ".csv", ".json", ".py", ".js", ".ts", ".css", ".yaml")
+
+#: Cap per text artifact and overall, so a huge deliverable doesn't flood the chat.
+_PER_FILE_CHARS = 3000
+_TOTAL_CHARS = 8000
+
+
+def _artifact_text(workspace: str, files: list[str]) -> str:
+    """Read text deliverables and render them as labelled blocks (capped)."""
+    blocks: list[str] = []
+    budget = _TOTAL_CHARS
+    for rel in files:
+        if budget <= 0 or not rel.lower().endswith(_TEXT_SUFFIXES):
+            continue
+        path = Path(workspace) / rel if workspace else Path(rel)
+        try:
+            body = path.read_text(errors="replace")
+        except OSError:
+            continue
+        clipped = body[:_PER_FILE_CHARS]
+        if len(body) > _PER_FILE_CHARS:
+            clipped += "\n… (truncated)"
+        block = f"📄 {rel}\n{clipped}"[:budget]
+        budget -= len(block)
+        blocks.append(block)
+    return "\n\n".join(blocks)
+
 
 def _target(gaia: Gaia, task: Task) -> tuple[str, str] | None:
     """The ``(channel, chat)`` to deliver ``task``'s result to, or ``None`` if undeliverable."""
@@ -46,7 +75,11 @@ def _target(gaia: Gaia, task: Task) -> tuple[str, str] | None:
 
 
 async def notify_result(gaia: Gaia, task: Task, run: SoulRun) -> None:
-    """Best-effort push of a completed task's result + image artifacts to its target chat."""
+    """Best-effort push of a completed task's actual deliverable to its target chat.
+
+    Sends the soul's summary **plus the content of any text deliverables** (the soul writes
+    the real answer to a file and only summarizes "done"), then any image artifacts inline.
+    """
     target = _target(gaia, task)
     if target is None:
         logger.info("mission %s: no delivery target — result stays on the board only", task.id)
@@ -62,7 +95,10 @@ async def notify_result(gaia: Gaia, task: Task, run: SoulRun) -> None:
         return
 
     summary = run.summary.strip() or "(no summary)"
-    text = f"✓ {task.title or task.id} done: {summary}"
+    text = f"✓ {task.title or task.id}\n\n{summary}"
+    body = _artifact_text(run.workspace, run.files)
+    if body:
+        text = f"{text}\n\n{body}"
     try:
         await sender.send_to(chat, text)
         for path in run.files:

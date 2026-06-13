@@ -147,7 +147,15 @@ class Gaia:
             "result to the user's chat. To send a message to a *different* person (not a "
             "reply to whoever you're talking to), call message_user(recipient, text) — "
             "recipient may be a known user's name/id or a raw phone; combine it with the "
-            "cron tool for 'in 5 minutes text Grace ...'-style tasks."
+            "cron tool for 'in 5 minutes text Grace ...'-style tasks.\n"
+            "For multi-step or long-running work that should run in the background and "
+            "survive restarts, use the task board (task_create): a daemon worker runs each "
+            "task on a soul and delivers the result. CRUCIAL for chained work — when one "
+            "step needs another's output, create the upstream task FIRST, read the id from "
+            "its result, then create the dependent task with blocked_by=<that id> (the "
+            "worker feeds the finished upstream result + files into the dependent's run). "
+            "Do not encode the dependency only in prose; set blocked_by, or the steps run "
+            "in parallel and the hand-off won't happen."
         )
         bound = self.config.agents.get("gaia", AgentBinding())
         instruction = attach_skills(base_instruction, bound.skills, self.skills_dir)

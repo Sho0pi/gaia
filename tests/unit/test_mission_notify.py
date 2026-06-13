@@ -80,6 +80,29 @@ async def test_connector_not_running_is_skipped(tmp_path: Path) -> None:
     await notify_result(gaia, task, SoulRun(True, "s", "S", False, summary="done"))  # no raise
 
 
+async def test_text_artifact_content_is_delivered(tmp_path: Path) -> None:
+    # The soul writes the real answer to a file and only summarizes "done" — the push must
+    # carry the file content, not just the summary.
+    (tmp_path / "report.md").write_text("# Plan\nDay 1: Push\nDay 2: Pull\n")
+    wa = _FakeSender()
+    gaia = _gaia({"whatsapp": wa}, UserStore(tmp_path / "u.json"))
+    task = Task(title="research", notify_channel="whatsapp", notify_chat="972@x")
+    run = SoulRun(
+        True,
+        "s",
+        "S",
+        False,
+        summary="Done. Wrote report.md.",
+        workspace=str(tmp_path),
+        files=["report.md"],
+    )
+
+    await notify_result(gaia, task, run)
+
+    msg = wa.sent[0][1]
+    assert "Day 1: Push" in msg and "Day 2: Pull" in msg  # actual content delivered
+
+
 async def test_image_artifacts_sent_as_media(tmp_path: Path) -> None:
     wa = _FakeSender()
     gaia = _gaia({"whatsapp": wa}, UserStore(tmp_path / "u.json"))
