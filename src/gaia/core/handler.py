@@ -85,19 +85,17 @@ class GaiaHandler:
         content = types.Content(role="user", parts=[types.Part(text=text)])
 
         turn_events: list[Any] = []
+        texts: list[str] = []
         try:
             async for event in runner.run_async(
                 user_id=self._user_id, session_id=self._session_id, new_message=content
             ):
                 turn_events.append(event)
-                # A model turn can carry several parts (text, function calls, inline
-                # data). Stream each text part of the final answer as its own reply
-                # instead of joining them, so one inbound message can fan out to many.
+                # Collect the final answer's text parts; they're emitted after the loop so
+                # a screenshot taken this turn can carry the reply as its caption (one
+                # message) rather than arriving as a separate "screenshot" image + text.
                 if event.is_final_response() and event.content and event.content.parts:
-                    for part in event.content.parts:
-                        if part.text:
-                            log_event("message_out", user=self._user_id, chars=len(part.text))
-                            await send(part.text)
+                    texts.extend(part.text for part in event.content.parts if part.text)
         except Exception as exc:
             # A model error (rate limit, outage) or tool fault must not surface as a raw
             # traceback to the user. Log the detail, send a short apology, end the turn.
@@ -106,16 +104,37 @@ class GaiaHandler:
             await send(_friendly_error(exc))
             return
 
-        await self._emit_screenshots(turn_events, send)
+        await self._emit_reply(turn_events, texts, send)
         await self._buffer_turn(turn_events)
 
-    async def _emit_screenshots(self, events: list[Any], send: Send) -> None:
-        """Deliver any screenshots taken this turn as media replies (see core.screenshots)."""
+    async def _emit_reply(self, events: list[Any], texts: list[str], send: Send) -> None:
+        """Send the turn's reply: an image (with the text as its caption) when a screenshot
+        was taken, otherwise the text parts.
+
+        Connectors that support media (WhatsApp) render the image with the caption as one
+        message; text-only connectors degrade the Media to its caption (see ``as_text``),
+        so either way the user gets the words attached to the picture, not a bare path.
+        """
+        from gaia.connectors.base import Media
         from gaia.core.screenshots import media_for_screenshots
 
-        for media in media_for_screenshots(events):
-            log_event("media_out", user=self._user_id, tool="screenshot")
-            await send(media)
+        media = media_for_screenshots(events)
+        if media:
+            # The reply text becomes the first image's caption — one combined message.
+            # Extra screenshots (rare) follow without a caption.
+            caption = "\n".join(t.strip() for t in texts if t.strip())
+            first = media[0]
+            log_event("media_out", user=self._user_id, tool="screenshot", chars=len(caption))
+            await send(Media(first.path, caption=caption or first.caption))
+            for extra in media[1:]:
+                log_event("media_out", user=self._user_id, tool="screenshot")
+                await send(Media(extra.path, caption=""))
+            return
+
+        # No media: stream each text part as its own reply (one inbound can fan out to many).
+        for text in texts:
+            log_event("message_out", user=self._user_id, chars=len(text))
+            await send(text)
 
     def reset_session(self) -> None:
         """Drop the live ADK session and pending memory buffer (used by ``/reset``).

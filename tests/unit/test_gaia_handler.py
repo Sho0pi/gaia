@@ -205,7 +205,7 @@ async def _collect_replies(handler: GaiaHandler, text: str) -> list[Any]:
     return sent
 
 
-async def test_screenshot_result_is_sent_as_media() -> None:
+async def test_screenshot_reply_combines_text_as_caption() -> None:
     from gaia.connectors.base import Media
 
     handler = GaiaHandler(SimpleNamespace(memory_service=None))
@@ -213,10 +213,25 @@ async def test_screenshot_result_is_sent_as_media() -> None:
 
     sent = await _collect_replies(handler, "screenshot google")
 
-    assert "here it is" in sent  # the text reply still streams
+    # One combined message: the image carries the reply text as its caption (no separate
+    # text reply, no "screenshot" placeholder).
+    assert not [r for r in sent if isinstance(r, str)]
     media = [r for r in sent if isinstance(r, Media)]
     assert len(media) == 1
-    assert str(media[0].path) == "/tmp/shot.png" and media[0].caption == "screenshot"
+    assert str(media[0].path) == "/tmp/shot.png"
+    assert media[0].caption == "here it is"
+
+
+async def test_screenshot_without_text_keeps_default_caption() -> None:
+    from gaia.connectors.base import Media
+
+    handler = GaiaHandler(SimpleNamespace(memory_service=None))
+    handler._runner = _FakeRunner([_screenshot_event("/tmp/shot.png")])  # no final text
+
+    sent = await _collect_replies(handler, "screenshot google")
+
+    media = [r for r in sent if isinstance(r, Media)]
+    assert len(media) == 1 and media[0].caption == "screenshot"  # falls back when no text
 
 
 async def test_failed_screenshot_is_not_sent() -> None:
@@ -293,6 +308,7 @@ async def test_mcp_screenshot_markdown_link_resolved_against_workspace(
     media = [r for r in sent if isinstance(r, Media)]
     assert len(media) == 1
     assert media[0].path == shot
+    assert media[0].caption == "done"  # the reply text rides as the caption
 
 
 async def test_mcp_screenshot_inline_image_is_written_and_sent(
