@@ -8,6 +8,7 @@ unit-testable without a model backend.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from typing import TYPE_CHECKING, Any
@@ -58,6 +59,9 @@ class GaiaHandler:
         # age) so mem0's per-add extraction LLM call fires once per batch, not per turn.
         self._buffer: list[Any] = []
         self._buffer_started: float | None = None
+        # The in-flight background ingest, if any. Threshold flushes run off the turn's
+        # critical path so mem0's extraction LLM call never delays the next reply.
+        self._flush_task: asyncio.Task[None] | None = None
 
     async def _ensure_runner(self) -> Any:
         from google.adk.runners import Runner
@@ -198,16 +202,33 @@ class GaiaHandler:
         memory = self._gaia.config.memory
         age = time.monotonic() - self._buffer_started
         if len(self._buffer) >= memory.ingest_batch_size or age >= memory.ingest_interval_seconds:
-            # The reply is already streamed, so awaiting the flush here only delays the
-            # next turn slightly and keeps the batch boundary deterministic.
-            await self.flush()
+            # Drain in the background: mem0's extraction LLM call must not sit on the
+            # critical path between this reply and the next inbound turn (one handler
+            # serves one conversation, so an awaited flush would delay the next message).
+            self._schedule_flush()
+
+    def _schedule_flush(self) -> None:
+        """Kick off a background ingest, unless one is already draining the buffer."""
+        if self._flush_task is not None and not self._flush_task.done():
+            return
+        self._flush_task = asyncio.create_task(self._drain())
 
     async def flush(self) -> None:
         """Ingest the buffered turns into long-term memory and clear the buffer.
 
+        Blocks until memory is durable — called on shutdown and ``/reset`` where the
+        caller wants the buffer drained before proceeding. Awaits any in-flight
+        background ingest first so nothing is lost.
+        """
+        if self._flush_task is not None and not self._flush_task.done():
+            await self._flush_task
+        await self._drain()
+
+    async def _drain(self) -> None:
+        """Send the buffered turns to long-term memory and clear the buffer.
+
         Best-effort: the reply is already sent, so a mem0 hiccup is logged and swallowed
-        rather than surfaced. Called on the batch threshold and on shutdown. No-op when
-        memory is off or the buffer is empty.
+        rather than surfaced. No-op when memory is off or the buffer is empty.
         """
         service = self._gaia.memory_service
         if service is None or not self._buffer:

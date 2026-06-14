@@ -153,7 +153,9 @@ async def test_buffers_until_batch_size_then_flushes_once() -> None:
     assert gaia.memory_service.calls == []  # 1 < 2 buffered, nothing ingested yet
 
     await _collect(handler, "msg 2")
-    assert len(gaia.memory_service.calls) == 1  # threshold reached → single flush
+    assert handler._flush_task is not None  # threshold reached → background ingest kicked off
+    await handler._flush_task  # the drain runs off the turn's critical path
+    assert len(gaia.memory_service.calls) == 1  # single flush
     assert len(gaia.memory_service.calls[0]["events"]) == 2  # both turns in one batch
     assert handler._buffer == []  # buffer drained
 
