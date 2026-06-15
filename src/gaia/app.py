@@ -19,6 +19,7 @@ import signal
 from pathlib import Path
 from typing import Any
 
+from gaia import constants
 from gaia.config import (
     BACKGROUND_CONNECTORS,
     GaiaConfig,
@@ -33,6 +34,7 @@ from gaia.connectors import (
     WhatsAppWebConnector,
 )
 from gaia.connectors.base import Dispatch
+from gaia.connectors.socket import DaemonNotRunningError, SocketChatClient, SocketConnector
 from gaia.core import Gaia
 from gaia.core.dispatch import build_dispatcher
 from gaia.logs import setup_logging
@@ -92,26 +94,25 @@ def plan_launch(config: GaiaConfig, *, daemon: bool = False) -> list[str]:
 
 
 def run_cli(settings: Settings | None = None, *, env_file: Path | None = None) -> None:
-    """Launch the local inline CLI frontend and chat with Gaia in the terminal."""
-    settings = settings or get_settings(env_file)
-    gaia = Gaia(settings)
-    # The foreground chat owns the prompt, so console log handlers would draw over it.
-    setup_logging(settings, gaia.config.logging, console=False)
-    _run_tui(gaia)
+    """Launch the local inline CLI client and attach to the running daemon."""
+    if settings is None:
+        get_settings(env_file)  # preserve env-file loading/validation side effects
+    _run_tui(constants.SOCKET_FILE)
 
 
-def _run_tui(gaia: Gaia) -> None:
-    """Run the inline chat with Gaia's lifetime scoped to the loop that hosts it.
-
-    ``async with gaia`` guarantees the async resources (browser/shell/MCP) are closed
-    on the same still-alive loop the app ran on — quit, Ctrl-C, or crash alike.
-    Closing on a *different* loop afterwards is what raised 'Event loop is closed'.
-    """
+def _run_tui(socket_path: Path) -> None:
+    """Run the inline chat as a client of the daemon socket."""
 
     async def _main() -> None:
-        async with gaia:
-            dispatch = build_dispatcher(gaia).for_channel(CLIConnector.NAME)
-            await CLIConnector(dispatch).run_async()
+        client = SocketChatClient(socket_path)
+        try:
+            await client.ensure_available()
+        except DaemonNotRunningError as exc:
+            from gaia.cli._console import console
+
+            console().print(str(exc))
+            raise SystemExit(3) from exc
+        await CLIConnector(client.dispatch).run_async()
 
     asyncio.run(_main())
 
@@ -167,7 +168,7 @@ def run(settings: Settings | None = None, *, env_file: Path | None = None) -> No
         return
 
     if selected == ["cli"]:
-        _run_tui(gaia)
+        _run_tui(constants.SOCKET_FILE)
         return
 
     asyncio.run(_run_background(settings, gaia, selected))
@@ -195,12 +196,8 @@ def run_daemon(
     # Console handlers stay on: when spawned by `gaia start`, stdout IS daemon.log
     # (the color check is isatty-gated, so no ANSI lands in the file).
     setup_logging(settings, gaia.config.logging)
-    if not selected and not hold:
-        logger.error(
-            "no background channels enabled in gaia.yaml — enable connectors.telegram "
-            "or connectors.whatsapp and retry"
-        )
-        return 1
+    if not selected:
+        logger.info("no background channels enabled — daemon will serve local CLI socket only")
     pidfile = PidFile()
     pidfile.write()
     try:
@@ -230,11 +227,9 @@ async def _serve(settings: Settings, gaia: Gaia, selected: list[str], *, hold: b
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, _request_stop, sig)
     try:
-        if selected:
-            await _run_background(settings, gaia, selected)
         if hold:
-            logger.info("no connector tasks — holding the loop open (--hold)")
-            await asyncio.Event().wait()
+            logger.info("holding daemon open for local socket clients")
+        await _run_background(settings, gaia, selected)
     except asyncio.CancelledError:
         task.uncancel()  # our own cancel: swallow it so asyncio.run() returns cleanly
     finally:
@@ -252,11 +247,14 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
     async with gaia:
         dispatcher = build_dispatcher(gaia)
         tasks: list[asyncio.Task[None]] = []
+        socket = SocketConnector(constants.SOCKET_FILE, dispatcher.for_channel(CLIConnector.NAME))
+        tasks.append(asyncio.create_task(socket.start()))
         # The container's connectors registry (the same dict the cron runner @inject's and
         # the message_user tool reads). Populate it in place — don't rebind — so both stay
         # pointed at the live senders.
         running: dict[str, Any] = gaia.connectors
         running.clear()
+        running[SocketConnector.NAME] = socket
 
         if "whatsapp" in selected:
             wa_cfg = gaia.config.connectors.whatsapp
@@ -289,9 +287,6 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
                 telegram = TelegramConnector(token, dispatcher.for_channel(TelegramConnector.NAME))
                 tasks.append(asyncio.create_task(telegram.start()))
                 running[TelegramConnector.NAME] = telegram
-
-        if not tasks:
-            return
 
         scheduler = _start_cron(gaia)
         mission_dispatcher = _start_dispatcher(gaia)

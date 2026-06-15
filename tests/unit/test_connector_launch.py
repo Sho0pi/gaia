@@ -63,6 +63,16 @@ class _FakeConnector:
         return None
 
 
+def _capture_run_tui(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
+    seen: list[Path] = []
+
+    def fake_run_tui(socket_path: Path) -> None:
+        seen.append(socket_path)
+
+    monkeypatch.setattr(app, "_run_tui", fake_run_tui)
+    return seen
+
+
 def _capture_setup_logging(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, object]:
     captured: dict[str, object] = {}
 
@@ -83,19 +93,19 @@ def _settings(tmp_path: Path) -> Settings:
     )
 
 
-def test_run_cli_disables_console_logging(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    # The TUI owns the terminal — console handlers would draw over the chat UI.
-    captured = _capture_setup_logging(monkeypatch, tmp_path)
+def test_run_cli_attaches_to_daemon_socket(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = _capture_run_tui(monkeypatch)
 
     app.run_cli(_settings(tmp_path))
 
-    assert captured.get("console") is False
+    assert seen == [app.constants.SOCKET_FILE]
 
 
 def test_run_with_cli_enabled_disables_console_logging(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     captured = _capture_setup_logging(monkeypatch, tmp_path)
+    _capture_run_tui(monkeypatch)
     settings = _settings(tmp_path)
     settings.config_path.write_text("connectors:\n  cli:\n    enabled: true\n")
 
@@ -114,25 +124,20 @@ def test_run_without_cli_keeps_console_logging(
     assert captured.get("console") is True
 
 
-def test_run_cli_closes_gaia_after_app_exits(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The shutdown fix as a context manager: run_cli scopes Gaia to the TUI's loop via
-    # ``async with gaia``, so close runs right after the app exits — same loop, still
-    # alive — with no shutdown callback threaded through the connector.
-    order: list[str] = []
-    _capture_setup_logging(monkeypatch, tmp_path)
+def test_run_cli_does_not_build_gaia(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _capture_run_tui(monkeypatch)
 
-    class _OrderedConnector(_FakeConnector):
-        async def run_async(self) -> None:
-            order.append("app ran")
+    def fail_gaia(_settings: Settings) -> object:
+        raise AssertionError("chat client should attach to daemon, not build Gaia")
 
-    async def fake_close(self: object) -> None:
-        order.append("gaia closed")
-
-    monkeypatch.setattr(app, "CLIConnector", _OrderedConnector)
-    monkeypatch.setattr(app.Gaia, "close", fake_close)
+    monkeypatch.setattr(app, "Gaia", fail_gaia)
 
     app.run_cli(_settings(tmp_path))
 
-    assert order == ["app ran", "gaia closed"]
+
+def test_run_tui_missing_daemon_exits_3(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
+    with pytest.raises(SystemExit) as exc:
+        app._run_tui(tmp_path / "missing.sock")
+
+    assert exc.value.code == 3
+    assert "gaia start" in capsys.readouterr().out

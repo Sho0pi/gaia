@@ -49,14 +49,14 @@ def _settings(tmp_path: Path, yaml: str = "") -> Settings:
     return Settings(config_path=config_path, log_dir=tmp_path / "logs")
 
 
-def test_no_connectors_and_no_hold_exits_1(
+def test_no_background_connectors_still_runs_socket_gateway(
     tmp_path: Path, quiet_app: dict[str, Any], pid_file: Path
 ) -> None:
     code = app.run_daemon(_settings(tmp_path))
 
-    assert code == 1
-    assert not pid_file.exists()  # never written: startup not committed
-    assert "selected" not in quiet_app  # _serve never ran
+    assert code == 0
+    assert quiet_app["selected"] == []
+    assert not pid_file.exists()  # removed after serve returns
 
 
 def test_hold_runs_with_zero_connectors(
