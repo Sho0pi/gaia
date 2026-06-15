@@ -41,7 +41,13 @@ def make_consult_soul(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any]]]:
 
         if not question.strip():
             return {"status": "error", "error_message": "question must not be empty"}
-        state = dict(getattr(tool_context, "state", None) or {})
+        raw = getattr(tool_context, "state", None)
+        if raw is None:
+            state = {}
+        elif hasattr(raw, "to_dict"):  # ADK's State object (not a plain dict)
+            state = dict(raw.to_dict())
+        else:
+            state = dict(raw)
         depth = int(state.get("consult_depth", 0))
         cap = gaia.config.missions.consult_depth
         if depth >= cap:

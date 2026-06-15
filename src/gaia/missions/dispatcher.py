@@ -20,7 +20,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from gaia.logs import log_event
-from gaia.missions.notify import notify_approval, notify_result
+from gaia.missions.notify import notify_approval, notify_paused, notify_result
 from gaia.missions.present import present_result
 from gaia.missions.store import Task, TaskStatus, TaskStore
 from gaia.souls.run import SoulRun, decide_soul, execute_decision
@@ -104,11 +104,15 @@ class MissionDispatcher:
         free = self._max_concurrent - len(self._inflight)
         if free <= 0:
             return
-        gated = set(self._gaia.config.missions.approval_classes)
+        missions = self._gaia.config.missions
+        gated = set(missions.approval_classes)
         for task in self._store.ready_tasks():
             if free <= 0:
                 break
             if task.id in self._inflight:
+                continue
+            # Per-mission wall-clock budget: past it, pause the whole mission and ask.
+            if missions.max_hours > 0 and self._over_budget(task, missions.max_hours):
                 continue
             # Approval gate: a task in a gated class parks for a human before it runs. It
             # leaves the ready set (ready_tasks ignores awaiting_approval) until /tasks
@@ -124,6 +128,29 @@ class MissionDispatcher:
             self._workers.add(worker)
             worker.add_done_callback(self._workers.discard)
             free -= 1
+
+    def _over_budget(self, task: Task, max_hours: float) -> bool:
+        """True if ``task``'s mission has exceeded its wall-clock budget.
+
+        On the first breach the mission root is parked in ``awaiting_approval`` and the user
+        is asked; subsequent ready tasks of the same (now-paused) mission just skip — the
+        root no longer dispatches and its remaining tasks wait behind the human's call.
+        """
+        from datetime import datetime
+
+        root = self._store.get(task.mission_id) or task
+        try:
+            age_hours = (datetime.now() - datetime.fromisoformat(root.created_at)).total_seconds()
+        except ValueError:  # pragma: no cover - corrupt timestamp
+            return False
+        if age_hours / 3600 <= max_hours:
+            return False
+        already = {TaskStatus.AWAITING_APPROVAL, TaskStatus.DONE, TaskStatus.FAILED}
+        if root.status not in already:
+            self._store.update_status(root.id, TaskStatus.AWAITING_APPROVAL)
+            log_event("mission_paused", task=root.id, reason="max_hours")
+            self._spawn(notify_paused(self._gaia, root, f"time budget {max_hours:g}h reached"))
+        return True
 
     async def _run_task(self, task_id: str) -> None:
         async with self._sem:
