@@ -154,9 +154,11 @@ async def test_two_users_get_separate_memory_partitions(
     async def send(_reply: Any) -> None:
         return None
 
-    wa = Dispatcher(gaia).for_channel("whatsapp")
+    dispatcher = Dispatcher(gaia)
+    wa = dispatcher.for_channel("whatsapp")
     await wa("111@s.whatsapp.net", "Itay", "remember me", send)
     await wa("972@s.whatsapp.net", "Grace", "remember me", send)
+    await dispatcher.flush_all()  # drain the background ingests before asserting
 
     assert set(partitions) == {"itay", "grace"}  # two people, two memory partitions
 

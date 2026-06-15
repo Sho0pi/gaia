@@ -76,6 +76,44 @@ def test_reasoning_part_is_replayed_as_a_reasoning_item() -> None:
     assert item == {"type": "reasoning", "id": "rs_1", "encrypted_content": "enc", "summary": []}
 
 
+def test_orphaned_function_call_gets_synthetic_output() -> None:
+    # A turn cancelled mid-flight leaves a function_call with no matching response.
+    # Without healing, the backend 400s ("No tool output found") on every later turn.
+    contents = [
+        types.Content(
+            role="model",
+            parts=[types.Part(function_call=types.FunctionCall(id="call_x", name="t", args={}))],
+        )
+    ]
+
+    items = _content_to_input(contents)
+
+    assert items[0]["type"] == "function_call"
+    output = next(i for i in items if i["type"] == "function_call_output")
+    assert output["call_id"] == "call_x"
+
+
+def test_answered_function_call_gets_no_synthetic_output() -> None:
+    contents = [
+        types.Content(
+            role="model",
+            parts=[types.Part(function_call=types.FunctionCall(id="call_x", name="t", args={}))],
+        ),
+        types.Content(
+            role="user",
+            parts=[
+                types.Part(
+                    function_response=types.FunctionResponse(id="call_x", name="t", response={})
+                )
+            ],
+        ),
+    ]
+
+    outputs = [i for i in _content_to_input(contents) if i["type"] == "function_call_output"]
+
+    assert len(outputs) == 1  # no synthetic duplicate
+
+
 _SSE = [
     'data: {"type":"response.output_text.delta","delta":"Hello"}',
     'data: {"type":"response.output_text.delta","delta":" world"}',

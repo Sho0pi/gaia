@@ -11,6 +11,7 @@ unit tests can exercise the wiring without the native whatsmeow binary.
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
 from pathlib import Path
@@ -22,6 +23,7 @@ from gaia.connectors.base import Dispatch, Media, Reply, current_chat
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from neonize.aioze.client import NewAClient
 
+    from gaia.config import GroupTrigger
     from gaia.voice import Synthesizer, Transcriber
 
 logger = logging.getLogger(__name__)
@@ -37,6 +39,59 @@ def _build_jid(chat: str) -> Any:
 
     user, _, server = chat.partition("@")
     return build_jid(user, server or "s.whatsapp.net")
+
+
+def _user_part(jid: str) -> str:
+    """The user (number) part of a ``user@server`` JID string, or the whole string."""
+    return jid.partition("@")[0]
+
+
+def _context_info(message: Any) -> Any:
+    """The inbound message's ``extendedTextMessage.contextInfo`` (or ``None``)."""
+    extended = getattr(message.Message, "extendedTextMessage", None)
+    return getattr(extended, "contextInfo", None)
+
+
+def _is_mentioned(message: Any, own_ids: set[str]) -> bool:
+    """Whether one of Gaia's own ids appears in the message's ``mentionedJID`` list.
+
+    WhatsApp may carry the bot's mention as its phone JID *or* its ``@lid`` identity, so
+    ``own_ids`` holds both number-parts and we match against either.
+    """
+    if not own_ids:
+        return False
+    context = _context_info(message)
+    mentioned = getattr(context, "mentionedJID", None) or []
+    return any(_user_part(str(jid)) in own_ids for jid in mentioned)
+
+
+def _is_reply_to(message: Any, own_ids: set[str]) -> bool:
+    """Whether the message replies to (quotes) a message Gaia authored.
+
+    The quoted message's author is carried on ``contextInfo.participant``; when that is one
+    of Gaia's own ids (phone or ``@lid``), the user replied to Gaia.
+    """
+    if not own_ids:
+        return False
+    context = _context_info(message)
+    participant = getattr(context, "participant", "") or ""
+    return bool(participant) and _user_part(str(participant)) in own_ids
+
+
+def _group_decision(message: Any, source: Any, own_ids: set[str], cfg: GroupTrigger) -> bool:
+    """Whether Gaia should *consider* this group message (was it addressed to Gaia?).
+
+    DMs always pass (the gate is group-only). In a group Gaia engages only when it is
+    *addressed* — @mentioned or someone replies to one of its messages — when ``mention_only``
+    is set. **Who** is allowed to trigger Gaia is **not** decided here: that is the user/role
+    system (``users.json`` + the dispatcher's guest-drop), so we don't duplicate an allow-list.
+    """
+    if not getattr(source, "IsGroup", False):
+        return True
+    if not cfg.respond_in_groups:
+        return False
+    addressed = _is_mentioned(message, own_ids) or _is_reply_to(message, own_ids)
+    return addressed or not cfg.mention_only
 
 
 def _jid_to_str(jid: Any) -> str:
@@ -134,10 +189,20 @@ class WhatsAppWebConnector:
     text for the handler; ``None`` means voice messages are ignored (prior behaviour).
     ``synthesizer`` (a :class:`gaia.voice.Synthesizer`) speaks text replies back as a voice
     note — but only when the inbound message was itself voice (voice-in → voice-out).
+    ``group_trigger`` decides when Gaia answers inside a group chat (mention/reply); *who*
+    may trigger it is left to the user/role system (``users.json`` + the dispatcher's
+    guest-drop), not a separate allow-list. ``None`` falls back to the default quiet policy.
+    ``show_active`` makes Gaia *look active* while it works: it marks an inbound message
+    read (blue tick) the moment it starts and shows the "typing…" (or "recording audio…")
+    indicator for the duration of the turn. Best-effort — degrades silently.
     """
 
     #: Connector id used in cron job channel fields / the daemon's connector registry.
     NAME = "whatsapp"
+
+    #: WhatsApp's "composing" state auto-expires after ~10-25s, so the typing indicator is
+    #: re-sent on this interval until the turn finishes.
+    _TYPING_REFRESH_SECONDS = 8.0
 
     def __init__(
         self,
@@ -146,11 +211,21 @@ class WhatsAppWebConnector:
         *,
         transcriber: Transcriber | None = None,
         synthesizer: Synthesizer | None = None,
+        group_trigger: GroupTrigger | None = None,
+        show_active: bool = True,
     ) -> None:
         self._session_db = session_db
         self._dispatch = dispatch  # channel-bound: (sender_id, name, text, send)
         self._transcriber = transcriber
         self._synthesizer = synthesizer
+        if group_trigger is None:
+            from gaia.config import GroupTrigger
+
+            group_trigger = GroupTrigger()
+        self._group_trigger = group_trigger
+        self._own_ids: set[str] = set()  # bot's own number-parts (phone + @lid); lazy-loaded
+        # Blue-tick + typing presence always travel together — one flag drives both.
+        self._show_active = show_active
         self._client: Any = None  # the live client while start() runs (for send_to)
 
     def build_client(self) -> NewAClient:
@@ -169,8 +244,17 @@ class WhatsAppWebConnector:
         client = NewAClient(str(self._session_db))
 
         @client.event(ConnectedEv)  # type: ignore[untyped-decorator]
-        async def _on_connected(_client: NewAClient, _event: ConnectedEv) -> None:
+        async def _on_connected(connected: NewAClient, _event: ConnectedEv) -> None:
             logger.info("whatsapp connected")
+            # WhatsApp only delivers our read receipts / typing presence to the other party
+            # once we've announced ourselves available; send it once on connect.
+            if self._show_active:
+                try:
+                    from neonize.utils import Presence
+
+                    await connected.send_presence(Presence.AVAILABLE)
+                except Exception:  # pragma: no cover - presence is best-effort
+                    logger.debug("send_presence(available) failed", exc_info=True)
 
         @client.event(PairStatusEv)  # type: ignore[untyped-decorator]
         async def _on_pair(_client: NewAClient, event: PairStatusEv) -> None:
@@ -178,13 +262,23 @@ class WhatsAppWebConnector:
 
         @client.event(MessageEv)  # type: ignore[untyped-decorator]
         async def _on_message(client: NewAClient, message: MessageEv) -> None:
+            source = message.Info.MessageSource
+            # Entry trace: confirms an inbound event arrived at all (esp. for groups) before
+            # any text/gate logic — invaluable when "nothing happens" in a group.
+            logger.debug(
+                "inbound whatsapp message: group=%s chat=%s sender=%s",
+                getattr(source, "IsGroup", False),
+                _deliverable_chat(source),
+                _sender_jid(source),
+            )
             text = _message_text(message)
             was_voice = False
             if not text:
                 text = await self._transcribe_voice(client, message)
                 was_voice = bool(text)  # inbound was a (transcribed) voice note
             if text:
-                source = message.Info.MessageSource
+                if not await self._should_handle(client, message, source):
+                    return  # a group message Gaia wasn't addressed in (mention/reply)
                 # Media (image / voice note) must go to the *deliverable* JID, not the raw
                 # ``source.Chat``: in a DM that Chat is a ``…@lid`` identity and a media send
                 # to it vanishes silently (the user gets nothing — not even the text). Build
@@ -208,10 +302,17 @@ class WhatsAppWebConnector:
                         return
                     await client.reply_message(reply, message)
 
+                # Acknowledge the moment work starts: blue-tick the message and start the
+                # "typing…" indicator (best-effort; never blocks or breaks the turn).
+                await self._mark_read(client, source, message.Info.ID)
+                typing = await self._begin_typing(client, chat, was_voice)
                 # Identity is the *sender* (who), not the chat (where to reply); they
                 # coincide for DMs, differ in groups. PushName is WhatsApp's display name.
                 name = getattr(message.Info, "Pushname", "") or ""
-                await self._dispatch(_sender_jid(source), name, text, send)
+                try:
+                    await self._dispatch(_sender_jid(source), name, text, send)
+                finally:
+                    await self._end_typing(client, chat, typing)
 
         return client
 
@@ -238,6 +339,115 @@ class WhatsAppWebConnector:
         except Exception:  # pragma: no cover - never lose the reply to a bad voice send
             logger.warning("voice reply failed; falling back to text", exc_info=True)
             return False
+
+    async def _should_handle(self, client: Any, message: Any, source: Any) -> bool:
+        """Apply the group policy: drop group messages Gaia isn't addressed in / not allowed.
+
+        DMs always pass. Resolving the group decision needs Gaia's own JID (to match
+        mentions/replies), fetched once and cached.
+        """
+        if not getattr(source, "IsGroup", False):
+            return True
+        own_ids = await self._ensure_own_ids(client)
+        if _group_decision(message, source, own_ids, self._group_trigger):
+            return True
+        context = _context_info(message)
+        logger.debug(
+            "group message ignored — not addressed. own_ids=%s mentioned=%s reply_author=%s",
+            sorted(own_ids),
+            list(getattr(context, "mentionedJID", None) or []),
+            getattr(context, "participant", ""),
+        )
+        return False
+
+    async def _ensure_own_ids(self, client: Any) -> set[str]:
+        """Gaia's own number-parts — phone JID **and** ``@lid`` — cached.
+
+        WhatsApp may address the bot in a group by either identity, so a mention only
+        matches if we know both. ``get_me()`` returns a Device carrying ``JID`` (phone) and
+        ``LID``. Empty/unset ids are skipped; an empty set means we couldn't resolve them.
+        """
+        if not self._own_ids:
+            try:
+                me = await client.get_me()
+                for jid in (getattr(me, "JID", None), getattr(me, "LID", None)):
+                    part = _user_part(_jid_to_str(jid)) if jid is not None else ""
+                    if part:
+                        self._own_ids.add(part)
+            except Exception:  # pragma: no cover - identity lookup is best-effort
+                logger.debug("could not resolve own ids for group mention check", exc_info=True)
+        return self._own_ids
+
+    async def _mark_read(self, client: Any, source: Any, msg_id: str) -> None:
+        """Blue-tick the inbound message (best-effort). Uses the message's own chat/sender.
+
+        Read receipts key off the message's real chat + sender JIDs (not the ``@lid``
+        rewrite used when *sending* media), so the raw inbound JIDs are correct here.
+        """
+        if not self._show_active:
+            return
+        try:
+            from neonize.utils import ReceiptType
+
+            await client.mark_read(
+                msg_id, chat=source.Chat, sender=source.Sender, receipt=ReceiptType.READ
+            )
+        except Exception:  # pragma: no cover - receipts are best-effort
+            logger.debug("mark_read failed", exc_info=True)
+
+    async def _begin_typing(
+        self, client: Any, chat: Any, was_voice: bool
+    ) -> asyncio.Task[None] | None:
+        """Show "typing…" (or "recording audio…" for a voice reply) and keep it alive.
+
+        Sends the first ``composing`` synchronously (so the indicator is up before the turn
+        runs), then returns a task that re-sends it on :attr:`_TYPING_REFRESH_SECONDS` until
+        cancelled by :meth:`_end_typing` — WhatsApp's composing state otherwise expires.
+        """
+        if not self._show_active:
+            return None
+        await self._send_presence(client, chat, composing=True, was_voice=was_voice)
+        return asyncio.create_task(self._typing_loop(client, chat, was_voice))
+
+    async def _typing_loop(self, client: Any, chat: Any, was_voice: bool) -> None:
+        try:
+            while True:
+                await asyncio.sleep(self._TYPING_REFRESH_SECONDS)
+                await self._send_presence(client, chat, composing=True, was_voice=was_voice)
+        except asyncio.CancelledError:  # pragma: no cover - cancelled when the turn ends
+            pass
+
+    async def _end_typing(self, client: Any, chat: Any, typing: asyncio.Task[None] | None) -> None:
+        """Stop the keepalive and clear the indicator (``paused``)."""
+        if typing is not None:
+            typing.cancel()
+            try:
+                await typing
+            except asyncio.CancelledError:  # pragma: no cover - expected on cancel
+                pass
+        if self._show_active:
+            await self._send_presence(client, chat, composing=False, was_voice=False)
+
+    async def _send_presence(
+        self, client: Any, chat: Any, *, composing: bool, was_voice: bool
+    ) -> None:
+        """Send one chat-presence update (best-effort)."""
+        try:
+            from neonize.utils import ChatPresence, ChatPresenceMedia
+
+            state = (
+                ChatPresence.CHAT_PRESENCE_COMPOSING
+                if composing
+                else ChatPresence.CHAT_PRESENCE_PAUSED
+            )
+            media = (
+                ChatPresenceMedia.CHAT_PRESENCE_MEDIA_AUDIO
+                if was_voice
+                else ChatPresenceMedia.CHAT_PRESENCE_MEDIA_TEXT
+            )
+            await client.send_chat_presence(chat, state, media)
+        except Exception:  # pragma: no cover - presence is best-effort
+            logger.debug("send_chat_presence failed", exc_info=True)
 
     async def _transcribe_voice(self, client: Any, message: Any) -> str:
         """Transcript of an inbound voice note, or ``""`` (no audio / no transcriber / error).

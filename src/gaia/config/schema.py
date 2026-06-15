@@ -190,7 +190,7 @@ class CronConfig(BaseModel):
 
 
 class VoiceConfig(BaseModel):
-    """Local voice I/O: speech-to-text in (faster-whisper) + text-to-speech out (piper)."""
+    """Local voice I/O: speech-to-text in (faster-whisper) + text-to-speech out (edge-tts)."""
 
     enabled: bool = Field(
         default=True,
@@ -199,14 +199,14 @@ class VoiceConfig(BaseModel):
     )
     reply_with_voice: bool = Field(
         default=True,
-        description="Answer a voice message with a voice message (piper TTS). Needs the "
-        "'voice' group + the espeak-ng binary; falls back to text when unavailable.",
+        description="Answer a voice message with a voice message (edge-tts). Needs the "
+        "'voice' group and network access; falls back to text when unavailable.",
     )
     tts_voice: str = Field(
-        default="en_US-ljspeech-high",
-        description="piper voice model for spoken replies (downloaded on first use). Default "
-        "is a high-quality female voice. See github.com/OHF-Voice/piper1-gpl for the voice "
-        "list (e.g. en_US-amy-medium, en_US-hfc_female-medium).",
+        default="en-US-AriaNeural",
+        description="edge-tts voice for spoken replies (Microsoft Edge online voices). "
+        "Default is a US female voice. Run 'edge-tts --list-voices' for the full list "
+        "(e.g. en-US-GuyNeural, en-GB-SoniaNeural, he-IL-HilaNeural).",
     )
     model: str = Field(
         default="base",
@@ -229,10 +229,21 @@ class VoiceConfig(BaseModel):
 
 
 class GroupTrigger(BaseModel):
-    """When Gaia should respond inside a group chat."""
+    """When Gaia should respond inside a group chat.
 
+    Default is deliberately quiet: in a group Gaia answers only when it is *addressed*
+    (@mentioned or someone replies to one of its messages). *Who* may trigger it is the
+    user/role system's job (``users.json`` + the dispatcher's guest-drop) — known users
+    pass, unknown senders are guests and are dropped — so there is no second allow-list here.
+    """
+
+    respond_in_groups: bool = Field(
+        default=True,
+        description="Master switch for group chats; false = ignore all group messages.",
+    )
     mention_only: bool = Field(
-        default=True, description="Only respond in groups when Gaia is mentioned."
+        default=True,
+        description="Only respond in groups when Gaia is @mentioned or replied to.",
     )
 
 
@@ -248,6 +259,11 @@ class WhatsAppConnectorConfig(BaseModel):
         description="Allowed sender ids; empty = everyone (enforcement is a follow-up).",
     )
     group_trigger: GroupTrigger = Field(default_factory=GroupTrigger)
+    show_active: bool = Field(
+        default=True,
+        description="Look active while working: blue-tick the message and show the 'typing…' "
+        "(or 'recording audio…') indicator for the turn.",
+    )
     default_soul: str = Field(default="gaia", description="Soul used for new chats.")
     default_role: Literal["admin", "user", "guest"] = Field(
         default="guest",

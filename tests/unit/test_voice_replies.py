@@ -64,7 +64,7 @@ def test_build_synthesizer_off_when_voice_disabled() -> None:
 
 
 def test_build_synthesizer_none_when_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
-    # piper / espeak-ng missing → degrade to text (warned), like the whisper gate.
+    # edge-tts missing → degrade to text (warned), like the whisper gate.
     monkeypatch.setattr(Synthesizer, "available", property(lambda _self: False))
     assert build_synthesizer(GaiaConfig()) is None
 
@@ -72,9 +72,9 @@ def test_build_synthesizer_none_when_unavailable(monkeypatch: pytest.MonkeyPatch
 def test_build_synthesizer_built_when_available(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(Synthesizer, "available", property(lambda _self: True))
     synth = build_synthesizer(
-        GaiaConfig.model_validate({"voice": {"tts_voice": "en_US-amy-medium"}})
+        GaiaConfig.model_validate({"voice": {"tts_voice": "en-GB-SoniaNeural"}})
     )
-    assert isinstance(synth, Synthesizer) and synth._voice == "en_US-amy-medium"
+    assert isinstance(synth, Synthesizer) and synth._voice == "en-GB-SoniaNeural"
 
 
 # -- the connector speaks text replies back as a voice note (voice-in only) -------------

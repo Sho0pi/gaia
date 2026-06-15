@@ -1,29 +1,24 @@
-"""System test: real piper TTS renders text to an ogg/opus voice note.
+"""System test: real edge-tts renders text to an ogg/opus voice note.
 
-Triple-gated so CI stays green: needs the optional 'voice' dep group (piper), the
-``espeak-ng`` binary on PATH, and GAIA_VOICE_RUN_LIVE (the first run downloads a piper
-voice model — network + a few MB).
+Double-gated so CI stays green: needs the optional 'voice' dep group (edge-tts) and
+GAIA_VOICE_RUN_LIVE (synthesis is a live network call to Microsoft Edge's TTS service).
 """
 
 from __future__ import annotations
 
 import os
-import shutil
 from pathlib import Path
 
 import pytest
 
 pytestmark = pytest.mark.system
 
-pytest.importorskip("piper", reason="needs the optional 'voice' dep group")
+pytest.importorskip("edge_tts", reason="needs the optional 'voice' dep group")
 
 
-@pytest.mark.skipif(
-    shutil.which("espeak-ng") is None, reason="piper needs the espeak-ng binary on PATH"
-)
 @pytest.mark.skipif(
     not os.environ.get("GAIA_VOICE_RUN_LIVE"),
-    reason="downloads a piper voice model; set GAIA_VOICE_RUN_LIVE to run",
+    reason="calls the edge-tts network service; set GAIA_VOICE_RUN_LIVE to run",
 )
 async def test_synthesizer_renders_ogg_voice_note(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -32,7 +27,6 @@ async def test_synthesizer_renders_ogg_voice_note(
     from gaia.voice import Synthesizer
 
     monkeypatch.setattr(constants, "CACHE_DIR", tmp_path / "cache")
-    monkeypatch.setattr("gaia.voice._PIPER_DIR", tmp_path / "piper")
 
     synth = Synthesizer()
     assert synth.available

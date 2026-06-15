@@ -8,7 +8,10 @@ authors = [{ name = "sho0pi" }]
 dependencies = [
     "google-adk>=1.0",
     "a2a-sdk>=0.3",
-    "mem0ai>=0.1",
+    # >=2.0.6: 2.0.4's chroma search fed raw L2 distance to a higher-is-better hybrid
+    # ranker, inverting recall order (relevant facts buried); 2.0.6 converts distance to
+    # a similarity score (1/(1+d)) so search_memory ranks correctly. See PR for triage.
+    "mem0ai>=2.0.6",
     "python-telegram-bot>=22.0",
     "pywa>=2.0",
     # 0.3.18 ships protobuf-7.34 gencode but only needs baseline wire features, so
@@ -81,13 +84,13 @@ mcp = [
 ]
 # Local voice I/O. IN: speech-to-text via faster-whisper (CTranslate2 Whisper, CPU
 # int8 — Pi-viable; decodes WhatsApp ogg/opus via its bundled PyAV, no ffmpeg). OUT:
-# text-to-speech via piper (the OHF-Voice/piper1-gpl fork) — renders WAV, transcoded to
-# ogg/opus with the same PyAV for a WhatsApp voice note. piper also needs the espeak-ng
-# BINARY on PATH (brew/apt install espeak-ng). All lazy-imported; gaia runs without them
-# (voice notes ignored / replies stay text). Models download on first use.
+# text-to-speech via edge-tts (rany2/edge-tts — Microsoft Edge online voices over the
+# network) — yields MP3, transcoded to ogg/opus with the same PyAV for a WhatsApp voice
+# note. No binary/model needed (network call). All lazy-imported; gaia runs without them
+# (voice notes ignored / replies stay text). Whisper weights download on first use.
 voice = [
     "faster-whisper>=1.0",
-    "piper-tts>=1.0",
+    "edge-tts>=6.1",
 ]
 
 [build-system]
@@ -133,6 +136,7 @@ module = [
     "mcp.*",
     "apscheduler.*",
     "faster_whisper.*",
+    "edge_tts.*",
     "dependency_injector.*",
 ]
 ignore_missing_imports = true

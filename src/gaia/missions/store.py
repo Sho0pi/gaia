@@ -150,8 +150,8 @@ class TaskStore:
     def _ensure_ready(self) -> None:
         """One-time, thread-safe setup: WAL (persistent) + schema; serialized vs the race.
 
-        Concurrent threads must not both run the schema init (it surfaces as
-        'database is locked'); WAL is a db-level setting, so it only needs running here.
+        Two threads both running the schema init surfaces as 'database is locked'; WAL is a
+        db-level setting, so it only needs running here, not per connection.
         """
         if self._ready:
             return

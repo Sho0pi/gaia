@@ -41,7 +41,13 @@ logger = logging.getLogger(__name__)
 
 
 def select_connector(
-    settings: Settings, dispatch: Dispatch, *, transcriber: Any = None, synthesizer: Any = None
+    settings: Settings,
+    dispatch: Dispatch,
+    *,
+    transcriber: Any = None,
+    synthesizer: Any = None,
+    group_trigger: Any = None,
+    show_active: bool = True,
 ) -> WhatsAppConnector | WhatsAppWebConnector:
     """Choose the WhatsApp backend from configured credentials.
 
@@ -49,12 +55,19 @@ def select_connector(
     (``gaia.voice.Transcriber`` or None) turns inbound voice notes into text and
     ``synthesizer`` (``gaia.voice.Synthesizer`` or None) speaks text replies back as voice,
     both on the web backend; the business backend has no voice path yet (webhook, #3).
+    ``group_trigger`` (``gaia.config.GroupTrigger`` or None) drives the group-chat gating;
+    ``show_active`` drives the web backend's blue-tick + "typing…" presence.
     """
     if settings.has_whatsapp_business:
         assert settings.whatsapp_phone_id and settings.whatsapp_token  # narrowed by property
         return WhatsAppConnector(settings.whatsapp_phone_id, settings.whatsapp_token, dispatch)
     return WhatsAppWebConnector(
-        settings.whatsapp_session_db, dispatch, transcriber=transcriber, synthesizer=synthesizer
+        settings.whatsapp_session_db,
+        dispatch,
+        transcriber=transcriber,
+        synthesizer=synthesizer,
+        group_trigger=group_trigger,
+        show_active=show_active,
     )
 
 
@@ -246,11 +259,14 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
         running.clear()
 
         if "whatsapp" in selected:
+            wa_cfg = gaia.config.connectors.whatsapp
             connector = select_connector(
                 settings,
                 dispatcher.for_channel(WhatsAppWebConnector.NAME),
                 transcriber=gaia.container.transcriber(),
                 synthesizer=gaia.container.synthesizer(),
+                group_trigger=wa_cfg.group_trigger,
+                show_active=wa_cfg.show_active,
             )
             if isinstance(connector, WhatsAppWebConnector):
                 tasks.append(asyncio.create_task(connector.start()))
