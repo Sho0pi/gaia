@@ -6,7 +6,7 @@ regular/QR) is still auto-picked from creds by :func:`select_connector`.
 
 Launch rules (:func:`plan_launch`, pure + unit-testable):
 
-* The CLI/Textual TUI is a **foreground** app — it cannot share the event loop with
+* The CLI chat is a **foreground** REPL — it cannot share the event loop with
   background connectors, so enabling it alongside another connector is rejected.
 * The remaining connectors are async and co-run via :func:`asyncio.gather`.
 """
@@ -92,16 +92,16 @@ def plan_launch(config: GaiaConfig, *, daemon: bool = False) -> list[str]:
 
 
 def run_cli(settings: Settings | None = None, *, env_file: Path | None = None) -> None:
-    """Launch the local CLI/TUI frontend and chat with Gaia in the terminal."""
+    """Launch the local inline CLI frontend and chat with Gaia in the terminal."""
     settings = settings or get_settings(env_file)
     gaia = Gaia(settings)
-    # The TUI owns the terminal, so console log handlers would draw over it — files only.
+    # The foreground chat owns the prompt, so console log handlers would draw over it.
     setup_logging(settings, gaia.config.logging, console=False)
     _run_tui(gaia)
 
 
 def _run_tui(gaia: Gaia) -> None:
-    """Run the chat TUI with Gaia's lifetime scoped to the loop that hosts it.
+    """Run the inline chat with Gaia's lifetime scoped to the loop that hosts it.
 
     ``async with gaia`` guarantees the async resources (browser/shell/MCP) are closed
     on the same still-alive loop the app ran on — quit, Ctrl-C, or crash alike.
@@ -159,7 +159,7 @@ def run(settings: Settings | None = None, *, env_file: Path | None = None) -> No
     write_default_config(settings.config_path)
     gaia = Gaia(settings)
     selected = plan_launch(gaia.config)
-    # The CLI/TUI owns the terminal, so console log handlers would draw over it.
+    # The CLI chat owns the terminal prompt, so console log handlers would draw over it.
     setup_logging(settings, gaia.config.logging, console=selected != ["cli"])
 
     if not selected:

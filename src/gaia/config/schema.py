@@ -306,7 +306,7 @@ class WhatsAppConnectorConfig(BaseModel):
 
 
 class CLIConnectorConfig(BaseModel):
-    """Local Textual TUI connector. Foreground-exclusive (cannot co-run)."""
+    """Local inline CLI chat connector. Foreground-exclusive (cannot co-run)."""
 
     enabled: bool = Field(
         default=False, description="Run the local terminal chat; foreground-exclusive."

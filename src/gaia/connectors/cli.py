@@ -1,28 +1,26 @@
-"""Local CLI connector with a Textual chat TUI.
+"""Local inline CLI chat connector.
 
-A full-screen terminal chat: you type, Gaia answers as markdown bubbles, with a
-spinner while it thinks. Like every other connector it's a dumb pipe over the
-shared :data:`~gaia.connectors.base.Handler` contract — each reply the handler
-streams through ``send`` becomes a bubble in the log.
-
-Textual is imported lazily inside :meth:`CLIConnector.build_app` (per the heavy-dep
-convention) so ``gaia.connectors`` stays importable without it.
+The default terminal chat is intentionally *not* a full-screen TUI. It behaves like a
+normal CLI REPL: read one line, send it through Gaia's shared dispatcher, render each
+reply inline, repeat. Rich handles pleasant output; prompt_toolkit handles the input
+prompt and terminal history.
 """
 
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, ClassVar
+from collections.abc import Awaitable, Callable
+from typing import Any, ClassVar, cast
 
 from gaia import constants
+from gaia.cli._console import console
 from gaia.connectors.base import Dispatch, Reply, as_text
 
-if TYPE_CHECKING:  # pragma: no cover - typing only
-    from textual.app import App
+InputFunc = Callable[[str], Awaitable[str]]
 
 
 class CLIConnector:
-    """Bridges a terminal chat UI to the dispatcher as the local operator.
+    """Bridges an inline terminal chat loop to the dispatcher as the local operator.
 
     The local cli sender is the fixed identity ``local`` (resolved by the dispatcher to
     the trusted ``admin`` role via the cli connector's ``default_role``).
@@ -32,90 +30,59 @@ class CLIConnector:
     NAME = "cli"
     #: The single local sender id; the operator who owns the terminal.
     SENDER = "local"
+    #: Commands that end the local chat without hitting the model.
+    EXIT_COMMANDS: ClassVar[set[str]] = {"/exit", "/quit", "exit", "quit"}
 
-    def __init__(self, dispatch: Dispatch) -> None:
+    def __init__(
+        self,
+        dispatch: Dispatch,
+        *,
+        input_func: InputFunc | None = None,
+    ) -> None:
         self._dispatch = dispatch
+        self._input = input_func
+        self._session: Any | None = None
 
-    def build_app(self) -> App[None]:
-        """Build the Textual chat app wired to the dispatcher. Imports Textual lazily."""
-        from textual.app import App, ComposeResult
-        from textual.binding import BindingType
-        from textual.containers import VerticalScroll
-        from textual.widgets import (
-            Footer,
-            Header,
-            Input,
-            LoadingIndicator,
-            Markdown,
-            Static,
-        )
+    async def _prompt(self, prompt: str) -> str:
+        if self._input is not None:
+            return await self._input(prompt)
 
-        dispatch = self._dispatch
-        sender = self.SENDER
+        # Heavy import stays lazy so package import/tests do not require the UI stack.
+        from prompt_toolkit import PromptSession
 
-        class ChatApp(App):  # type: ignore[type-arg]
-            TITLE = constants.APP_NAME
-            CSS = """
-            #log { padding: 1 2; }
-            .bubble { width: auto; max-width: 80%; padding: 0 1; margin-top: 1; }
-            .user { margin-left: 10; background: $primary; color: $text; }
-            .gaia { margin-right: 10; background: $panel; }
-            #prompt { dock: bottom; margin: 0 1 1 1; }
-            """
-            BINDINGS: ClassVar[list[BindingType]] = [
-                ("ctrl+l", "clear_log", "Clear"),
-                ("ctrl+c", "quit", "Quit"),
-            ]
-
-            def compose(self) -> ComposeResult:
-                yield Header()
-                yield VerticalScroll(id="log")
-                yield Input(placeholder="type a message", id="prompt")
-                yield Footer()
-
-            def on_mount(self) -> None:
-                self.query_one("#prompt", Input).focus()
-
-            async def on_input_submitted(self, event: Input.Submitted) -> None:
-                text = event.value.strip()
-                if not text:
-                    return
-                event.input.value = ""
-                log = self.query_one("#log", VerticalScroll)
-                await log.mount(Static(text, classes="user bubble"))
-                loading = LoadingIndicator(classes="loading")
-                await log.mount(loading)
-                log.scroll_end(animate=False)
-                self.run_worker(self._respond(text, loading))
-
-            async def _respond(self, text: str, loading: LoadingIndicator) -> None:
-                log = self.query_one("#log", VerticalScroll)
-
-                async def send(reply: Reply) -> None:
-                    # The TUI shows media as its caption/path for now (inline image
-                    # rendering is a follow-up).
-                    await log.mount(Markdown(as_text(reply), classes="gaia bubble"))
-                    log.scroll_end(animate=False)
-
-                try:
-                    await dispatch(sender, "operator", text, send)
-                finally:
-                    await loading.remove()
-
-            def action_clear_log(self) -> None:
-                self.query_one("#log", VerticalScroll).remove_children()
-
-        return ChatApp()
+        if self._session is None:
+            self._session = PromptSession()
+        return cast(str, await self._session.prompt_async(prompt))
 
     async def run_async(self) -> None:
-        """Run the TUI on the *current* event loop until the user quits.
+        """Run an inline chat loop on the current event loop until the user quits."""
+        out = console()
+        out.print(f"[bold]{constants.APP_NAME}[/] chat — /exit to quit")
 
-        The caller owns the loop, so anything that must outlive the app but die with
-        the loop (Gaia's async resources) can be closed right after this returns —
-        typically ``async with gaia: await connector.run_async()``.
-        """
-        await self.build_app().run_async()
+        while True:
+            try:
+                raw = await self._prompt("You > ")
+            except (EOFError, KeyboardInterrupt):
+                out.print("\n[dim]bye[/]")
+                return
+
+            text = raw.strip()
+            if not text:
+                continue
+            if text.lower() in self.EXIT_COMMANDS:
+                out.print("[dim]bye[/]")
+                return
+
+            with out.status("[dim]Gaia thinking...[/]", spinner="dots"):
+                await self._dispatch_one(text, out.print)
+
+    async def _dispatch_one(self, text: str, print_reply: Callable[[object], None]) -> None:
+        async def send(reply: Reply) -> None:
+            print_reply("")
+            print_reply(f"[bold magenta]Gaia[/] [dim]>[/] {as_text(reply)}")
+
+        await self._dispatch(self.SENDER, "operator", text, send)
 
     def run(self) -> None:
-        """Launch the TUI on its own fresh loop. Blocks until the user quits."""
+        """Launch the inline chat on its own fresh loop. Blocks until the user quits."""
         asyncio.run(self.run_async())
