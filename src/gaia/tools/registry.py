@@ -226,8 +226,17 @@ def _register_task_tools(
     if not any(_is_enabled(config, name) for name, _ in factories):
         return
     store = store or TaskStore()  # the DI-shared board; falls back for direct callers/tests
+    missions = config.missions if config is not None else None
+    max_depth = missions.max_depth if missions is not None else 3
+    max_tasks = missions.max_tasks if missions is not None else 20
     for name, make in factories:
-        if _is_enabled(config, name):
+        if not _is_enabled(config, name):
+            continue
+        if name == TASK_CREATE:
+            registry.register(
+                name, make_task_create(store, max_depth=max_depth, max_tasks=max_tasks)
+            )
+        else:
             registry.register(name, make(store))
 
 
