@@ -2,14 +2,45 @@
 
 from __future__ import annotations
 
+import sqlite3
 import threading
 from pathlib import Path
 
 from gaia.missions import Task, TaskStatus, TaskStore
 
+# A P1 schema snapshot (no notify_channel/notify_chat) to test the migration.
+_P1_SCHEMA = (
+    "CREATE TABLE tasks (id TEXT PRIMARY KEY, mission_id TEXT DEFAULT '', parent_id TEXT "
+    "DEFAULT '', title TEXT DEFAULT '', spec TEXT DEFAULT '', status TEXT DEFAULT 'inbox', "
+    "assignee TEXT DEFAULT '', blocked_by TEXT DEFAULT '[]', depth INTEGER DEFAULT 0, "
+    "artifacts TEXT DEFAULT '[]', result TEXT DEFAULT '', notes TEXT DEFAULT '', owner TEXT "
+    "DEFAULT '', created_by TEXT DEFAULT '', approval_class TEXT DEFAULT '', budget_used REAL "
+    "DEFAULT 0, created_at TEXT, updated_at TEXT)"
+)
+
 
 def _store(tmp_path: Path) -> TaskStore:
     return TaskStore(tmp_path / "tasks.db")
+
+
+def test_migration_adds_notify_columns_to_old_db(tmp_path: Path) -> None:
+    db = tmp_path / "tasks.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(_P1_SCHEMA)
+    conn.execute(
+        "INSERT INTO tasks (id, title, created_at, updated_at) VALUES (?,?,?,?)",
+        ("old1", "legacy", "t", "t"),
+    )
+    conn.commit()
+    conn.close()
+
+    store = TaskStore(db)  # opening runs the idempotent migration
+    legacy = store.get("old1")
+    assert legacy is not None and legacy.title == "legacy"  # row survived
+    assert legacy.notify_channel == "" and legacy.notify_chat == ""  # new cols default empty
+    # writes using the new columns work, and re-opening is a no-op
+    store.create(Task(title="new", notify_channel="whatsapp", notify_chat="972@x"))
+    assert TaskStore(db).get("old1") is not None  # second open doesn't break
 
 
 def test_create_get_list_roundtrip(tmp_path: Path) -> None:

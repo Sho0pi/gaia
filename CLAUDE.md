@@ -46,10 +46,13 @@ unsure which library, delegate to the `lib-researcher` subagent.
   handled out-of-band, never reach the model. → `new-command` skill.
 - `memory/` — `backend.py` builds mem0, `service.py` adapts it to ADK's
   `BaseMemoryService` (auto-ingest batching + `remember`/`load_memory` tools).
-- `missions/` — the durable task board (`store.py`, stdlib sqlite3/WAL, `~/.gaia/tasks.db`):
+- `missions/` — the task board + engine. `store.py` (stdlib sqlite3/WAL, `~/.gaia/tasks.db`):
   `Task` rows + `TaskStore` CRUD/`ready_tasks`. Per-user `owner` (≠ `created_by` agent).
-  Surfaced by the `task_*` tools, `/tasks`, and `gaia tasks`. P1 of the missions epic
-  (#134, design `docs/missions-design.md`); status enum maps to A2A `TaskState` (P5 bridge).
+  `dispatcher.py` `MissionDispatcher` (P2) runs in the daemon: polls ready tasks → runs each
+  on a soul via `souls/run.py:execute_decision` → posts result+artifacts → dependents consume
+  upstream results; `notify.py` pushes the result to the task's notify target (chat→owner→
+  cron default). Surfaced by `task_*`, `/tasks`, `gaia tasks`. Missions epic (#134, design
+  `docs/missions-design.md`); status enum maps to A2A `TaskState` (P5 bridge).
 - `connectors/` — thin I/O adapters only (cli TUI, telegram, whatsapp, whatsapp_web);
   each extracts the sender id + display name and calls a channel-bound `Dispatch`
   callable `(sender_id, name, text, send)` from `base.py` (the dispatcher resolves the

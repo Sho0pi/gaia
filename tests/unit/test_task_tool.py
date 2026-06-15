@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -12,6 +13,7 @@ from gaia.tools.task import (
     make_task_create,
     make_task_get,
     make_task_list,
+    make_task_plan,
     make_task_update,
 )
 
@@ -48,10 +50,13 @@ def test_create_with_parent_sets_depth(tmp_path: Path) -> None:
     assert child["mission_id"] == root["mission_id"]
 
 
-def test_create_blocked_by_csv_split(tmp_path: Path) -> None:
+def test_create_blocked_by_real_ids(tmp_path: Path) -> None:
     store = _store(tmp_path)
-    out = make_task_create(store)("x", blocked_by="a, b ,c", tool_context=_ctx("itay"))
-    assert out["task"]["blocked_by"] == ["a", "b", "c"]
+    create = make_task_create(store)
+    a = create("a", tool_context=_ctx("itay"))["task"]
+    b = create("b", tool_context=_ctx("itay"))["task"]
+    out = create("x", blocked_by=f"{a['id']}, {b['id']}", tool_context=_ctx("itay"))
+    assert out["task"]["blocked_by"] == [a["id"], b["id"]]
 
 
 def test_list_is_owner_scoped(tmp_path: Path) -> None:
@@ -96,3 +101,85 @@ def test_complete_sets_done_with_result_and_artifacts(tmp_path: Path) -> None:
 def test_get_unknown_id_errors(tmp_path: Path) -> None:
     out = make_task_get(_store(tmp_path))("nope", tool_context=_ctx("itay"))
     assert out["status"] == "error"
+
+
+def test_create_rejects_unknown_blocked_by(tmp_path: Path) -> None:
+    # The live bug: a made-up upstream id would silently block the task forever.
+    out = make_task_create(_store(tmp_path))(
+        "dependent", blocked_by="upstream task id not yet known", tool_context=_ctx("itay")
+    )
+    assert out["status"] == "error" and "unknown task id" in out["error_message"]
+
+
+def test_plan_files_a_dag_with_real_edges(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    plan = json.dumps(
+        [
+            {"ref": "program", "title": "Design A/B program", "spec": "design it"},
+            {"ref": "deploy", "title": "Deploy notes", "spec": "notes"},  # independent
+            {"ref": "site", "title": "Build site", "spec": "build", "depends_on": ["program"]},
+        ]
+    )
+    out = make_task_plan(store)(plan, tool_context=_ctx("itay"))
+
+    assert out["status"] == "success"
+    by_ref = {t["ref"]: t for t in out["tasks"]}
+    # 'site' is wired to the REAL id of 'program'; independent tasks have no blockers.
+    assert by_ref["site"]["blocked_by"] == [by_ref["program"]["id"]]
+    assert by_ref["program"]["blocked_by"] == [] and by_ref["deploy"]["blocked_by"] == []
+    # one shared mission; all owned by the caller
+    assert len({t["mission_id"] for t in out["tasks"]}) == 1
+    assert all(t["owner"] == "itay" for t in out["tasks"])
+    # only the dependency feeds another → leaf detection
+    assert store.has_dependents(by_ref["program"]["id"]) is True
+    assert store.has_dependents(by_ref["site"]["id"]) is False
+
+
+def test_plan_accepts_python_literal_single_quotes(tmp_path: Path) -> None:
+    # The live bug: the model emitted single-quoted pseudo-JSON, which json.loads rejects.
+    store = _store(tmp_path)
+    plan = (
+        "[{'ref': 'pt', 'title': 'Plan program', 'spec': 'do it'}, "
+        "{'ref': 'site', 'title': 'Build site', 'depends_on': ['pt']}]"
+    )
+    out = make_task_plan(store)(plan, tool_context=_ctx("itay"))
+
+    assert out["status"] == "success"
+    by_ref = {t["ref"]: t for t in out["tasks"]}
+    assert by_ref["site"]["blocked_by"] == [by_ref["pt"]["id"]]
+
+
+def test_plan_rejects_cycle(tmp_path: Path) -> None:
+    plan = json.dumps(
+        [
+            {"ref": "a", "title": "A", "depends_on": ["b"]},
+            {"ref": "b", "title": "B", "depends_on": ["a"]},
+        ]
+    )
+    out = make_task_plan(_store(tmp_path))(plan, tool_context=_ctx("itay"))
+    assert out["status"] == "error" and "cycle" in out["error_message"]
+
+
+def test_plan_rejects_unknown_ref(tmp_path: Path) -> None:
+    plan = json.dumps([{"ref": "a", "title": "A", "depends_on": ["ghost"]}])
+    out = make_task_plan(_store(tmp_path))(plan, tool_context=_ctx("itay"))
+    assert out["status"] == "error" and "unknown ref" in out["error_message"]
+
+
+def test_plan_rejects_bad_json(tmp_path: Path) -> None:
+    out = make_task_plan(_store(tmp_path))("not json", tool_context=_ctx("itay"))
+    assert out["status"] == "error"
+
+
+def test_create_captures_current_chat_as_notify_target(tmp_path: Path) -> None:
+    from gaia.connectors.base import current_chat
+
+    store = _store(tmp_path)
+    token = current_chat.set(("whatsapp", "972@s.whatsapp.net"))
+    try:
+        out = make_task_create(store)("buy flights", tool_context=_ctx("itay"))
+    finally:
+        current_chat.reset(token)
+
+    assert out["task"]["notify_channel"] == "whatsapp"
+    assert out["task"]["notify_chat"] == "972@s.whatsapp.net"

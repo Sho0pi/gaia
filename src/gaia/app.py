@@ -294,6 +294,7 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
             return
 
         scheduler = _start_cron(gaia)
+        mission_dispatcher = _start_dispatcher(gaia)
         try:
             await asyncio.gather(*tasks)
         except asyncio.CancelledError:
@@ -307,6 +308,8 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
         finally:
             if scheduler is not None:
                 scheduler.shutdown()
+            if mission_dispatcher is not None:
+                await mission_dispatcher.stop()
             # Drain any turns still buffered for memory before the process exits, so a
             # Ctrl-C doesn't drop the tail of the conversation (best-effort).
             await dispatcher.flush_all()
@@ -322,6 +325,20 @@ def _start_cron(gaia: Gaia) -> Any:
     scheduler = CronScheduler(CronStore(), make_runner(gaia))
     scheduler.start()
     return scheduler
+
+
+def _start_dispatcher(gaia: Gaia) -> Any:
+    """Start the mission dispatcher for the daemon (None when disabled)."""
+    cfg = gaia.config.missions
+    if not cfg.enabled:
+        return None
+    from gaia.missions.dispatcher import MissionDispatcher
+
+    dispatcher = MissionDispatcher(
+        gaia, max_concurrent=cfg.max_concurrent, poll_seconds=cfg.poll_seconds
+    )
+    dispatcher.start()
+    return dispatcher
 
 
 def send_message(

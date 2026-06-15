@@ -61,12 +61,12 @@ async def test_navigate_snapshot_screenshot_then_close(
     ctx: Any = _Ctx()
 
     try:
-        # browser_navigate enforces the http(s) SSRF guard, so file:// (and localhost)
-        # are refused by design — assert that, then seed the real page directly to
+        # browser_navigate allows file:// only under AGENTS_DIR; this fixture is elsewhere,
+        # so it's refused by design — assert that, then seed the real page directly to
         # exercise the live-Chromium snapshot/screenshot path without touching the net.
         refused = await navigate(file_url, tool_context=ctx)
         assert refused["status"] == "error"
-        assert "http or https" in refused["error_message"]
+        assert "agents workspace" in refused["error_message"]
 
         session = await manager.get(ctx.agent_name)
         await session.page.goto(file_url)

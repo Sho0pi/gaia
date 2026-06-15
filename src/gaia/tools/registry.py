@@ -49,6 +49,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from google.adk.tools.base_toolset import BaseToolset
 
     from gaia.config import GaiaConfig
+    from gaia.missions import TaskStore
 
 # Exactly what ADK's ``LlmAgent(tools=...)`` accepts: a plain callable (ADK derives
 # name/description/schema from it) or an ADK tool/toolset object. Typed against the
@@ -209,7 +210,9 @@ def _register_shell_tools(registry: ToolRegistry, config: GaiaConfig | None) -> 
         registry.register(shell.LIST, shell.make_exec_list(manager))
 
 
-def _register_task_tools(registry: ToolRegistry, config: GaiaConfig | None) -> None:
+def _register_task_tools(
+    registry: ToolRegistry, config: GaiaConfig | None, store: TaskStore | None = None
+) -> None:
     """Register the five missions task_* tools (one shared store), each gated by its flag."""
     from gaia.missions import TaskStore
 
@@ -222,17 +225,21 @@ def _register_task_tools(registry: ToolRegistry, config: GaiaConfig | None) -> N
     )
     if not any(_is_enabled(config, name) for name, _ in factories):
         return
-    store = TaskStore()  # builds/opens ~/.gaia/tasks.db once for all five
+    store = store or TaskStore()  # the DI-shared board; falls back for direct callers/tests
     for name, make in factories:
         if _is_enabled(config, name):
             registry.register(name, make(store))
 
 
-def default_registry(config: GaiaConfig | None = None) -> ToolRegistry:
+def default_registry(
+    config: GaiaConfig | None = None, task_store: TaskStore | None = None
+) -> ToolRegistry:
     """Build the registry with all of gaia's built-in tools, configured from ``config``.
 
     Each tool is on by default and gated only by its ``enabled`` flag (and, where it needs
     one, an external resource such as a configured engine or a binary on ``PATH``).
+    ``task_store`` is the DI-shared missions board the ``task_*`` tools bind to (the
+    container passes it so the tools, ``task_plan`` and the dispatcher share one store).
     """
     registry = ToolRegistry()
 
@@ -244,7 +251,7 @@ def default_registry(config: GaiaConfig | None = None) -> ToolRegistry:
 
     # Missions task board (P1): the five task_* tools share one TaskStore so they all hit
     # the same ~/.gaia/tasks.db. Gaia-only for now; souls get them in P3.
-    _register_task_tools(registry, config)
+    _register_task_tools(registry, config, task_store)
 
     if _is_enabled(config, WEB_SEARCH):
         engine = _tool_setting(config, WEB_SEARCH, "engine")

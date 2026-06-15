@@ -58,6 +58,25 @@ def _normalize_chat(channel: str, recipient: str) -> str:
     return recipient
 
 
+def user_address(store: UserStore, user_id: str, channel: str = "") -> tuple[str, str] | None:
+    """A known user's ``(channel, chat)`` to reach them, or ``None``.
+
+    Picks the identity on ``channel`` when given, else the user's first identity. Shared by
+    the message tool and the missions notifier (push a result to a task's owner).
+    """
+    user = store.get(user_id)
+    if user is None or not user.identities:
+        return None
+    if channel:
+        match = next((i for i in user.identities if i.startswith(f"{channel}:")), None)
+    else:
+        match = user.identities[0]
+    if match is None:
+        return None
+    ch, _, chat = match.partition(":")
+    return ch, chat
+
+
 def _resolve_target(
     store: UserStore, connectors: dict[str, Any], recipient: str, channel: str
 ) -> tuple[str, str] | str:
@@ -76,16 +95,13 @@ def _resolve_target(
         user = store.resolve(ch, sender)
 
     if user is not None:
-        idents = user.identities
-        if channel:
-            match = next((i for i in idents if i.startswith(f"{channel}:")), None)
-        else:
-            match = idents[0] if idents else None
-        if match is None:
+        addr = user_address(store, user.id, channel)
+        if addr is None:
             where = f" on {channel}" if channel else ""
-            return f"{user.id!r} has no known address{where} (identities: {idents or 'none'})"
-        ch, _, chat = match.partition(":")
-        return ch, chat
+            return (
+                f"{user.id!r} has no known address{where} (identities: {user.identities or 'none'})"
+            )
+        return addr
 
     # Not a known user — treat recipient as a raw sender id (phone/JID).
     ch = _infer_channel(connectors, channel)

@@ -53,6 +53,7 @@ class Gaia:
         self.skills_dir = self.container.skills_dir()
         self.souls = self.container.souls()
         self.users = self.container.users()
+        self.tasks = self.container.tasks()  # the shared missions board (TaskStore)
         self.tools = self.container.tools()
         self.factory = self.container.factory()
         # Live proactive senders (connector name → object with ``send_to``); the launcher
@@ -135,19 +136,32 @@ class Gaia:
         base_instruction = (
             f"Current date and time: {now}.\n"
             "You are Gaia. Answer simple questions yourself, calling your own tools when one "
-            "fits rather than guessing. For a complex or creative build/creation task (e.g. "
-            "designing a website, writing a program), call delegate_to_soul(task) — it finds "
-            "the right specialist soul or forges a new one and runs it. When it returns, tell "
+            "fits rather than guessing. For a single quick build that ONE specialist can do "
+            "in one shot (e.g. 'write me a poem', a tiny script), call delegate_to_soul(task) "
+            "— it finds or forges the right soul, runs it, and returns. When it returns, tell "
             "the user which soul handled it (say so explicitly when 'created' is true), then "
             "report the workspace path and the list of files the soul produced. You can open "
             "those deliverables directly (fs_read takes the absolute paths under the souls' "
-            "workspaces), so read/verify/summarize them yourself when the user asks. To "
+            "workspaces), so read/verify/summarize them yourself when the user asks. But for "
+            "a MULTI-ROLE or MULTI-STEP project (e.g. 'build a gym website' = a trainer writes "
+            "the program AND a frontend designer builds the site from it), use task_plan, NOT "
+            "repeated delegate_to_soul — the board tracks each step, lets the user list/iterate "
+            "them, runs them with the right dependency order, and hands each step's output to "
+            "the next. To "
             "schedule work for later or on a recurring basis (reminders, daily briefs), use "
             "the cron tool — it runs your message at the scheduled time and delivers the "
             "result to the user's chat. To send a message to a *different* person (not a "
             "reply to whoever you're talking to), call message_user(recipient, text) — "
             "recipient may be a known user's name/id or a raw phone; combine it with the "
-            "cron tool for 'in 5 minutes text Grace ...'-style tasks."
+            "cron tool for 'in 5 minutes text Grace ...'-style tasks.\n"
+            "For multi-step or long-running work that should run in the background and "
+            "survive restarts, use the task board: a daemon worker runs each task on a "
+            "specialist soul and delivers the result. For a mission with MORE THAN ONE step "
+            "— especially when one step needs another's output — call task_plan with the "
+            "whole plan as JSON (tasks with local refs + depends_on); it wires the real "
+            "dependency edges so a step waits for its inputs and receives their results + "
+            "files. Use task_create only for a single standalone task. Never put a made-up "
+            "id in blocked_by — let task_plan resolve dependencies."
         )
         bound = self.config.agents.get("gaia", AgentBinding())
         instruction = attach_skills(base_instruction, bound.skills, self.skills_dir)
@@ -156,6 +170,7 @@ class Gaia:
 
         from gaia.souls import make_delegate
         from gaia.tools.message import make_message_user
+        from gaia.tools.task import make_task_plan
 
         # delegate_to_soul and message_user are attached to the root only — souls (built
         # from self.tools) never receive them, so a soul can neither spawn souls nor text
@@ -173,6 +188,7 @@ class Gaia:
                 *self.tools.all(),
                 make_delegate(self),
                 make_message_user(self.users, self.connectors),
+                make_task_plan(self.tasks),
                 *self.container.mcp_toolsets(),
                 *self.container.skill_toolsets(),
             ],

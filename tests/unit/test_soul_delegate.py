@@ -72,7 +72,7 @@ def _stub_run_writing(monkeypatch: pytest.MonkeyPatch, filename: str) -> None:
         (sandbox_for(constants.AGENTS_DIR, key).primary / filename).write_text("<html>")
         return "built it"
 
-    monkeypatch.setattr(delegate, "_run_soul", fake_run)
+    monkeypatch.setattr("gaia.souls.run.run_soul_agent", fake_run)
 
 
 async def test_forge_path_persists_runs_and_lists_only_new_files(
@@ -106,7 +106,7 @@ async def test_passes_invocation_user_id_to_the_soul(
         seen["user_id"] = user_id
         return "ok"
 
-    monkeypatch.setattr(delegate, "_run_soul", fake_run)
+    monkeypatch.setattr("gaia.souls.run.run_soul_agent", fake_run)
     ctx = SimpleNamespace(user_id="alice")  # ADK public ToolContext.user_id
 
     await make_delegate(gaia)("task", tool_context=ctx)
@@ -172,7 +172,7 @@ async def test_honors_configured_soul_timeout(
         await asyncio.sleep(1.0)
         return "too late"
 
-    monkeypatch.setattr(delegate, "_run_soul", slow_run)
+    monkeypatch.setattr("gaia.souls.run.run_soul_agent", slow_run)
 
     out = await make_delegate(gaia)("task", tool_context=None)
 

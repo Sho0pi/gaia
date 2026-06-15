@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any
 from dependency_injector import containers, providers
 
 from gaia.agents import AgentFactory, SoulRegistry
+from gaia.missions import TaskStore
 from gaia.skills import build_skill_toolset, resolve_skills_dir
 from gaia.tools import default_registry
 from gaia.users import UserStore
@@ -193,7 +194,10 @@ class Container(containers.DeclarativeContainer):
         SoulRegistry, settings.provided.agent_registry_dir
     )
     users: providers.Singleton[UserStore] = providers.Singleton(_build_user_store, config)
-    tools: providers.Singleton[ToolRegistry] = providers.Singleton(default_registry, config)
+    # The missions task board — one shared store (opens ~/.gaia/tasks.db) reused by the
+    # task_* tools, the root agent's task_plan, and the dispatcher.
+    tasks: providers.Singleton[TaskStore] = providers.Singleton(TaskStore)
+    tools: providers.Singleton[ToolRegistry] = providers.Singleton(default_registry, config, tasks)
 
     transcriber: providers.Singleton[Transcriber | None] = providers.Singleton(
         build_transcriber, config
