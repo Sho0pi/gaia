@@ -261,22 +261,6 @@ def _openai_oauth_configured() -> bool:
     return load_credentials() is not None
 
 
-def _openai_oauth_access_token() -> str | None:
-    """Return a fresh-enough ChatGPT OAuth access token for model listing."""
-    import asyncio
-
-    from gaia.providers.openai import refresh
-    from gaia.providers.openai.store import load_credentials
-
-    creds = load_credentials()
-    if creds is None:
-        return None
-    if creds.is_expired():
-        creds = asyncio.run(refresh(creds))
-        creds.save()
-    return creds.access_token
-
-
 def _settings_key(settings: Settings, provider: str) -> str | None:
     if provider == "gemini":
         return settings.google_api_key
@@ -312,7 +296,12 @@ def _configure_provider(
 
                 run_auth("openai", env_file=env_file)
             use_oauth = True
-            model_token = _openai_oauth_access_token()
+            model_token = None
+            if fetch:
+                console().print(
+                    "[yellow]OpenAI OAuth cannot list API models (api.openai.com returns 403); "
+                    "using curated ChatGPT model list[/]"
+                )
         elif not _ensure_api_key(spec, key, api_key):
             return None
         else:
