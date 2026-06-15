@@ -13,9 +13,6 @@ non-TTY runs use a numbered ``typer.prompt``, so flows run on scripted input.
 from __future__ import annotations
 
 import sys
-import termios
-import tty
-from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Annotated
 
 import typer
@@ -32,7 +29,6 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 CONNECTORS: dict[str, str] = {
     "telegram": "bot token from @BotFather",
     "whatsapp": "pair your personal account by QR",
-    "cli": "terminal chat — always available",
 }
 
 _TELEGRAM_TUTORIAL = """\
@@ -55,7 +51,7 @@ def connect(
     ctx: typer.Context,
     connectors: Annotated[
         list[str] | None,
-        typer.Argument(help="Connector names (telegram/whatsapp/cli); empty = pick from a menu."),
+        typer.Argument(help="Connector names (telegram/whatsapp); empty = pick from a menu."),
     ] = None,
     token: Annotated[
         str | None, typer.Option("--token", help="Telegram bot token (skips the prompt).")
@@ -89,15 +85,13 @@ def connect(
         ok = {
             "telegram": lambda: _connect_telegram(settings, token=token, verify=verify),
             "whatsapp": lambda: _connect_whatsapp(settings, timeout=timeout),
-            "cli": _connect_cli,
         }[name]()
         if ok:
             done.append(name)
 
     if done:
         out.print(f"\n[bold green]connected:[/] {', '.join(done)}")
-        if set(done) - {"cli"}:
-            out.print("run [cyan]gaia start[/] to bring the background connectors up")
+        out.print("run [cyan]gaia start[/] to bring the background connectors up")
     if set(selected) - set(done):
         raise typer.Exit(1)
 
@@ -126,81 +120,73 @@ def _choose_numbered(settings: Settings) -> list[str]:
 
 
 def _choose_interactive(settings: Settings) -> list[str]:
-    names = list(CONNECTORS)
-    rows = [(name, CONNECTORS[name], _status(settings, name)) for name in names]
-    keys = _tty_keys(sys.stdin.fileno())
-    return _run_picker(rows, keys, sys.stdout.write)
+    """Robust inline picker powered by prompt_toolkit, not hand-rolled ANSI."""
+    from prompt_toolkit import Application
+    from prompt_toolkit.formatted_text import StyleAndTextTuples
+    from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.layout import Layout
+    from prompt_toolkit.layout.containers import Window
+    from prompt_toolkit.layout.controls import FormattedTextControl
 
-
-def _run_picker(
-    rows: list[tuple[str, str, str]], keys: Iterable[str], write: Callable[[str], object]
-) -> list[str]:
-    """Drive the inline picker. Extracted so key semantics are unit-testable."""
+    rows = [(name, CONNECTORS[name], _status(settings, name)) for name in CONNECTORS]
     cursor = 0
     selected: set[int] = set()
-    rendered_lines = 0
 
-    def render() -> None:
-        nonlocal rendered_lines
-        if rendered_lines:
-            write("\x1b[2K\r" + "\x1b[1A\x1b[2K\r" * (rendered_lines - 1))
-        lines = ["Which connectors?  ↑/↓ move · space select · enter submit · esc cancel"]
+    def text() -> StyleAndTextTuples:
+        fragments: StyleAndTextTuples = [
+            ("bold", "Which connectors?"),
+            ("", "  ↑/↓ move · space select · enter submit · esc cancel\n"),
+        ]
         for i, (name, hint, status) in enumerate(rows):
+            style = "reverse" if i == cursor else ""
             pointer = ">" if i == cursor else " "
-            mark = "◉" if i in selected else "◯"
-            lines.append(f"{pointer} {mark} {name:<9} {hint} — {status}")
-        text = "\n".join(lines) + "\n"
-        write(text)
-        rendered_lines = len(lines)
+            mark = "[x]" if i in selected else "[ ]"
+            fragments.append((style, f"{pointer} {mark} {name:<9} {hint} — {status}\n"))
+        return fragments
 
-    write("\x1b[?25l")  # hide cursor while moving through the list
-    try:
-        render()
-        for key in keys:
-            if key == "up":
-                cursor = (cursor - 1) % len(rows)
-            elif key == "down":
-                cursor = (cursor + 1) % len(rows)
-            elif key == "space":
-                selected.symmetric_difference_update({cursor})
-            elif key == "enter":
-                if not selected:
-                    selected.add(cursor)
-                render()
-                return [rows[i][0] for i in range(len(rows)) if i in selected]
-            elif key == "esc":
-                render()
-                return []
-            render()
-        return []
-    finally:
-        write("\x1b[?25h")
+    control = FormattedTextControl(text, focusable=True)
+    app: Application[list[str]]
+    kb = KeyBindings()
+
+    @kb.add("up")
+    def _up(_event: object) -> None:
+        nonlocal cursor
+        cursor = (cursor - 1) % len(rows)
+        app.invalidate()
+
+    @kb.add("down")
+    def _down(_event: object) -> None:
+        nonlocal cursor
+        cursor = (cursor + 1) % len(rows)
+        app.invalidate()
+
+    @kb.add(" ")
+    def _space(_event: object) -> None:
+        selected.symmetric_difference_update({cursor})
+        app.invalidate()
+
+    @kb.add("enter")
+    def _enter(_event: object) -> None:
+        app.exit(result=_selected_names(rows, cursor, selected))
+
+    @kb.add("escape")
+    @kb.add("c-c")
+    @kb.add("c-d")
+    def _cancel(_event: object) -> None:
+        app.exit(result=[])
+
+    app = Application(
+        layout=Layout(Window(control, always_hide_cursor=True)),
+        key_bindings=kb,
+        full_screen=False,
+    )
+    return app.run()
 
 
-def _tty_keys(fd: int) -> Iterable[str]:
-    old = termios.tcgetattr(fd)
-    try:
-        tty.setcbreak(fd)
-        while True:
-            ch = sys.stdin.read(1)
-            if ch in ("\r", "\n"):
-                yield "enter"
-            elif ch == " ":
-                yield "space"
-            elif ch == "\x1b":
-                nxt = sys.stdin.read(1)
-                if nxt != "[":
-                    yield "esc"
-                    continue
-                code = sys.stdin.read(1)
-                if code == "A":
-                    yield "up"
-                elif code == "B":
-                    yield "down"
-            elif ch in ("\x03", "\x04"):
-                yield "esc"
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+def _selected_names(rows: list[tuple[str, str, str]], cursor: int, selected: set[int]) -> list[str]:
+    if not selected:
+        selected = {cursor}
+    return [rows[i][0] for i in range(len(rows)) if i in selected]
 
 
 def _status(settings: Settings, name: str) -> str:

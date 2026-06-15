@@ -160,7 +160,7 @@ def test_whatsapp_existing_session_repair_deletes_db(
     assert _enabled(home, "whatsapp")
 
 
-# --- selection / cli ---------------------------------------------------------------
+# --- selection --------------------------------------------------------------------
 
 
 def test_unknown_connector_exits_2(home: Path) -> None:
@@ -170,20 +170,25 @@ def test_unknown_connector_exits_2(home: Path) -> None:
     assert "unknown connector" in result.output
 
 
-def test_cli_connector_is_informational(home: Path) -> None:
+def test_cli_connector_is_not_offered(home: Path) -> None:
     result = runner.invoke(cli_app, ["connect", "cli"])
 
-    assert result.exit_code == 0
-    assert "always available" in result.output
+    assert result.exit_code == 2
+    assert "unknown connector" in result.output
 
 
-def test_bare_invocation_numbered_multiselect(home: Path) -> None:
-    result = runner.invoke(cli_app, ["connect"], input="3\n")
+def test_bare_invocation_numbered_multiselect(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_pair(session_db: object, timeout_s: int) -> bool:
+        return True
+
+    monkeypatch.setattr(connect_mod, "_pair", fake_pair)
+
+    result = runner.invoke(cli_app, ["connect"], input="2\n")
 
     assert result.exit_code == 0, result.output
     assert "1. telegram" in result.output  # the menu rendered
     assert "not configured" in result.output  # status rendered
-    assert "built in" in result.output  # the picked flow ran
+    assert _enabled(home, "whatsapp")
 
 
 def test_bare_invocation_nothing_selected(home: Path) -> None:
@@ -193,31 +198,17 @@ def test_bare_invocation_nothing_selected(home: Path) -> None:
     assert "nothing selected" in result.output
 
 
-def test_interactive_picker_toggles_and_submits() -> None:
-    writes: list[str] = []
-    rows = [
-        ("telegram", "bot token", "not configured"),
-        ("whatsapp", "QR", "configured"),
-        ("cli", "built in", "built in"),
-    ]
+def test_interactive_picker_submit_selected_names() -> None:
+    rows = [("telegram", "bot token", "not configured"), ("whatsapp", "QR", "configured")]
 
-    picked = connect_mod._run_picker(rows, ["space", "down", "space", "enter"], writes.append)
+    picked = connect_mod._selected_names(rows, cursor=1, selected={0, 1})
 
     assert picked == ["telegram", "whatsapp"]
-    assert any("↑/↓ move" in chunk for chunk in writes)
 
 
 def test_interactive_picker_enter_selects_cursor_when_empty() -> None:
     rows = [("telegram", "bot token", "not configured"), ("whatsapp", "QR", "configured")]
 
-    picked = connect_mod._run_picker(rows, ["down", "enter"], lambda _text: None)
+    picked = connect_mod._selected_names(rows, cursor=1, selected=set())
 
     assert picked == ["whatsapp"]
-
-
-def test_interactive_picker_escape_cancels() -> None:
-    rows = [("telegram", "bot token", "not configured")]
-
-    picked = connect_mod._run_picker(rows, ["space", "esc"], lambda _text: None)
-
-    assert picked == []
