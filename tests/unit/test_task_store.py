@@ -97,6 +97,20 @@ def test_update_bumps_updated_at(tmp_path: Path) -> None:
     assert refreshed.updated_at != "2000-01-01T00:00:00"
 
 
+def test_children_lists_subtasks_and_open_only_filter(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    parent = store.create(Task(title="parent", owner="itay"))
+    a = store.create(Task(title="a", owner="itay", parent_id=parent.id))
+    b = store.create(Task(title="b", owner="itay", parent_id=parent.id))
+    store.create(Task(title="unrelated", owner="itay"))  # not a child
+
+    assert {t.id for t in store.children(parent.id)} == {a.id, b.id}
+
+    store.post_result(a.id, "done")  # a → done
+    open_kids = store.children(parent.id, open_only=True)
+    assert {t.id for t in open_kids} == {b.id}  # the finished child is dropped
+
+
 def test_ready_tasks_excludes_blocked_until_deps_done(tmp_path: Path) -> None:
     store = _store(tmp_path)
     dep = store.create(Task(title="dep", owner="itay"))

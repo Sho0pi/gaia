@@ -146,6 +146,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE INDEX IF NOT EXISTS idx_tasks_mission ON tasks(mission_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_owner ON tasks(owner);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_id);
 """
 
 
@@ -292,6 +293,22 @@ class TaskStore:
                 (task_id, like),
             ).fetchone()
         return row is not None
+
+    def children(self, task_id: str, *, open_only: bool = False) -> TaskList:
+        """Tasks whose ``parent_id`` is ``task_id`` (its subtasks), newest first.
+
+        ``open_only`` drops the finished ones (done/failed) — used by the dispatcher to
+        decide whether a just-run parent must wait for subtasks it filed before completing.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM tasks WHERE parent_id = ? ORDER BY created_at DESC", (task_id,)
+            ).fetchall()
+        tasks = [_to_task(row) for row in rows]
+        if open_only:
+            closed = {TaskStatus.DONE, TaskStatus.FAILED}
+            tasks = [t for t in tasks if t.status not in closed]
+        return tasks
 
     def ready_tasks(self) -> TaskList:
         """The dispatcher's inbox (P2): waiting tasks whose every ``blocked_by`` is done.
