@@ -19,10 +19,21 @@ def tasks_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return path
 
 
+def _fake_gaia() -> SimpleNamespace:
+    # The command reads gaia.tasks; reject also pushes (best-effort) via notify → users/
+    # connectors/config. No connector running + no address → notify no-ops cleanly.
+    return SimpleNamespace(
+        tasks=TaskStore(),
+        users=SimpleNamespace(get=lambda _id: None),
+        connectors={},
+        config=SimpleNamespace(cron=SimpleNamespace(deliver=SimpleNamespace(channel="", chat=""))),
+    )
+
+
 def _ctx(*, args: str = "", user_id: str = "itay", role: str = "user") -> CommandContext:
     return CommandContext(
         args=args,
-        gaia=SimpleNamespace(),  # type: ignore[arg-type]
+        gaia=_fake_gaia(),  # type: ignore[arg-type]
         handler=SimpleNamespace(),  # type: ignore[arg-type]
         registry=SimpleNamespace(),  # type: ignore[arg-type]
         user_id=user_id,
@@ -59,9 +70,46 @@ async def test_empty_board_message() -> None:
     assert "No open tasks" in out
 
 
-async def test_approve_is_p3_stub() -> None:
-    out = await TasksCommand().run(_ctx(args="approve abc123"))
-    assert "approval" in out.lower() and "abc123" in out
+async def test_approve_releases_awaiting_task() -> None:
+    ctx = _ctx(args="", user_id="itay")
+    store = ctx.gaia.tasks  # type: ignore[attr-defined]
+    t = store.create(Task(title="buy", owner="itay", status=TaskStatus.AWAITING_APPROVAL))
+
+    out = await TasksCommand().run(_ctx(args=f"approve {t.id}", user_id="itay"))
+
+    assert "Approved" in out
+    assert store.get(t.id).status is TaskStatus.INBOX  # type: ignore[union-attr]
+
+
+async def test_reject_fails_awaiting_task() -> None:
+    ctx = _ctx()
+    store = ctx.gaia.tasks  # type: ignore[attr-defined]
+    t = store.create(Task(title="buy", owner="itay", status=TaskStatus.AWAITING_APPROVAL))
+
+    out = await TasksCommand().run(_ctx(args=f"reject {t.id}", user_id="itay"))
+
+    assert "Rejected" in out
+    assert store.get(t.id).status is TaskStatus.FAILED  # type: ignore[union-attr]
+
+
+async def test_approve_non_awaiting_task_is_refused() -> None:
+    ctx = _ctx()
+    store = ctx.gaia.tasks  # type: ignore[attr-defined]
+    t = store.create(Task(title="x", owner="itay", status=TaskStatus.INBOX))
+
+    out = await TasksCommand().run(_ctx(args=f"approve {t.id}", user_id="itay"))
+
+    assert "isn't awaiting approval" in out
+
+
+async def test_approve_other_owners_task_hidden() -> None:
+    ctx = _ctx()
+    store = ctx.gaia.tasks  # type: ignore[attr-defined]
+    t = store.create(Task(title="hers", owner="grace", status=TaskStatus.AWAITING_APPROVAL))
+
+    out = await TasksCommand().run(_ctx(args=f"approve {t.id}", user_id="itay"))
+
+    assert "No task" in out  # not yours → treated as absent
 
 
 async def test_approve_without_id_shows_usage() -> None:

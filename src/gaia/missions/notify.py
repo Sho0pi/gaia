@@ -76,6 +76,39 @@ def _target(gaia: Gaia, task: Task) -> tuple[str, str] | None:
     return (deliver.channel, deliver.chat) if deliver.channel and deliver.chat else None
 
 
+async def _push(gaia: Gaia, task: Task, text: str) -> None:
+    """Best-effort plain-text push to ``task``'s target chat (no artifacts)."""
+    target = _target(gaia, task)
+    if target is None:
+        logger.info("mission %s: no delivery target — message not pushed", task.id)
+        return
+    channel, chat = target
+    sender = gaia.connectors.get(channel)
+    if sender is None:
+        logger.info("mission %s: connector %r not running — message not pushed", task.id, channel)
+        return
+    try:
+        await sender.send_to(chat, text)
+    except Exception:  # pragma: no cover - delivery is best-effort
+        logger.warning("mission %s: message push failed", task.id, exc_info=True)
+
+
+async def notify_approval(gaia: Gaia, task: Task) -> None:
+    """Ask the human to approve a gated task parked in ``awaiting_approval``."""
+    cls = task.approval_class or "action"
+    await _push(
+        gaia,
+        task,
+        f"⏸ {task.title or task.id} needs approval ({cls}).\n"
+        f"Reply: /tasks approve {task.id}  (or /tasks reject {task.id})",
+    )
+
+
+async def notify_rejected(gaia: Gaia, task: Task) -> None:
+    """Tell the human a gated task was rejected (and so the mission step won't run)."""
+    await _push(gaia, task, f"✗ {task.title or task.id} was rejected — it won't run.")
+
+
 async def notify_result(gaia: Gaia, task: Task, run: SoulRun) -> None:
     """Best-effort push of a completed task's actual deliverable to its target chat.
 

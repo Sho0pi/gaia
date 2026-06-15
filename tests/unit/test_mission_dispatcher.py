@@ -20,12 +20,15 @@ def store(tmp_path: Path) -> TaskStore:
     return TaskStore(tmp_path / "tasks.db")
 
 
-def _gaia(store: TaskStore) -> Any:
+def _gaia(store: TaskStore, *, approval_classes: list[str] | None = None) -> Any:
     # The dispatcher only touches gaia via the soul-run core (which we fake) + notify.
     return SimpleNamespace(
         connectors={},
         users=SimpleNamespace(get=lambda _id: None),
-        config=SimpleNamespace(cron=SimpleNamespace(deliver=SimpleNamespace(channel="", chat=""))),
+        config=SimpleNamespace(
+            cron=SimpleNamespace(deliver=SimpleNamespace(channel="", chat="")),
+            missions=SimpleNamespace(approval_classes=approval_classes or []),
+        ),
     )
 
 
@@ -130,6 +133,51 @@ async def test_parent_blocks_on_filed_subtask_then_reruns_with_results(
     assert done is not None and done.status is TaskStatus.DONE
     rerun = inputs[-1]  # the parent's re-run prompt
     assert "need a subtask first" in rerun and "ran" in rerun  # notes + subtask result fed back
+
+
+async def test_gated_task_parks_for_approval_not_run(
+    store: TaskStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A task in a configured approval class must park (awaiting_approval), never dispatch.
+    ran: list[str] = []
+    _fake_run(monkeypatch, lambda t: ran.append(t) or SoulRun(True, "s", "S", False, summary="x"))  # type: ignore[func-returns-value]
+    t = store.create(Task(title="buy flights", owner="itay", approval_class="spend"))
+    d = MissionDispatcher(_gaia(store, approval_classes=["spend"]), store=store)
+
+    await _drain(d)
+
+    assert store.get(t.id).status is TaskStatus.AWAITING_APPROVAL  # type: ignore[union-attr]
+    assert ran == []  # never executed
+    # Approval consumes the gate (clears approval_class) → inbox → next poll runs it.
+    t.approval_class = ""
+    t.status = TaskStatus.INBOX
+    store.update(t)
+    await _drain(d)
+    assert store.get(t.id).status is TaskStatus.DONE  # type: ignore[union-attr]
+
+
+async def test_ungated_class_runs_normally(
+    store: TaskStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_run(monkeypatch, lambda _t: SoulRun(True, "s", "S", False, summary="ok"))
+    t = store.create(Task(title="x", owner="itay", approval_class="spend"))
+    d = MissionDispatcher(_gaia(store, approval_classes=[]), store=store)  # spend not gated
+
+    await _drain(d)
+
+    assert store.get(t.id).status is TaskStatus.DONE  # type: ignore[union-attr]
+
+
+def test_recover_leaves_awaiting_approval_untouched(store: TaskStore) -> None:
+    # Restart safety: recover() only resets RUNNING; a parked approval survives a reboot.
+    parked = store.create(Task(title="buy", owner="itay", status=TaskStatus.AWAITING_APPROVAL))
+    running = store.create(Task(title="mid", owner="itay", status=TaskStatus.RUNNING))
+    d = MissionDispatcher(_gaia(store), store=store)
+
+    d.recover()
+
+    assert store.get(parked.id).status is TaskStatus.AWAITING_APPROVAL  # type: ignore[union-attr]
+    assert store.get(running.id).status is TaskStatus.INBOX  # type: ignore[union-attr]
 
 
 async def test_failure_marks_failed_and_records_error(
