@@ -64,10 +64,18 @@ class ToolRegistry:
     def __init__(self) -> None:
         self._tools: dict[str, Tool] = {}
         self._closeables: list[Callable[[], Awaitable[None]]] = []
+        #: Tools that were *wanted* (enabled) but couldn't be registered, mapped to a
+        #: human reason + remedy. Surfaced at startup (warning) and in ``/status``.
+        self.missing: dict[str, str] = {}
 
     def register(self, name: str, fn: Tool) -> None:
         """Add ``fn`` under ``name``; a later registration replaces an earlier one."""
         self._tools[name] = fn
+
+    def mark_missing(self, name: str, reason: str) -> None:
+        """Record (and warn once) that enabled tool ``name`` was skipped — with the remedy."""
+        self.missing[name] = reason
+        logger.warning("%s disabled: %s", name, reason)
 
     def register_closeable(self, close: Callable[[], Awaitable[None]]) -> None:
         """Record an async cleanup (e.g. a tool manager's ``close_all``) for :meth:`aclose`.
@@ -238,9 +246,14 @@ def default_registry(config: GaiaConfig | None = None) -> ToolRegistry:
     # the same ~/.gaia/tasks.db. Gaia-only for now; souls get them in P3.
     _register_task_tools(registry, config)
 
-    engine = _tool_setting(config, WEB_SEARCH, "engine")
-    if engine and _is_enabled(config, WEB_SEARCH):
-        registry.register(WEB_SEARCH, make_web_search(get_search_provider(engine)))
+    if _is_enabled(config, WEB_SEARCH):
+        engine = _tool_setting(config, WEB_SEARCH, "engine")
+        if engine:
+            registry.register(WEB_SEARCH, make_web_search(get_search_provider(engine)))
+        else:
+            registry.mark_missing(
+                WEB_SEARCH, "set tools.web_search.engine in gaia.yaml (e.g. duckduckgo)"
+            )
 
     agents_dir = constants.AGENTS_DIR
     if _is_enabled(config, fs.READ):
@@ -249,10 +262,20 @@ def default_registry(config: GaiaConfig | None = None) -> ToolRegistry:
         registry.register(fs.WRITE, fs.make_fs_write(agents_dir))
     if _is_enabled(config, fs.EDIT):
         registry.register(fs.EDIT, fs.make_fs_edit(agents_dir))
-    if _is_enabled(config, fs.GLOB) and shutil.which("fd"):
-        registry.register(fs.GLOB, fs.make_fs_glob(agents_dir))
-    if _is_enabled(config, fs.GREP) and shutil.which("rg"):
-        registry.register(fs.GREP, fs.make_fs_grep(agents_dir))
+    if _is_enabled(config, fs.GLOB):
+        if shutil.which("fd"):
+            registry.register(fs.GLOB, fs.make_fs_glob(agents_dir))
+        else:
+            registry.mark_missing(
+                fs.GLOB, "'fd' not on PATH (brew install fd / apt install fd-find)"
+            )
+    if _is_enabled(config, fs.GREP):
+        if shutil.which("rg"):
+            registry.register(fs.GREP, fs.make_fs_grep(agents_dir))
+        else:
+            registry.mark_missing(
+                fs.GREP, "'rg' not on PATH (brew install ripgrep / apt install ripgrep)"
+            )
 
     _register_browser_tools(registry, config)
     _register_shell_tools(registry, config)

@@ -5,8 +5,9 @@ feeds every turn to mem0, but ``remember`` lets the agent deliberately pin a sin
 durable fact ("the user's timezone is IST") so it is kept verbatim, not just inferred.
 
 The write goes through the ``Runner``'s memory service (the same one ``load_memory``
-searches), reached via ``tool_context``; ``app_name``/``user_id`` come from the live
-invocation so the fact lands in the right user's store.
+searches) via ADK's public ``ToolContext.add_memory`` — it scopes the write to the live
+session's user, so the fact lands in the right store. ``add_memory`` raises ``ValueError``
+when no memory service is configured; we translate that to the friendly "disabled" result.
 """
 
 from __future__ import annotations
@@ -41,14 +42,11 @@ def make_remember() -> Callable[..., Any]:
         if not cleaned:
             return {"status": "error", "error_message": "fact must not be empty"}
 
-        ctx = tool_context._invocation_context
-        if ctx.memory_service is None:
-            return {"status": "error", "error_message": "long-term memory is disabled"}
-
         entry = MemoryEntry(content=types.Content(parts=[types.Part(text=cleaned)]), author="user")
-        await ctx.memory_service.add_memory(
-            app_name=ctx.app_name, user_id=ctx.user_id, memories=[entry]
-        )
+        try:
+            await tool_context.add_memory(memories=[entry])
+        except ValueError:  # ADK raises when no memory service is configured
+            return {"status": "error", "error_message": "long-term memory is disabled"}
         return {"status": "success", "fact": cleaned}
 
     return remember

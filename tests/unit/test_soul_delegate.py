@@ -20,6 +20,8 @@ from gaia.souls.smith import SoulDecision
 from gaia.tools.fs.base import sandbox_for
 
 _SPEC = AgentSpec(name="Web Designer", description="Builds websites.", instruction="i", model="m")
+#: Minimal stand-in for ADK's ToolContext (only ``user_id`` is read by delegate_to_soul).
+_CTX = SimpleNamespace(user_id="")
 
 
 class _FakeFactory:
@@ -82,7 +84,7 @@ async def test_forge_path_persists_runs_and_lists_only_new_files(
     _stub_decision(monkeypatch, SoulDecision(action="forge", reason="none fit", spec=_SPEC))
     _stub_run_writing(monkeypatch, "index.html")
 
-    out = await make_delegate(gaia)("design a site", tool_context=None)
+    out = await make_delegate(gaia)("design a site", tool_context=_CTX)
 
     assert out["status"] == "success"
     assert out["created"] is True
@@ -104,7 +106,7 @@ async def test_passes_invocation_user_id_to_the_soul(
         return "ok"
 
     monkeypatch.setattr(delegate, "_run_soul", fake_run)
-    ctx = SimpleNamespace(_invocation_context=SimpleNamespace(user_id="alice"))
+    ctx = SimpleNamespace(user_id="alice")  # ADK public ToolContext.user_id
 
     await make_delegate(gaia)("task", tool_context=ctx)
 
@@ -121,7 +123,7 @@ async def test_reuse_path_does_not_recreate(
     )
     _stub_run_writing(monkeypatch, "index.html")
 
-    out = await make_delegate(gaia)("another site", tool_context=None)
+    out = await make_delegate(gaia)("another site", tool_context=_CTX)
 
     assert out["status"] == "success"
     assert out["created"] is False
@@ -134,7 +136,7 @@ async def test_bad_reuse_key_is_a_graceful_error(
     gaia, _ = env
     _stub_decision(monkeypatch, SoulDecision(action="reuse", reason="x", soul_key="ghost"))
 
-    out = await make_delegate(gaia)("task", tool_context=None)
+    out = await make_delegate(gaia)("task", tool_context=_CTX)
 
     assert out["status"] == "error"
     assert "usable decision" in out["error_message"]
@@ -150,7 +152,7 @@ async def test_smith_failure_is_caught(
 
     monkeypatch.setattr(delegate, "_decide", boom)
 
-    out = await make_delegate(gaia)("task", tool_context=None)
+    out = await make_delegate(gaia)("task", tool_context=_CTX)
 
     assert out["status"] == "error"
     assert "soul-smith failed" in out["error_message"]

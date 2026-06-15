@@ -33,13 +33,14 @@ def _ctx(
     memory: Any = None,
     agents: list[str] | None = None,
     handler: Any = None,
+    missing: dict[str, str] | None = None,
 ) -> CommandContext:
     gaia = SimpleNamespace(
         config=GaiaConfig(),
         settings=SimpleNamespace(model="gemini-test"),
         memory_service=memory,
         known_souls=lambda: agents or [],
-        tools=SimpleNamespace(names=lambda: ["web_fetch", "fs_read"]),
+        tools=SimpleNamespace(names=lambda: ["web_fetch", "fs_read"], missing=missing or {}),
         users=SimpleNamespace(get=lambda _uid: None),
     )
     return CommandContext(
@@ -82,6 +83,13 @@ async def test_status_reports_counts() -> None:
     assert "subagents: 2" in out
     assert "tools: 2" in out
     assert "memory: on" in out
+    assert "disabled tools:" not in out  # nothing missing → no line
+
+
+async def test_status_lists_disabled_tools() -> None:
+    out = await _run("status", _ctx(missing={"fs_glob": "'fd' not on PATH"}))
+
+    assert "disabled tools: fs_glob ('fd' not on PATH)" in out
 
 
 async def test_reset_flushes_then_clears_session() -> None:
