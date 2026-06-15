@@ -171,7 +171,11 @@ async def execute_decision(
         return SoulRun(False, "", "", False, error="soul-smith returned no usable decision")
     spec, created = resolved
 
-    soul = gaia.factory.create_or_reuse(spec)  # persist (new) + build the ADK agent
+    from gaia.souls.consult import make_consult_soul
+
+    # Every soul run can ask an expert (consult_soul); it needs the live gaia, so it's
+    # threaded in per build rather than living in the static tool registry.
+    soul = gaia.factory.create_or_reuse(spec, extra_tools=[make_consult_soul(gaia)])
     primary = sandbox_for(constants.AGENTS_DIR, spec.key).primary
     before = _snapshot(primary)
     timeout = gaia.config.souls.timeout_seconds  # read per call so yaml edits hot-reload

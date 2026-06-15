@@ -64,7 +64,9 @@ You are given a TASK and a list of EXISTING SOULS (each as "key: description"). 
       general), so Gaia can route future tasks to it. Generic, not task-specific.
     * instruction: the soul's system prompt for that role. Tell it to actually DO the task it
       is given and to WRITE every deliverable as files in its workspace via the fs_write tool
-      (e.g. index.html, program.md) — it must produce files, not just describe them.
+      (e.g. index.html, program.md) — it must produce files, not just describe them. It may
+      consult_soul(question) for a quick expert answer, or task_create(...) to split off a
+      sub-deliverable and yield.
     * model: "{model}"
     * skills: []   tools: []   (it automatically gets every tool)
 
