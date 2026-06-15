@@ -73,7 +73,7 @@ def root(
 ) -> None:
     """Bare invocation (no subcommand) opens the inline chat."""
     if no_color:
-        os.environ["NO_COLOR"] = "1"  # rich and textual both honor it
+        os.environ["NO_COLOR"] = "1"  # rich honors it
     ctx.obj = CliState(env_file=env_file, json=json_output, no_color=no_color)
     if ctx.invoked_subcommand is None:
         _chat(ctx.obj)

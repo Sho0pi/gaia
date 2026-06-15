@@ -32,6 +32,7 @@ dependencies = [
     # services (transcriber, memory, mcp/skill toolsets, registries) in
     # `gaia.di.Container`; see CLAUDE.md "Service lifecycle & DI".
     "dependency-injector>=4.41",
+    "ruamel-yaml>=0.19.1",
 ]
 
 [project.scripts]
