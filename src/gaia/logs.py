@@ -244,9 +244,8 @@ def setup_logging(
     """Configure logging once. Returns the log directory. Idempotent unless ``force``.
 
     ``console=False`` skips the stdout handlers and logs to the rotating files only.
-    The TUI path needs this: Textual runs full-screen on the alternate buffer, but a
-    ``StreamHandler`` grabs the *real* stdout before Textual redirects ``sys.stdout``,
-    so its writes would draw over the chat UI.
+    The foreground chat path needs this: a ``StreamHandler`` writing to stdout would
+    interleave log lines with the prompt and Gaia replies.
     """
     log_dir = Path(settings.log_dir)
     if _already_configured() and not force:

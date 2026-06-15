@@ -71,7 +71,7 @@ def root(
         ),
     ] = False,
 ) -> None:
-    """Bare invocation (no subcommand) opens the chat TUI."""
+    """Bare invocation (no subcommand) opens the inline chat."""
     if no_color:
         os.environ["NO_COLOR"] = "1"  # rich and textual both honor it
     ctx.obj = CliState(env_file=env_file, json=json_output, no_color=no_color)
@@ -81,7 +81,7 @@ def root(
 
 @app.command()
 def chat(ctx: typer.Context) -> None:
-    """Chat with Gaia in the local terminal TUI."""
+    """Chat with Gaia in the local terminal."""
     _chat(state(ctx))
 
 

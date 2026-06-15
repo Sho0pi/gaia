@@ -17,7 +17,7 @@ from gaia.cli import app
 
 result = CliRunner().invoke(app, ["--help"])
 assert result.exit_code == 0, result.output
-for heavy in ("google.adk", "gaia.app", "gaia.core", "gaia.connectors", "textual"):
+for heavy in ("google.adk", "gaia.app", "gaia.core", "gaia.connectors", "prompt_toolkit"):
     assert heavy not in sys.modules, heavy + " imported by --help"
 print("ok")
 """
