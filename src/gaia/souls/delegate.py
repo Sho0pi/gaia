@@ -49,7 +49,8 @@ def make_delegate(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any]]]:
         except Exception as exc:
             return {"status": "error", "error_message": f"soul-smith failed: {exc}"}
 
-        user_id = getattr(getattr(tool_context, "_invocation_context", None), "user_id", "gaia")
+        # ADK's public ToolContext exposes user_id; the dispatcher path passes None.
+        user_id = getattr(tool_context, "user_id", None) or "gaia"
         run: SoulRun = await execute_decision(gaia, decision, task, user_id)
         if not run.ok:
             return {

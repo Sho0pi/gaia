@@ -19,7 +19,7 @@ from gaia.tools.task import (
 
 
 def _ctx(user_id: str) -> Any:
-    return SimpleNamespace(_invocation_context=SimpleNamespace(user_id=user_id))
+    return SimpleNamespace(user_id=user_id)  # ADK public ToolContext.user_id
 
 
 def _store(tmp_path: Path) -> TaskStore:

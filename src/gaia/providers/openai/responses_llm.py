@@ -55,8 +55,17 @@ def _dumps(value: Any) -> str:
 
 
 def _content_to_input(contents: list[types.Content]) -> list[dict[str, Any]]:
-    """Map ADK contents to Responses ``input`` items (text + function call/result)."""
+    """Map ADK contents to Responses ``input`` items (text + function call/result).
+
+    The backend 400s ("No tool output found for function call <id>") if any
+    ``function_call`` lacks a matching ``function_call_output``. A turn cancelled
+    mid-flight (e.g. WhatsApp socket drop) persists the call event but not its
+    output, which would brick the session permanently on every later turn — so we
+    synthesize a placeholder output for any orphaned call to keep history valid.
+    """
     items: list[dict[str, Any]] = []
+    call_ids: set[str] = set()
+    answered_ids: set[str] = set()
     for content in contents:
         role = "assistant" if content.role == "model" else (content.role or "user")
         for part in content.parts or []:
@@ -82,22 +91,35 @@ def _content_to_input(contents: list[types.Content]) -> list[dict[str, Any]]:
                     }
                 )
             elif part.function_call:
+                call_id = part.function_call.id or part.function_call.name or ""
+                call_ids.add(call_id)
                 items.append(
                     {
                         "type": "function_call",
                         "name": part.function_call.name,
-                        "call_id": part.function_call.id or part.function_call.name,
+                        "call_id": call_id,
                         "arguments": _dumps(dict(part.function_call.args or {})),
                     }
                 )
             elif part.function_response:
+                call_id = part.function_response.id or part.function_response.name or ""
+                answered_ids.add(call_id)
                 items.append(
                     {
                         "type": "function_call_output",
-                        "call_id": part.function_response.id or part.function_response.name,
+                        "call_id": call_id,
                         "output": _dumps(part.function_response.response or {}),
                     }
                 )
+    # Heal orphaned calls (interrupted turns) so the backend doesn't 400 the session.
+    for call_id in call_ids - answered_ids:
+        items.append(
+            {
+                "type": "function_call_output",
+                "call_id": call_id,
+                "output": _dumps({"error": "tool call interrupted; no output recorded"}),
+            }
+        )
     return items
 
 

@@ -20,6 +20,8 @@ from gaia.souls.smith import SoulDecision
 from gaia.tools.fs.base import sandbox_for
 
 _SPEC = AgentSpec(name="Web Designer", description="Builds websites.", instruction="i", model="m")
+#: Minimal stand-in for ADK's ToolContext (only ``user_id`` is read by delegate_to_soul).
+_CTX = SimpleNamespace(user_id="")
 
 
 class _FakeFactory:
@@ -39,7 +41,8 @@ def _gaia(registry: SoulRegistry) -> Any:
         config=SimpleNamespace(
             llm=SimpleNamespace(
                 model="m", provider="gemini", openai=SimpleNamespace(use_oauth=False)
-            )
+            ),
+            souls=SimpleNamespace(timeout_seconds=300.0),
         ),
         settings=SimpleNamespace(model="m"),
         souls=registry,
@@ -82,7 +85,7 @@ async def test_forge_path_persists_runs_and_lists_only_new_files(
     _stub_decision(monkeypatch, SoulDecision(action="forge", reason="none fit", spec=_SPEC))
     _stub_run_writing(monkeypatch, "index.html")
 
-    out = await make_delegate(gaia)("design a site", tool_context=None)
+    out = await make_delegate(gaia)("design a site", tool_context=_CTX)
 
     assert out["status"] == "success"
     assert out["created"] is True
@@ -104,7 +107,7 @@ async def test_passes_invocation_user_id_to_the_soul(
         return "ok"
 
     monkeypatch.setattr("gaia.souls.run.run_soul_agent", fake_run)
-    ctx = SimpleNamespace(_invocation_context=SimpleNamespace(user_id="alice"))
+    ctx = SimpleNamespace(user_id="alice")  # ADK public ToolContext.user_id
 
     await make_delegate(gaia)("task", tool_context=ctx)
 
@@ -121,7 +124,7 @@ async def test_reuse_path_does_not_recreate(
     )
     _stub_run_writing(monkeypatch, "index.html")
 
-    out = await make_delegate(gaia)("another site", tool_context=None)
+    out = await make_delegate(gaia)("another site", tool_context=_CTX)
 
     assert out["status"] == "success"
     assert out["created"] is False
@@ -134,7 +137,7 @@ async def test_bad_reuse_key_is_a_graceful_error(
     gaia, _ = env
     _stub_decision(monkeypatch, SoulDecision(action="reuse", reason="x", soul_key="ghost"))
 
-    out = await make_delegate(gaia)("task", tool_context=None)
+    out = await make_delegate(gaia)("task", tool_context=_CTX)
 
     assert out["status"] == "error"
     assert "usable decision" in out["error_message"]
@@ -150,7 +153,27 @@ async def test_smith_failure_is_caught(
 
     monkeypatch.setattr(delegate, "_decide", boom)
 
-    out = await make_delegate(gaia)("task", tool_context=None)
+    out = await make_delegate(gaia)("task", tool_context=_CTX)
 
     assert out["status"] == "error"
     assert "soul-smith failed" in out["error_message"]
+
+
+async def test_honors_configured_soul_timeout(
+    env: tuple[Any, list[Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gaia, _ = env
+    gaia.config.souls.timeout_seconds = 0.01  # tiny budget so the slow run trips it
+    _stub_decision(monkeypatch, SoulDecision(action="forge", reason="r", spec=_SPEC))
+
+    async def slow_run(gaia: Any, soul: Any, key: str, task: str, user_id: str) -> str:
+        import asyncio
+
+        await asyncio.sleep(1.0)
+        return "too late"
+
+    monkeypatch.setattr("gaia.souls.run.run_soul_agent", slow_run)
+
+    out = await make_delegate(gaia)("task", tool_context=None)
+
+    assert out["status"] == "error" and "timed out" in out["error_message"]

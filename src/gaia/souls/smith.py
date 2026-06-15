@@ -26,7 +26,7 @@ class SoulDecision(BaseModel):
     """The soul-smith's verdict: reuse an existing soul or forge a new one."""
 
     action: Literal["reuse", "forge"] = Field(description="Whether to reuse or forge a soul.")
-    reason: str = Field(description="One-line justification, surfaced to the user.")
+    reason: str = Field(default="", description="One-line justification, surfaced to the user.")
     soul_key: str | None = Field(
         default=None, description="When action='reuse': the key of an existing soul to reuse."
     )

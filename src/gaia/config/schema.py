@@ -7,15 +7,15 @@ scaffold updates itself, no second copy to maintain.
 
 Secrets (tokens, api keys) are *not* modelled here; they stay in
 :class:`gaia.config.settings.Settings` (env). ``tools`` is wired: it toggles which
-registered tools are available (see :mod:`gaia.tools`). ``roles`` / ``souls`` are
-typed but **not yet wired** into the runtime; they are validated and carried forward
-so future work has a stable shape to build on.
+registered tools are available (see :mod:`gaia.tools`). ``souls.timeout_seconds`` is wired
+(the delegate timeout); ``roles`` is typed but **not yet wired** into the runtime — validated
+and carried forward so future work has a stable shape to build on.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -416,6 +416,18 @@ class LoggingConfig(BaseModel):
     backup_count: int = Field(default=5, description="How many rotated files to keep.")
 
 
+class SoulsConfig(BaseModel):
+    """Settings for delegated souls. ``extra='allow'`` keeps room for the not-yet-wired
+    agent-persona keys that used to live under this section."""
+
+    model_config = ConfigDict(extra="allow")
+
+    timeout_seconds: float = Field(
+        default=300.0,
+        description="Max seconds a delegated soul may run before the delegation is abandoned.",
+    )
+
+
 class AgentBinding(BaseModel):
     """What is attached to a named agent: a voice + always-on folder skills."""
 
@@ -467,8 +479,8 @@ class GaiaConfig(BaseModel):
         "duckduckgo). Every tool is attached to agents by default; disable one with "
         "enabled: false.",
     )
-    souls: dict[str, Any] = Field(
-        default_factory=dict, description="Agent personas (not yet wired)."
+    souls: SoulsConfig = Field(
+        default_factory=SoulsConfig, description="Delegated-soul settings (e.g. timeout_seconds)."
     )
     commands: dict[str, CommandConfig] = Field(
         default_factory=dict,

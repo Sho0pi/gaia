@@ -138,8 +138,11 @@ def run_auth(provider: str, *, env_file: Path | None = None) -> None:
     Currently supports ``openai`` (Sign in with ChatGPT, device-code flow).
     """
     settings = get_settings(env_file)
-    gaia = Gaia(settings)
-    setup_logging(settings, gaia.config.logging)
+    # Logging config only — don't build a whole Gaia (tool registry, souls, container) just
+    # to log in. Read the live config directly.
+    from gaia.config import ConfigSupplier
+
+    setup_logging(settings, ConfigSupplier(settings.config_path).current.logging)
     if provider in ("openai", "openai-chatgpt", "chatgpt"):
         from gaia.providers.openai import login
 

@@ -42,11 +42,12 @@ _REDACTED = "***REDACTED***"
 # google_genai are deliberately left at INFO so model request/response stay visible.)
 _NOISY = ("httpx", "httpcore", "urllib3", "grpc", "asyncio", "neonize", "telegram")
 
-# Loggers muted below WARNING — ADK's OTel metrics emitter warns on every non-Gemini
+# Loggers muted below ERROR — ADK's OTel metrics emitter warns on every non-Gemini
 # turn ("Skipping missing token usage metadata", harmless: OpenAI reports usage in a
 # shape ADK's meter doesn't read). Telemetry itself is off (see _TELEMETRY_OFF); this
-# just hides the residual log line.
-_MUTED = ("google_adk.google.adk.telemetry",)
+# just hides the residual log line. mem0's spaCy loader warns twice per ingest when the
+# optional ``mem0ai[nlp]`` extra isn't installed — harmless fallback, pure noise.
+_MUTED = ("google_adk.google.adk.telemetry", "mem0.utils.spacy_models")
 
 # Standard LogRecord attributes — anything else on a record is a user-supplied field.
 _STD_ATTRS = frozenset(

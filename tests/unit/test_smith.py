@@ -36,6 +36,17 @@ def test_forge_without_spec_is_rejected() -> None:
         SoulDecision(action="forge", reason="r")
 
 
+def test_decision_without_reason_validates() -> None:
+    # The model sometimes omits the (cosmetic) justification; a missing reason must not
+    # crash the soul decision — it would brick the missions dispatcher mid-run.
+    d = SoulDecision(
+        action="forge",
+        spec=AgentSpec(name="Web Designer", description="d", instruction="i", model="m"),
+    )
+
+    assert d.reason == ""
+
+
 def test_build_soul_smith_is_schema_only(monkeypatch: pytest.MonkeyPatch) -> None:
     import google.adk.agents as adk
 

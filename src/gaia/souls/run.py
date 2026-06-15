@@ -146,8 +146,8 @@ async def execute_decision(gaia: Gaia, decision: SoulDecision, task: str, user_i
     """Build the chosen soul and run it on ``task``; capture the workspace diff as artifacts.
 
     The post-decision core shared by ``delegate_to_soul`` and the dispatcher: persist/build
-    the soul (``create_or_reuse``), snapshot its workspace, run it (bounded by
-    :data:`SOUL_TIMEOUT`), and report the files it created/modified.
+    the soul (``create_or_reuse``), snapshot its workspace, run it (bounded by the configured
+    ``souls.timeout_seconds``), and report the files it created/modified.
     """
     resolved = resolve_spec(gaia, decision)
     if resolved is None:
@@ -157,13 +157,14 @@ async def execute_decision(gaia: Gaia, decision: SoulDecision, task: str, user_i
     soul = gaia.factory.create_or_reuse(spec)  # persist (new) + build the ADK agent
     primary = sandbox_for(constants.AGENTS_DIR, spec.key).primary
     before = _snapshot(primary)
+    timeout = gaia.config.souls.timeout_seconds  # read per call so yaml edits hot-reload
     try:
         summary = await asyncio.wait_for(
-            run_soul_agent(gaia, soul, spec.key, task, user_id), timeout=SOUL_TIMEOUT
+            run_soul_agent(gaia, soul, spec.key, task, user_id), timeout=timeout
         )
     except TimeoutError:
         return SoulRun(
-            False, spec.key, spec.name, created, error=f"soul timed out after {SOUL_TIMEOUT:.0f}s"
+            False, spec.key, spec.name, created, error=f"soul timed out after {timeout:.0f}s"
         )
     except Exception as exc:
         return SoulRun(False, spec.key, spec.name, created, error=f"soul run failed: {exc}")

@@ -6,7 +6,7 @@ All share one :class:`~gaia.missions.TaskStore` (the ~/.gaia/tasks.db board) and
 the ADK dict shape; none raise to the model, none self-log (``ToolLoggingPlugin`` does).
 
 **Per-user scoping (#142):** every task is owned by the human that asked — read from the
-live invocation (``tool_context._invocation_context.user_id``, the same per-user key the
+live invocation via ADK's public ``tool_context.user_id`` (the same per-user key the
 memory tools use). Listing and lookups are confined to the caller's own tasks, so one
 person's missions stay private on a shared channel. ``created_by`` is fixed to ``gaia`` in
 P1 (souls get these tools in P3).
@@ -39,7 +39,7 @@ def _err(message: str) -> dict[str, Any]:
 
 def _owner(tool_context: ToolContext) -> str:
     """The human user_id behind this turn (the per-user task scope)."""
-    return getattr(getattr(tool_context, "_invocation_context", None), "user_id", "") or ""
+    return tool_context.user_id or ""
 
 
 def _split(csv: str) -> list[str]:

@@ -19,10 +19,15 @@ class StatusCommand(Command):
             if mem.enabled
             else "off"
         )
-        return (
-            f"model: {model}\n"
-            f"memory: {memory_line}\n"
-            f"subagents: {len(ctx.gaia.known_souls())}\n"
-            f"tools: {len(ctx.gaia.tools.names())}\n"
-            f"commands: {len(ctx.registry.all())}"
-        )
+        lines = [
+            f"model: {model}",
+            f"memory: {memory_line}",
+            f"subagents: {len(ctx.gaia.known_souls())}",
+            f"tools: {len(ctx.gaia.tools.names())}",
+            f"commands: {len(ctx.registry.all())}",
+        ]
+        missing = ctx.gaia.tools.missing
+        if missing:
+            disabled = ", ".join(f"{name} ({reason})" for name, reason in sorted(missing.items()))
+            lines.append(f"disabled tools: {disabled}")
+        return "\n".join(lines)
