@@ -50,6 +50,7 @@ def test_openai_oauth_delegates_and_sets_use_oauth(tmp_path: Path, monkeypatch) 
     _clear_model_env(monkeypatch)
     settings = _settings(tmp_path)
     monkeypatch.setattr("gaia.config.get_settings", lambda env_file=None: settings)
+    monkeypatch.setattr(model_mod, "_openai_oauth_configured", lambda: False)
     called: list[str] = []
     monkeypatch.setattr(
         "gaia.app.run_auth", lambda provider, *, env_file=None: called.append(provider)
@@ -62,6 +63,26 @@ def test_openai_oauth_delegates_and_sets_use_oauth(tmp_path: Path, monkeypatch) 
     assert called == ["openai"]
     cfg = _config(tmp_path)
     assert cfg["llm"]["provider"] == "openai"
+    assert cfg["llm"]["openai"]["use_oauth"] is True
+
+
+def test_openai_oauth_configured_can_be_kept(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    _clear_model_env(monkeypatch)
+    settings = _settings(tmp_path)
+    monkeypatch.setattr("gaia.config.get_settings", lambda env_file=None: settings)
+    monkeypatch.setattr(model_mod, "_openai_oauth_configured", lambda: True)
+    called: list[str] = []
+    monkeypatch.setattr(
+        "gaia.app.run_auth", lambda provider, *, env_file=None: called.append(provider)
+    )
+
+    # method #2 oauth, do not re-login, default provider #1, fallback model #1
+    result = runner.invoke(app, ["model", "openai", "--no-fetch"], input="2\nn\n1\n1\n")
+
+    assert result.exit_code == 0, result.output
+    assert called == []
+    assert "kept existing OpenAI OAuth" in result.output
+    cfg = _config(tmp_path)
     assert cfg["llm"]["openai"]["use_oauth"] is True
 
 

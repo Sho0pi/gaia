@@ -150,6 +150,7 @@ def _prompt_rows(title: str, rows: list[tuple[str, str, str]], *, multi: bool) -
     from prompt_toolkit.layout import Layout
     from prompt_toolkit.layout.containers import Window
     from prompt_toolkit.layout.controls import FormattedTextControl
+    from prompt_toolkit.styles import Style
 
     cursor = 0
     selected: set[int] = set()
@@ -161,15 +162,17 @@ def _prompt_rows(title: str, rows: list[tuple[str, str, str]], *, multi: bool) -
     def text() -> StyleAndTextTuples:
         mode = "space select · enter submit" if multi else "enter choose"
         fragments: StyleAndTextTuples = [
-            ("bold", title),
-            ("", f"  ↑/↓ move · {mode} · esc cancel\n"),
+            ("class:title", title),
+            ("class:help", f"  ↑/↓ move · {mode} · esc cancel\n"),
         ]
         for i, (_key, label, status) in enumerate(rows):
-            style = "reverse" if i == cursor else ""
+            row_style = "class:selected" if i == cursor else ""
             pointer = ">" if i == cursor else " "
-            mark = "[x]" if i in selected else "[ ]"
+            mark = "x" if i in selected else " "
             suffix = f" — {status}" if status else ""
-            fragments.append((style, f"{pointer} {mark} {label}{suffix}\n"))
+            fragments.append((row_style, f"{pointer} {mark} "))
+            fragments.append(("class:name", label))
+            fragments.append(("class:status", f"{suffix}\n"))
         return fragments
 
     control = FormattedTextControl(text, focusable=True)
@@ -207,9 +210,19 @@ def _prompt_rows(title: str, rows: list[tuple[str, str, str]], *, multi: bool) -
     def _cancel(_event: object) -> None:
         app.exit(result=[])
 
+    style = Style.from_dict(
+        {
+            "title": "bold #7aa2f7",
+            "help": "#565f89",
+            "name": "#9ece6a",
+            "status": "#c0caf5",
+            "selected": "reverse",
+        }
+    )
     app = Application(
         layout=Layout(Window(control, always_hide_cursor=True)),
         key_bindings=kb,
+        style=style,
         full_screen=False,
     )
     return app.run()
@@ -221,8 +234,8 @@ def _choose_numbered(
     out = console()
     out.print(f"{title}:")
     for i, (_key, label, status) in enumerate(rows, 1):
-        suffix = f" — {status}" if status else ""
-        out.print(f"  {i}. {label}{suffix}")
+        suffix = f" — [dim]{status}[/]" if status else ""
+        out.print(f"  [cyan]{i}[/]. [green]{label}[/]{suffix}")
     prompt = "Select number" if single else "Select (comma-separated numbers, e.g. 1,2)"
     raw = typer.prompt(prompt, default="")
     picked: list[str] = []
@@ -237,10 +250,15 @@ def _choose_numbered(
 
 def _status(settings: Settings, spec: ProviderSpec) -> str:
     existing = get_env_var(constants.ENV_FILE, spec.env_key) or _settings_key(settings, spec.name)
-    if spec.name == "openai" and settings.openai_api_key is None:
-        # OAuth creds live outside .env; status remains API-key specific here.
-        pass
+    if spec.name == "openai" and _openai_oauth_configured():
+        return "configured (OAuth)" if not existing else "configured (API key + OAuth)"
     return "configured" if existing else "not configured"
+
+
+def _openai_oauth_configured() -> bool:
+    from gaia.providers.openai.store import load_credentials
+
+    return load_credentials() is not None
 
 
 def _settings_key(settings: Settings, provider: str) -> str | None:
@@ -268,9 +286,14 @@ def _configure_provider(
     if provider == "openai":
         method = _choose_openai_method(key is not None)
         if method == "oauth":
-            from gaia.app import run_auth
+            if _openai_oauth_configured() and not typer.confirm(
+                "OpenAI OAuth is already configured — sign in again?"
+            ):
+                console().print("kept existing OpenAI OAuth credentials")
+            else:
+                from gaia.app import run_auth
 
-            run_auth("openai", env_file=env_file)
+                run_auth("openai", env_file=env_file)
             use_oauth = True
         elif not _ensure_api_key(spec, key, api_key):
             return None
@@ -284,7 +307,11 @@ def _configure_provider(
 def _choose_openai_method(has_key: bool) -> str:
     rows = [
         ("api_key", "API key", "configured" if has_key else "not configured"),
-        ("oauth", "OAuth", "ChatGPT sign-in"),
+        (
+            "oauth",
+            "OAuth",
+            "configured" if _openai_oauth_configured() else "ChatGPT sign-in",
+        ),
     ]
     return _prompt_one("OpenAI auth method", rows)
 
