@@ -151,6 +151,9 @@ def _audio_to_ogg(src_path: Path, ogg_path: Path) -> Path:
     with av.open(str(src_path)) as src, av.open(str(ogg_path), "w", format="ogg") as dst:
         in_stream = src.streams.audio[0]
         out_stream = dst.add_stream("libopus", rate=48000, layout="mono")
+        # Write a metadata tag so the file has a tags dict: without one, neonize's ffprobe
+        # helper iterates a None 'tags' field and logs "'NoneType' object is not iterable".
+        out_stream.metadata["title"] = "gaia voice reply"
         for frame in src.decode(in_stream):
             for rframe in resampler.resample(frame):
                 for packet in out_stream.encode(rframe):
