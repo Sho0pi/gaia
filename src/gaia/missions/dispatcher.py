@@ -17,10 +17,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from gaia.logs import log_event
-from gaia.missions.notify import notify_result
+from gaia.missions.notify import notify_approval, notify_result
 from gaia.missions.present import present_result
 from gaia.missions.store import Task, TaskStatus, TaskStore
 from gaia.souls.run import SoulRun, decide_soul, execute_decision
@@ -104,10 +104,19 @@ class MissionDispatcher:
         free = self._max_concurrent - len(self._inflight)
         if free <= 0:
             return
+        gated = set(self._gaia.config.missions.approval_classes)
         for task in self._store.ready_tasks():
             if free <= 0:
                 break
             if task.id in self._inflight:
+                continue
+            # Approval gate: a task in a gated class parks for a human before it runs. It
+            # leaves the ready set (ready_tasks ignores awaiting_approval) until /tasks
+            # approve releases it → inbox. Doesn't consume a worker slot.
+            if task.approval_class and task.approval_class in gated:
+                self._store.update_status(task.id, TaskStatus.AWAITING_APPROVAL)
+                log_event("task_awaiting_approval", task=task.id, klass=task.approval_class)
+                self._spawn(notify_approval(self._gaia, task))
                 continue
             self._inflight.add(task.id)
             self._store.update_status(task.id, TaskStatus.RUNNING)
@@ -183,6 +192,10 @@ class MissionDispatcher:
             deliver = notify_result(self._gaia, fresh, run)
         else:
             return  # internal step — its result feeds a dependent, no user delivery
-        notice = asyncio.create_task(deliver)
-        self._workers.add(notice)
-        notice.add_done_callback(self._workers.discard)
+        self._spawn(deliver)
+
+    def _spawn(self, coro: Any) -> None:
+        """Run a best-effort side task (delivery/notify) tracked so it isn't GC'd."""
+        task = asyncio.create_task(coro)
+        self._workers.add(task)
+        task.add_done_callback(self._workers.discard)
