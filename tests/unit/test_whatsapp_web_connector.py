@@ -408,6 +408,33 @@ async def test_start_stops_client_on_cancel(fake_neonize: dict[str, Any], tmp_pa
     assert client.stopped is True  # finally ran stop() on the way out
 
 
+async def test_pair_returns_true_when_connected_event_fires(
+    fake_neonize: dict[str, Any], tmp_path: Path
+) -> None:
+    connector = WhatsAppWebConnector(tmp_path / "wa.db", _noop_dispatch)
+    real_build = connector.build_client
+
+    def _capture() -> _FakeClient:
+        client = real_build()
+
+        async def connect() -> None:
+            client.connected = True
+            await client.handlers[fake_neonize["ConnectedEv"]](client, object())
+
+        client.connect = connect  # type: ignore[method-assign]
+        return client
+
+    connector.build_client = _capture  # type: ignore[method-assign]
+
+    assert await connector.pair(timeout_s=2) is True
+
+
+async def test_pair_returns_false_on_timeout(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
+    connector = WhatsAppWebConnector(tmp_path / "wa.db", _noop_dispatch)
+
+    assert await connector.pair(timeout_s=0.01) is False
+
+
 async def test_stop_client_falls_back_to_disconnect() -> None:
     # A client exposing only disconnect() (no stop) must still be torn down.
     from gaia.connectors.whatsapp_web import _stop_client

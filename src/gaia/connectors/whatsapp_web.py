@@ -211,6 +211,8 @@ class WhatsAppWebConnector:
         # Blue-tick + typing presence always travel together — one flag drives both.
         self._show_active = show_active
         self._client: Any = None  # the live client while start() runs (for send_to)
+        # Set by ConnectedEv/PairStatusEv; pair() awaits it. Re-created per client.
+        self._connected = asyncio.Event()
 
     def build_client(self) -> NewAClient:
         """Create a neonize client wired to the dispatcher.
@@ -225,11 +227,13 @@ class WhatsAppWebConnector:
         from neonize.aioze.events import ConnectedEv, MessageEv, PairStatusEv
 
         self._session_db.parent.mkdir(parents=True, exist_ok=True)
+        self._connected = asyncio.Event()
         client = NewAClient(str(self._session_db))
 
         @client.event(ConnectedEv)  # type: ignore[untyped-decorator]
         async def _on_connected(connected: NewAClient, _event: ConnectedEv) -> None:
             logger.info("whatsapp connected")
+            self._connected.set()
             # WhatsApp only delivers our read receipts / typing presence to the other party
             # once we've announced ourselves available; send it once on connect.
             if self._show_active:
@@ -243,6 +247,7 @@ class WhatsAppWebConnector:
         @client.event(PairStatusEv)  # type: ignore[untyped-decorator]
         async def _on_pair(_client: NewAClient, event: PairStatusEv) -> None:
             logger.info("whatsapp paired as %s", event.ID.User)
+            self._connected.set()
 
         @client.event(MessageEv)  # type: ignore[untyped-decorator]
         async def _on_message(client: NewAClient, message: MessageEv) -> None:
@@ -428,6 +433,23 @@ class WhatsAppWebConnector:
             return ""
         # The prefix tells Gaia the modality, so it answers the spoken content naturally.
         return f"[voice message] {transcript}"
+
+    async def pair(self, timeout_s: float = 120.0) -> bool:
+        """Foreground QR pairing: connect, wait for scan, then shut the client down.
+
+        ``connect()`` makes neonize render the QR in the terminal. The ConnectedEv /
+        PairStatusEv handlers set ``_connected``. Returns True once paired (the session
+        persists to the db so later runs reconnect without a scan), False on timeout.
+        """
+        client = self.build_client()
+        try:
+            await client.connect()
+            await asyncio.wait_for(self._connected.wait(), timeout=timeout_s)
+            return True
+        except TimeoutError:
+            return False
+        finally:
+            await _stop_client(client)
 
     async def start(self) -> None:
         """Connect (prompting a QR scan on first run) and block receiving events.
