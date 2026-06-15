@@ -1,18 +1,21 @@
 """``gaia connect`` — interactive connector setup (openclaw-style onboarding).
 
-Bare invocation opens a numbered multi-select over the available connectors; each
-selected one runs its credential flow: a short tutorial, the token prompt / QR
+Bare invocation opens an inline interactive multi-select over the available connectors;
+each selected one runs its credential flow: a short tutorial, the token prompt / QR
 pairing, an existing-credentials keep-or-replace gate, then the
 ``connectors.<name>.enabled`` flip in ``gaia.yaml`` (comment-preserving). Secrets land
 in ``~/.gaia/.env`` (0600), never in yaml. ``gaia connect telegram`` skips the menu.
 
-Testability (issue #105 rule): every interactive step funnels through the small
-``_choose``/prompt helpers with a numbered ``typer.prompt``, so all flows run on
-scripted input.
+Testability (issue #105 rule): every interactive step funnels through small helpers;
+non-TTY runs use a numbered ``typer.prompt``, so flows run on scripted input.
 """
 
 from __future__ import annotations
 
+import sys
+import termios
+import tty
+from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Annotated
 
 import typer
@@ -100,7 +103,14 @@ def connect(
 
 
 def _choose(settings: Settings) -> list[str]:
-    """Numbered multi-select that works in real terminals and scripted tests."""
+    """Inline multi-select in a TTY; numbered fallback for scripted runs."""
+    if sys.stdin.isatty() and sys.stdout.isatty():  # pragma: no cover - real terminal path
+        return _choose_interactive(settings)
+    return _choose_numbered(settings)
+
+
+def _choose_numbered(settings: Settings) -> list[str]:
+    """Numbered multi-select fallback for tests, pipes, and non-TTY shells."""
     out = console()
     names = list(CONNECTORS)
     out.print("Connectors:")
@@ -113,6 +123,84 @@ def _choose(settings: Settings) -> list[str]:
         if token_.isdigit() and 1 <= int(token_) <= len(names):
             picked.append(names[int(token_) - 1])
     return picked
+
+
+def _choose_interactive(settings: Settings) -> list[str]:
+    names = list(CONNECTORS)
+    rows = [(name, CONNECTORS[name], _status(settings, name)) for name in names]
+    keys = _tty_keys(sys.stdin.fileno())
+    return _run_picker(rows, keys, sys.stdout.write)
+
+
+def _run_picker(
+    rows: list[tuple[str, str, str]], keys: Iterable[str], write: Callable[[str], object]
+) -> list[str]:
+    """Drive the inline picker. Extracted so key semantics are unit-testable."""
+    cursor = 0
+    selected: set[int] = set()
+    rendered_lines = 0
+
+    def render() -> None:
+        nonlocal rendered_lines
+        if rendered_lines:
+            write("\x1b[2K\r" + "\x1b[1A\x1b[2K\r" * (rendered_lines - 1))
+        lines = ["Which connectors?  ↑/↓ move · space select · enter submit · esc cancel"]
+        for i, (name, hint, status) in enumerate(rows):
+            pointer = ">" if i == cursor else " "
+            mark = "◉" if i in selected else "◯"
+            lines.append(f"{pointer} {mark} {name:<9} {hint} — {status}")
+        text = "\n".join(lines) + "\n"
+        write(text)
+        rendered_lines = len(lines)
+
+    write("\x1b[?25l")  # hide cursor while moving through the list
+    try:
+        render()
+        for key in keys:
+            if key == "up":
+                cursor = (cursor - 1) % len(rows)
+            elif key == "down":
+                cursor = (cursor + 1) % len(rows)
+            elif key == "space":
+                selected.symmetric_difference_update({cursor})
+            elif key == "enter":
+                if not selected:
+                    selected.add(cursor)
+                render()
+                return [rows[i][0] for i in range(len(rows)) if i in selected]
+            elif key == "esc":
+                render()
+                return []
+            render()
+        return []
+    finally:
+        write("\x1b[?25h")
+
+
+def _tty_keys(fd: int) -> Iterable[str]:
+    old = termios.tcgetattr(fd)
+    try:
+        tty.setcbreak(fd)
+        while True:
+            ch = sys.stdin.read(1)
+            if ch in ("\r", "\n"):
+                yield "enter"
+            elif ch == " ":
+                yield "space"
+            elif ch == "\x1b":
+                nxt = sys.stdin.read(1)
+                if nxt != "[":
+                    yield "esc"
+                    continue
+                code = sys.stdin.read(1)
+                if code == "A":
+                    yield "up"
+                elif code == "B":
+                    yield "down"
+            elif ch in ("\x03", "\x04"):
+                yield "esc"
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
 
 def _status(settings: Settings, name: str) -> str:

@@ -191,3 +191,33 @@ def test_bare_invocation_nothing_selected(home: Path) -> None:
 
     assert result.exit_code == 0
     assert "nothing selected" in result.output
+
+
+def test_interactive_picker_toggles_and_submits() -> None:
+    writes: list[str] = []
+    rows = [
+        ("telegram", "bot token", "not configured"),
+        ("whatsapp", "QR", "configured"),
+        ("cli", "built in", "built in"),
+    ]
+
+    picked = connect_mod._run_picker(rows, ["space", "down", "space", "enter"], writes.append)
+
+    assert picked == ["telegram", "whatsapp"]
+    assert any("↑/↓ move" in chunk for chunk in writes)
+
+
+def test_interactive_picker_enter_selects_cursor_when_empty() -> None:
+    rows = [("telegram", "bot token", "not configured"), ("whatsapp", "QR", "configured")]
+
+    picked = connect_mod._run_picker(rows, ["down", "enter"], lambda _text: None)
+
+    assert picked == ["whatsapp"]
+
+
+def test_interactive_picker_escape_cancels() -> None:
+    rows = [("telegram", "bot token", "not configured")]
+
+    picked = connect_mod._run_picker(rows, ["space", "esc"], lambda _text: None)
+
+    assert picked == []
