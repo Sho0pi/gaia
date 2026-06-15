@@ -134,7 +134,15 @@ class MissionDispatcher:
     async def _execute(self, task: Task) -> SoulRun:
         deps = [d for d in (self._store.get(b) for b in task.blocked_by) if d is not None]
         upstream = _format_upstream(deps)
-        soul_input = f"{task.spec}\n\n{upstream}".strip() if upstream else task.spec
+        # Re-run-with-results: a parent re-dispatched after its subtasks finished gets its
+        # spec + the notes it saved before yielding + the subtasks' results (the upstream
+        # block, since the children are now in blocked_by). Stateless, restart-proof.
+        parts = [task.spec]
+        if task.notes:
+            parts.append(f"Your earlier notes:\n{task.notes}")
+        if upstream:
+            parts.append(upstream)
+        soul_input = "\n\n".join(p for p in parts if p).strip()
         user_id = task.owner or "gaia"
         decision = await decide_soul(self._gaia, soul_input)
         # Seed the soul's session so its task tools know which task they're running — a
@@ -144,6 +152,18 @@ class MissionDispatcher:
 
     def _finish(self, task: Task, run: SoulRun) -> None:
         if run.ok:
+            # A soul may have filed subtasks and yielded; don't complete the parent — block
+            # it on those children so ready_tasks re-dispatches it (with their results) once
+            # they finish. Its summary is saved as notes (the re-run input).
+            children = self._store.children(task.id, open_only=True)
+            if children:
+                task.assignee = run.soul_key
+                task.blocked_by = sorted({*task.blocked_by, *(c.id for c in children)})
+                task.notes = (task.notes + "\n" + run.summary).strip()
+                task.status = TaskStatus.BLOCKED
+                self._store.update(task)
+                log_event("task_blocked_on_children", task=task.id, children=len(children))
+                return  # re-dispatched (re-run-with-results) when the subtasks complete
             task.assignee = run.soul_key
             self._store.update(task)  # persist assignee
             self._store.post_result(task.id, run.summary, run.files)  # → done

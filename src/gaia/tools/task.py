@@ -394,6 +394,11 @@ def make_task_complete(store: TaskStore) -> Callable[..., dict[str, Any]]:
         task_id = task_id or _state(tool_context).get("task_id", "")
         if _owned(store, task_id, _owner(tool_context)) is None:
             return _err(f"no task {task_id!r}")
+        if store.children(task_id, open_only=True):
+            return _err(
+                "task has open subtasks — leave it; it is re-run with their results once "
+                "they finish (don't complete it now)"
+            )
         task = store.post_result(task_id, result, _split(artifacts))
         assert task is not None  # ownership check above proved it exists
         return {"status": "success", "task": task.model_dump(mode="json")}

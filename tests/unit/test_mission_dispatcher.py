@@ -96,6 +96,42 @@ async def test_dependency_handoff_feeds_upstream_result(
     assert "T1 OUTPUT" in t2_input and "a.txt" in t2_input
 
 
+async def test_parent_blocks_on_filed_subtask_then_reruns_with_results(
+    store: TaskStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A soul running the parent files a subtask + yields → parent must wait (BLOCKED), not
+    # complete; once the subtask is done the parent is re-run with its notes + the result.
+    parent = store.create(Task(title="build", owner="itay", spec="build the thing"))
+    calls = {"n": 0}
+
+    def run_fn(task_input: str) -> SoulRun:
+        calls["n"] += 1
+        if calls["n"] == 1:  # parent's first run: file a subtask and yield
+            store.create(
+                Task(title="sub", owner="itay", parent_id=parent.id, mission_id=parent.mission_id)
+            )
+            return SoulRun(True, "builder", "Builder", True, summary="need a subtask first")
+        return SoulRun(True, calls.get("soul", "x"), "S", False, summary="ran", files=["o.txt"])
+
+    inputs = _fake_run(monkeypatch, run_fn)
+    d = MissionDispatcher(_gaia(store), store=store)
+
+    await _drain(d)  # parent runs → files child → parent BLOCKED on it
+    blocked = store.get(parent.id)
+    assert blocked is not None and blocked.status is TaskStatus.BLOCKED
+    child = store.children(parent.id)[0]
+    assert child.id in blocked.blocked_by and blocked.result == ""  # not completed
+    assert "need a subtask first" in blocked.notes  # saved as the re-run input
+
+    await _drain(d)  # child (inbox) runs → done
+    await _drain(d)  # parent re-dispatched with notes + child result
+
+    done = store.get(parent.id)
+    assert done is not None and done.status is TaskStatus.DONE
+    rerun = inputs[-1]  # the parent's re-run prompt
+    assert "need a subtask first" in rerun and "ran" in rerun  # notes + subtask result fed back
+
+
 async def test_failure_marks_failed_and_records_error(
     store: TaskStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
