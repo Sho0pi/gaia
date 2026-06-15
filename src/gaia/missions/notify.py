@@ -104,6 +104,16 @@ async def notify_approval(gaia: Gaia, task: Task) -> None:
     )
 
 
+async def notify_paused(gaia: Gaia, task: Task, reason: str) -> None:
+    """Tell the human a mission was paused (a cap was hit) and how to resume it."""
+    await _push(
+        gaia,
+        task,
+        f"⏸ Mission {task.title or task.id} paused — {reason}.\n"
+        f"Reply: /tasks approve {task.id} to continue, or /tasks reject {task.id} to stop.",
+    )
+
+
 async def notify_rejected(gaia: Gaia, task: Task) -> None:
     """Tell the human a gated task was rejected (and so the mission step won't run)."""
     await _push(gaia, task, f"✗ {task.title or task.id} was rejected — it won't run.")

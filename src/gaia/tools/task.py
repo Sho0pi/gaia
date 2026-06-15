@@ -55,7 +55,11 @@ def _state(tool_context: ToolContext) -> dict[str, Any]:
     plain Gaia turn has none, so the tools behave exactly as in P1 there.
     """
     state = getattr(tool_context, "state", None)
-    return dict(state) if state else {}
+    if state is None:
+        return {}
+    if hasattr(state, "to_dict"):  # ADK's State object (not a plain dict)
+        return dict(state.to_dict())
+    return dict(state)
 
 
 def _ancestor_ids(store: TaskStore, task_id: str) -> set[str]:

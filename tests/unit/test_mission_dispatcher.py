@@ -27,7 +27,7 @@ def _gaia(store: TaskStore, *, approval_classes: list[str] | None = None) -> Any
         users=SimpleNamespace(get=lambda _id: None),
         config=SimpleNamespace(
             cron=SimpleNamespace(deliver=SimpleNamespace(channel="", chat="")),
-            missions=SimpleNamespace(approval_classes=approval_classes or []),
+            missions=SimpleNamespace(approval_classes=approval_classes or [], max_hours=0.0),
         ),
     )
 
@@ -166,6 +166,25 @@ async def test_ungated_class_runs_normally(
     await _drain(d)
 
     assert store.get(t.id).status is TaskStatus.DONE  # type: ignore[union-attr]
+
+
+async def test_mission_over_time_budget_pauses(
+    store: TaskStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # max_hours breached → the mission root parks (awaiting_approval), the task doesn't run.
+    ran: list[str] = []
+    _fake_run(monkeypatch, lambda t: ran.append(t) or SoulRun(True, "s", "S", False))  # type: ignore[func-returns-value]
+    root = store.create(Task(title="old mission", owner="itay"))
+    root.created_at = "2000-01-01T00:00:00"  # ancient → way over any budget
+    store.update(root)
+    gaia = _gaia(store)
+    gaia.config.missions.max_hours = 1.0
+    d = MissionDispatcher(gaia, store=store)
+
+    await _drain(d)
+
+    assert store.get(root.id).status is TaskStatus.AWAITING_APPROVAL  # type: ignore[union-attr]
+    assert ran == []  # over budget → never ran
 
 
 def test_recover_leaves_awaiting_approval_untouched(store: TaskStore) -> None:
