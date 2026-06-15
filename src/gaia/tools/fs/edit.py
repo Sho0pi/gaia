@@ -27,15 +27,15 @@ def make_fs_edit(agents_dir: Path) -> Callable[..., dict[str, Any]]:
         *,
         tool_context: ToolContext,
     ) -> dict[str, Any]:
-        """Replace text in a workspace file; refused unless the match count is exactly
+        """Replace text in workspace file; refuse unless match count exactly
         ``expected_replacements``.
 
         Args:
             path: workspace-relative file path.
             old_string: exact text to replace (non-empty).
             new_string: replacement text.
-            dry_run: report the would-be replacement count without writing.
-            backup: copy the file to '<path>.bak' before editing.
+            dry_run: report would-be replacement count without writing.
+            backup: copy file to '<path>.bak' before edit.
         """
         agent = tool_context.agent_name
         sandbox = sandbox_for(agents_dir, agent)

@@ -28,13 +28,13 @@ def make_fs_write(agents_dir: Path) -> Callable[..., dict[str, Any]]:
         *,
         tool_context: ToolContext,
     ) -> dict[str, Any]:
-        """Write a text file in your workspace.
+        """Write text file in workspace.
 
         Args:
             path: workspace-relative file path.
-            mode: 'create' (fail if it exists), 'overwrite', or 'append'.
+            mode: 'create' (fail if exists), 'overwrite', or 'append'.
             create_dirs: create missing parent directories.
-            backup: copy an existing file to '<path>.bak' before overwriting.
+            backup: copy existing file to '<path>.bak' before overwrite.
         """
         agent = tool_context.agent_name
         sandbox = sandbox_for(agents_dir, agent)

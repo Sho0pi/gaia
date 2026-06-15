@@ -28,17 +28,14 @@ def make_fs_grep(agents_dir: Path) -> Callable[..., dict[str, Any]]:
         *,
         tool_context: ToolContext,
     ) -> dict[str, Any]:
-        """Search file contents under the workspace.
-
-        Output lines are 'path:line: text' for matches and 'path-line- text' for context.
+        """Search file contents under workspace.
 
         Args:
-            pattern: text to find, or a regex when ``regex`` is true.
-            regex: treat ``pattern`` as a regular expression (default literal text).
-            case_sensitive: default is case-insensitive.
-            context_lines: lines of context around each match.
-            root: subdirectory to search; omit for the workspace root.
-            glob: only search files matching this glob (e.g. '*.py').
+            pattern: regex to search for.
+            include: optional glob filter (for example '**/*.py').
+            path: subdirectory to search (default: workspace root).
+            case_sensitive: whether regex matching is case-sensitive.
+            max_matches: cap returned matches.
         """
         agent = tool_context.agent_name
         sandbox = sandbox_for(agents_dir, agent)

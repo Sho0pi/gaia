@@ -32,13 +32,13 @@ def make_fs_read(agents_dir: Path) -> Callable[..., dict[str, Any]]:
         *,
         tool_context: ToolContext,
     ) -> dict[str, Any]:
-        """Read a UTF-8 text file from your workspace.
+        """Read UTF-8 text file from workspace.
 
         Args:
             path: workspace-relative file path.
             start_line: first line to return (1-based).
             end_line: last line to return; omit for end of file.
-            include_line_numbers: prefix each line with its number.
+            include_line_numbers: prefix each line with number.
         """
         agent = tool_context.agent_name
         sandbox = sandbox_for(agents_dir, agent)

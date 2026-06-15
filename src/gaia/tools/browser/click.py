@@ -16,10 +16,10 @@ def make_browser_click(manager: BrowserSessionManager) -> Callable[..., Awaitabl
     """Return the ADK ``browser_click`` tool bound to ``manager``."""
 
     async def browser_click(ref: str, *, tool_context: ToolContext) -> dict[str, Any]:
-        """Click an element on the current page; snapshot again afterwards.
+        """Click current-page element; snapshot again after.
 
         Args:
-            ref: element ref from the most recent browser_snapshot, like 'e4'.
+            ref: element ref from latest browser_snapshot, like 'e4'.
         """
         agent = tool_context.agent_name
 

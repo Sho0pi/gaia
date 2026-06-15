@@ -182,10 +182,10 @@ def make_web_fetch(fetcher: Fetcher) -> Callable[..., dict[str, Any]]:
     """
 
     def web_fetch(url: str, max_bytes: int = DEFAULT_MAX_BYTES) -> dict[str, Any]:
-        """Fetch a web page and return its readable content as markdown (nav/ads stripped).
+        """Fetch web page; return readable markdown (nav/ads stripped).
 
         Args:
-            url: the http(s) URL to fetch.
+            url: http(s) URL to fetch.
         """
         cleaned = url.strip()
 

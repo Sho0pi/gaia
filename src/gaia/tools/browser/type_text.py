@@ -18,12 +18,12 @@ def make_browser_type(manager: BrowserSessionManager) -> Callable[..., Awaitable
     async def browser_type(
         ref: str, text: str, submit: bool = False, *, tool_context: ToolContext
     ) -> dict[str, Any]:
-        """Type text into a field on the current page.
+        """Type text into current-page field.
 
         Args:
-            ref: element ref from the most recent browser_snapshot, like 'e2'.
-            text: the text to type.
-            submit: press Enter after typing (e.g. to run a search).
+            ref: element ref from latest browser_snapshot, like 'e4'.
+            text: text to enter.
+            clear: clear existing field first.
         """
         agent = tool_context.agent_name
 

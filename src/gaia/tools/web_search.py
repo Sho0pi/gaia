@@ -68,12 +68,11 @@ def make_web_search(provider: SearchProvider) -> Callable[..., dict[str, Any]]:
     def web_search(
         query: str, max_results: int = DEFAULT_MAX_RESULTS, time_range: str | None = None
     ) -> dict[str, Any]:
-        """Search the web for current information; returns titles, URLs, and snippets.
+        """Search web for current info; return titles, URLs, snippets.
 
         Args:
-            query: the search query.
-            max_results: how many results (1-10).
-            time_range: recency filter — 'day', 'week', 'month' or 'year'; empty = no limit.
+            query: search query.
+            max_results: result count (1-10).
         """
         cleaned = query.strip()
 

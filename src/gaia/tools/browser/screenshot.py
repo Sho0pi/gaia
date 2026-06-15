@@ -24,12 +24,12 @@ def make_browser_screenshot(
     async def browser_screenshot(
         full_page: bool = True, ref: str = "", *, tool_context: ToolContext
     ) -> dict[str, Any]:
-        """Capture a screenshot of the current page; saves a PNG in your workspace.
+        """Capture current-page screenshot; save PNG in workspace.
 
         Args:
-            full_page: entire scrollable page; false = visible viewport only.
-            ref: optional element ref from the last snapshot (e.g. 'e4') to capture
-                just that element.
+            filename: optional workspace-relative output path. Defaults to timestamped
+                screenshots/browser-*.png file.
+            full_page: capture full scrollable page, not just viewport.
         """
         agent = tool_context.agent_name
 

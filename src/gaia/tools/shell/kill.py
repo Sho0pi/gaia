@@ -16,10 +16,10 @@ def make_exec_kill(manager: ProcessManager) -> Callable[..., Awaitable[dict[str,
     """Return the ADK ``exec_kill`` tool bound to ``manager``."""
 
     async def exec_kill(process_id: str, *, tool_context: ToolContext) -> dict[str, Any]:
-        """Stop a background process you started with exec(..., background=True).
+        """Stop background process started with exec(..., background=True).
 
         Args:
-            process_id: the id returned by the background exec.
+            process_id: id returned by background exec.
         """
         agent = tool_context.agent_name
 

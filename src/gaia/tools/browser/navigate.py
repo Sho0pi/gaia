@@ -44,14 +44,14 @@ def make_browser_navigate(
     """Return the ADK ``browser_navigate`` tool bound to ``manager``."""
 
     async def browser_navigate(url: str, *, tool_context: ToolContext) -> dict[str, Any]:
-        """Open a web page in your browser to read and interact with it.
+        """Open web page in browser to read/interact.
 
-        Follow up with browser_snapshot to see the page, browser_click / browser_type
-        to interact, or browser_screenshot to capture it.
+        Follow with browser_snapshot to see page, browser_click / browser_type
+        to interact, or browser_screenshot to capture.
 
         Args:
-            url: an http(s) URL, or a local ``file://`` path to one of your workspace
-                deliverables (e.g. a built ``index.html``) to preview it.
+            url: http(s) URL, or local ``file://`` path to workspace
+                deliverable (e.g. built ``index.html``) to preview.
         """
         cleaned = url.strip()
         agent = tool_context.agent_name

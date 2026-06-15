@@ -42,15 +42,15 @@ def make_cron(store: CronStore | None = None) -> Callable[..., dict[str, Any]]:
         name: str = "",
         job_id: str = "",
     ) -> dict[str, Any]:
-        """Manage scheduled jobs: gaia runs a message later / on a recurring schedule
-        and delivers the result to the user's chat.
+        """Manage scheduled jobs: gaia runs message later / recurring, then
+        delivers result to user's chat.
 
         Args:
             action: one of add | list | get | update | remove | enable | disable.
-            schedule: a 5-field cron expression ('0 9 * * *'), 'every:<seconds>', or
-                'at:<ISO datetime>' (one-shot, auto-deleted after it runs).
-            message: what to do when the job fires, in plain language.
-            name: short human label for the job.
+            schedule: 5-field cron ('0 9 * * *'), 'every:<seconds>', or
+                'at:<ISO datetime>' (one-shot, auto-deleted after run).
+            message: what to do when job fires, plain language.
+            name: short human job label.
             job_id: target job for get/update/remove/enable/disable.
         """
         try:

@@ -16,7 +16,7 @@ def make_exec_list(manager: ProcessManager) -> Callable[..., Awaitable[dict[str,
     """Return the ADK ``exec_list`` tool bound to ``manager``."""
 
     async def exec_list(*, tool_context: ToolContext) -> dict[str, Any]:
-        """List your background processes and whether each is still running."""
+        """List background processes and whether each still runs."""
         agent = tool_context.agent_name
         processes = [
             {

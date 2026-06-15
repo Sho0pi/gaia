@@ -66,17 +66,16 @@ def make_task_create(store: TaskStore) -> Callable[..., dict[str, Any]]:
         *,
         tool_context: ToolContext,
     ) -> dict[str, Any]:
-        """File a new task on the board (status ``inbox``). Use this to track real work —
-        a deliverable, a long job, a step that must wait for another — that should survive
-        beyond this turn.
+        """File task on board (status ``inbox``). Track real work that must
+        survive beyond this turn: deliverable, long job, blocked step.
 
         Args:
-            title: a short label for the task.
-            spec: the full instruction for whoever will run it.
-            mission_id: the mission this belongs to; omit to start a new mission.
-            parent_id: the parent task id when this is a subtask.
+            title: short task label.
+            spec: full instruction for runner.
+            mission_id: mission this belongs to; omit to start new mission.
+            parent_id: parent task id when subtask.
             blocked_by: comma-separated task ids that must finish first.
-            approval_class: spend | book | send_as_me | destructive — if it needs a human ok.
+            approval_class: spend | book | send_as_me | destructive — if human ok needed.
         """
         if not title.strip():
             return _err("title must not be empty")
@@ -179,18 +178,17 @@ def make_task_plan(store: TaskStore) -> Callable[..., dict[str, Any]]:
     """Return the ``task_plan`` tool bound to ``store`` (Gaia-only — files a whole mission)."""
 
     def task_plan(plan: str, *, tool_context: ToolContext) -> dict[str, Any]:
-        """File a whole multi-step mission at once, wiring real dependency edges.
+        """File whole multi-step mission, with real dependency edges.
 
-        Use this for any task that needs another task's output (chains, fan-out, fan-in) —
-        it avoids the broken pattern of guessing an upstream id mid-turn. The dispatcher
-        runs each task on a soul; a task runs as soon as its dependencies are done, and the
-        finished dependencies' results + files are fed into it.
+        Use when task needs another task's output (chains, fan-out, fan-in).
+        Avoid guessing upstream id mid-turn. Dispatcher runs each task on soul;
+        task starts when dependencies done; dependency results + files feed in.
 
         Args:
-            plan: a JSON array of tasks. Each: {"ref": "<local label>", "title": "...",
+            plan: JSON array of tasks. Each: {"ref": "<local label>", "title": "...",
                 "spec": "<full instruction>", "depends_on": ["<ref>", ...]}. ``depends_on``
-                lists the local refs (NOT ids) this task waits for; omit it for tasks that
-                can start immediately (they run in parallel). Example:
+                lists local refs (NOT ids) this task waits for; omit for tasks that
+                can start now (run in parallel). Example:
                 [{"ref":"program","title":"Design the A/B gym program","spec":"..."},
                  {"ref":"site","title":"Build the site","spec":"...","depends_on":["program"]}]
         """
@@ -242,7 +240,7 @@ def make_task_list(store: TaskStore) -> Callable[..., dict[str, Any]]:
     def task_list(
         mission_id: str = "", status: str = "", *, tool_context: ToolContext
     ) -> dict[str, Any]:
-        """List your tasks, optionally filtered by mission or status.
+        """List tasks, optional mission/status filter.
 
         Args:
             mission_id: only tasks in this mission.
@@ -265,10 +263,10 @@ def make_task_get(store: TaskStore) -> Callable[..., dict[str, Any]]:
     """Return the ``task_get`` tool bound to ``store``."""
 
     def task_get(task_id: str, *, tool_context: ToolContext) -> dict[str, Any]:
-        """Get one of your tasks by id (full detail).
+        """Get task by id (full detail).
 
         Args:
-            task_id: the task to fetch.
+            task_id: task to fetch.
         """
         task = _owned(store, task_id, _owner(tool_context))
         if task is None:
@@ -289,14 +287,14 @@ def make_task_update(store: TaskStore) -> Callable[..., dict[str, Any]]:
         *,
         tool_context: ToolContext,
     ) -> dict[str, Any]:
-        """Update one of your tasks — change its status, append notes, or set an assignee.
+        """Update task: status, notes, or assignee.
 
         Args:
-            task_id: the task to update.
-            status: a new status (inbox/assigned/running/blocked/awaiting_approval/
+            task_id: task to update.
+            status: new status (inbox/assigned/running/blocked/awaiting_approval/
                 review/done/failed).
-            notes: free-text progress notes (replaces the existing notes).
-            assignee: the soul/agent now responsible.
+            notes: free-text progress notes (replaces existing notes).
+            assignee: soul/agent now responsible.
         """
         task = _owned(store, task_id, _owner(tool_context))
         if task is None:
@@ -322,12 +320,12 @@ def make_task_complete(store: TaskStore) -> Callable[..., dict[str, Any]]:
     def task_complete(
         task_id: str, result: str = "", artifacts: str = "", *, tool_context: ToolContext
     ) -> dict[str, Any]:
-        """Mark one of your tasks done and record its result + artifacts.
+        """Mark task done; record result + artifacts.
 
         Args:
-            task_id: the task to complete.
-            result: a short summary of the outcome.
-            artifacts: comma-separated workspace paths the task produced.
+            task_id: task to complete.
+            result: short outcome summary.
+            artifacts: comma-separated workspace paths task produced.
         """
         if _owned(store, task_id, _owner(tool_context)) is None:
             return _err(f"no task {task_id!r}")
