@@ -18,7 +18,7 @@ class _RecordingFactory(AgentFactory):
         super().__init__(registry, default_model="test-model")
         self.built: AgentSpec | None = None
 
-    def _build_llm_agent(self, spec: AgentSpec) -> object:  # type: ignore[override]
+    def _build_llm_agent(self, spec: AgentSpec, *, extra_tools: object = None) -> object:  # type: ignore[override]
         self.built = spec
         return object()
 
@@ -75,7 +75,7 @@ def test_skills_dir_injects_instruction(registry: SoulRegistry, tmp_path: Path) 
     captured: dict[str, str] = {}
 
     class _Factory(AgentFactory):
-        def _build_llm_agent(self, s: AgentSpec) -> object:  # type: ignore[override]
+        def _build_llm_agent(self, s: AgentSpec, *, extra_tools: object = None) -> object:  # type: ignore[override]
             from gaia.skills import attach_skills
 
             captured["instruction"] = attach_skills(s.instruction, s.skills, tmp_path)
@@ -235,4 +235,7 @@ def test_spec_style_overrides_default(
 
     instruction = _capture_instruction(factory, spec, monkeypatch)
 
-    assert instruction == "Base."  # 'ai' injects nothing, default 'caveman' ignored
+    # 'ai' injects nothing, default 'caveman' ignored — only the soul preamble is prepended.
+    from gaia.agents.factory import SOUL_PREAMBLE
+
+    assert instruction == SOUL_PREAMBLE + "Base."

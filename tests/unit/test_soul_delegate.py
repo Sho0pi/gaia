@@ -30,7 +30,7 @@ class _FakeFactory:
     def __init__(self, registry: SoulRegistry) -> None:
         self._registry = registry
 
-    def create_or_reuse(self, spec: AgentSpec) -> Any:
+    def create_or_reuse(self, spec: AgentSpec, *, extra_tools: Any = None) -> Any:
         if self._registry.get(spec.key) is None:
             self._registry.save(spec)
         return SimpleNamespace(name=spec.key)

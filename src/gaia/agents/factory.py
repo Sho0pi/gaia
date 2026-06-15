@@ -21,6 +21,20 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
     from gaia.tools import ToolRegistry
 
+#: Prepended to every soul's instruction so each forged-or-stored soul knows the two
+#: delegation paths (P3). Kept here (not in the smith) so souls forged before P3 get it
+#: without re-forging.
+SOUL_PREAMBLE = """\
+You are one specialist running a single task. Two ways to pull in other specialists:
+- Need an ANSWER to keep going (a fact, a number, an opinion)? Call consult_soul(question)
+  — the answer comes straight back to you in this turn.
+- Need a DELIVERABLE produced (a separate piece of work)? Call task_create(title, spec) —
+  it is filed as a subtask of yours; save your progress with task_update(notes=...), then
+  STOP. You'll be re-run with the subtask's results once it's done.
+Prefer consult for questions and subtasks for work. Don't call consult_soul in a loop.
+
+"""
+
 
 class AgentFactory:
     """Creates subagents, but reuses a stored one whenever the key already exists."""
@@ -50,23 +64,28 @@ class AgentFactory:
         self._mcp_toolsets_provider = mcp_toolsets_provider or (lambda: [])
         self._skill_toolset_provider = skill_toolset_provider or (lambda: [])
 
-    def create_or_reuse(self, spec: AgentSpec) -> LlmAgent:
+    def create_or_reuse(self, spec: AgentSpec, *, extra_tools: list[Any] | None = None) -> LlmAgent:
         """Return an ADK agent for ``spec``, loading from the registry if present.
 
         New specs are persisted so future tasks reuse them instead of recreating.
+        ``extra_tools`` are appended to the soul's tools at build time — the soul-run core
+        passes ``consult_soul`` here (it needs the live ``gaia``, so it can't sit in the
+        static registry and must be threaded in per build).
         """
         stored = self._registry.get(spec.key)
         if stored is not None:
             spec = stored
         else:
             self._registry.save(spec)
-        return self._build_llm_agent(spec)
+        return self._build_llm_agent(spec, extra_tools=extra_tools)
 
-    def _build_llm_agent(self, spec: AgentSpec) -> LlmAgent:
+    def _build_llm_agent(
+        self, spec: AgentSpec, *, extra_tools: list[Any] | None = None
+    ) -> LlmAgent:
         """Construct the concrete ADK agent. Imports ADK lazily on purpose."""
         from google.adk.agents import LlmAgent
 
-        instruction = spec.instruction
+        instruction = SOUL_PREAMBLE + spec.instruction
         if self._skills_dir is not None:
             instruction = attach_skills(instruction, spec.skills, self._skills_dir)
         style = spec.communication_style or self._default_communication_style
@@ -80,7 +99,12 @@ class AgentFactory:
             )
         # Configured external MCP servers attach to every soul too (not in the registry,
         # so AgentSpec.tools can't pin them — they're all-or-nothing per server config).
-        tools = [*tools, *self._mcp_toolsets_provider(), *self._skill_toolset_provider()]
+        tools = [
+            *tools,
+            *self._mcp_toolsets_provider(),
+            *self._skill_toolset_provider(),
+            *(extra_tools or []),
+        ]
 
         return LlmAgent(
             name=spec.key,
