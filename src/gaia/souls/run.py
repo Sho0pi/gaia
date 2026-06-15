@@ -78,11 +78,17 @@ def _changed(before: dict[str, float], after: dict[str, float]) -> list[str]:
     return sorted(rel for rel, mtime in after.items() if before.get(rel) != mtime)[:MAX_FILES]
 
 
-async def run_soul_agent(gaia: Gaia, soul: Any, key: str, task: str, user_id: str) -> str:
+async def run_soul_agent(
+    gaia: Gaia, soul: Any, key: str, task: str, user_id: str, *, state: dict[str, Any] | None = None
+) -> str:
     """Run ``soul`` on ``task`` in a fresh nested Runner; return its final text.
 
     The runner is given Gaia's ``memory_service`` and the caller's ``user_id`` so the soul's
     ``load_memory``/``remember`` tools read and write the *same* user's long-term memory.
+
+    ``state`` seeds the soul's ADK session state — the seam the soul's tools read to learn
+    which task they're running (so ``task_create`` files a subtask of it) and the consult
+    depth/chain that bounds in-turn recursion. ``None`` means a bare session (e.g. the smith).
     """
     from google.adk.runners import Runner
     from google.adk.sessions import InMemorySessionService
@@ -93,7 +99,7 @@ async def run_soul_agent(gaia: Gaia, soul: Any, key: str, task: str, user_id: st
     session_service = InMemorySessionService()  # type: ignore[no-untyped-call]
     session_id = f"soul-{key}"
     await session_service.create_session(
-        app_name=constants.APP_NAME, user_id=user_id, session_id=session_id
+        app_name=constants.APP_NAME, user_id=user_id, session_id=session_id, state=state or {}
     )
     runner = Runner(
         app_name=constants.APP_NAME,
@@ -142,12 +148,23 @@ def resolve_spec(gaia: Gaia, decision: SoulDecision) -> tuple[Any, bool] | None:
     return None
 
 
-async def execute_decision(gaia: Gaia, decision: SoulDecision, task: str, user_id: str) -> SoulRun:
+async def execute_decision(
+    gaia: Gaia,
+    decision: SoulDecision,
+    task: str,
+    user_id: str,
+    *,
+    state: dict[str, Any] | None = None,
+) -> SoulRun:
     """Build the chosen soul and run it on ``task``; capture the workspace diff as artifacts.
 
     The post-decision core shared by ``delegate_to_soul`` and the dispatcher: persist/build
     the soul (``create_or_reuse``), snapshot its workspace, run it (bounded by the configured
     ``souls.timeout_seconds``), and report the files it created/modified.
+
+    ``state`` (e.g. the dispatched ``task_id``/``owner``) is seeded into the soul's session so
+    its tools know which task they run; we also stamp ``created_by`` with the soul's own key so
+    any subtask it files is attributed to it, not to Gaia.
     """
     resolved = resolve_spec(gaia, decision)
     if resolved is None:
@@ -158,9 +175,10 @@ async def execute_decision(gaia: Gaia, decision: SoulDecision, task: str, user_i
     primary = sandbox_for(constants.AGENTS_DIR, spec.key).primary
     before = _snapshot(primary)
     timeout = gaia.config.souls.timeout_seconds  # read per call so yaml edits hot-reload
+    run_state = {**(state or {}), "created_by": spec.key}
     try:
         summary = await asyncio.wait_for(
-            run_soul_agent(gaia, soul, spec.key, task, user_id), timeout=timeout
+            run_soul_agent(gaia, soul, spec.key, task, user_id, state=run_state), timeout=timeout
         )
     except TimeoutError:
         return SoulRun(

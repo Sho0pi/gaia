@@ -68,7 +68,9 @@ def _stub_decision(monkeypatch: pytest.MonkeyPatch, decision: SoulDecision) -> N
 
 
 def _stub_run_writing(monkeypatch: pytest.MonkeyPatch, filename: str) -> None:
-    async def fake_run(gaia: Any, soul: Any, key: str, task: str, user_id: str) -> str:
+    async def fake_run(
+        gaia: Any, soul: Any, key: str, task: str, user_id: str, *, state: Any = None
+    ) -> str:
         (sandbox_for(constants.AGENTS_DIR, key).primary / filename).write_text("<html>")
         return "built it"
 
@@ -102,7 +104,9 @@ async def test_passes_invocation_user_id_to_the_soul(
     _stub_decision(monkeypatch, SoulDecision(action="forge", reason="r", spec=_SPEC))
     seen: dict[str, str] = {}
 
-    async def fake_run(gaia: Any, soul: Any, key: str, task: str, user_id: str) -> str:
+    async def fake_run(
+        gaia: Any, soul: Any, key: str, task: str, user_id: str, *, state: Any = None
+    ) -> str:
         seen["user_id"] = user_id
         return "ok"
 
@@ -166,7 +170,9 @@ async def test_honors_configured_soul_timeout(
     gaia.config.souls.timeout_seconds = 0.01  # tiny budget so the slow run trips it
     _stub_decision(monkeypatch, SoulDecision(action="forge", reason="r", spec=_SPEC))
 
-    async def slow_run(gaia: Any, soul: Any, key: str, task: str, user_id: str) -> str:
+    async def slow_run(
+        gaia: Any, soul: Any, key: str, task: str, user_id: str, *, state: Any = None
+    ) -> str:
         import asyncio
 
         await asyncio.sleep(1.0)

@@ -99,9 +99,9 @@ async def test_gym_site_mission_runs_two_souls_with_handoff(
     inputs: list[str] = []
     real_execute = disp_mod.execute_decision
 
-    async def spy_execute(g: Any, decision: Any, task: str, user: str) -> Any:
+    async def spy_execute(g: Any, decision: Any, task: str, user: str, *, state: Any = None) -> Any:
         inputs.append(task)
-        return await real_execute(g, decision, task, user)
+        return await real_execute(g, decision, task, user, state=state)
 
     monkeypatch.setattr(disp_mod, "execute_decision", spy_execute)
 
