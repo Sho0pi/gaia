@@ -1,0 +1,34 @@
+# Task lifecycle on the board.
+direction: right
+
+inbox: inbox
+assigned: assigned
+running: running
+blocked: blocked {
+  tooltip: "waiting on blocked_by subtasks/dependencies"
+}
+awaiting: awaiting_approval {
+  tooltip: "gated action class (spend/book/send-as-me/destructive)"
+}
+review: review {
+  tooltip: "result posted; creator (Gaia or parent soul) composes/accepts"
+}
+done: done {
+  style.fill: "#d4f4d4"
+}
+failed: failed {
+  style.fill: "#f4d4d4"
+}
+
+inbox -> assigned: "dispatcher + smith\npick the soul"
+assigned -> running: soul starts
+running -> blocked: "task_create(subtask)\n+ yield with notes"
+blocked -> assigned: "subtask done →\nre-run with results"
+running -> awaiting: gated action hit
+awaiting -> assigned: "you approve\n(/tasks approve)"
+awaiting -> failed: you reject
+running -> review: result posted
+review -> done: accepted
+review -> assigned: "rework\n(new spec notes)"
+running -> failed: "error / retries\nexhausted"
+failed -> inbox: "Gaia re-plans\nor you retry"

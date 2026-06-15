@@ -1,0 +1,43 @@
+# The missions architecture: sources -> board -> dispatcher -> souls -> notify.
+direction: right
+
+sources: Task sources {
+  chat: "chat message\n(whatsapp / telegram / tui)"
+  cron: "cron schedule\n(07:00 news brief)"
+  soul: "soul subtask\n(task_create)"
+  analyzer: "analyzer proposals\n(#19)"
+}
+
+board: "The board  ~/.gaia/tasks.db" {
+  shape: cylinder
+  tooltip: "tasks(id, mission_id, parent_id, title, spec, status, assignee, blocked_by, depth, artifacts, result, created_by, approval_class, budget)"
+}
+
+daemon: "gaia daemon" {
+  dispatcher: "dispatcher\n(the only thing awake)"
+  smith: "soul-smith\n(reuse or forge)"
+  runner: "nested Runner\n(soul runs the task)"
+
+  dispatcher -> smith: "who fits?"
+  smith -> runner: "soul"
+  runner -> dispatcher: "result + artifacts"
+}
+
+souls: "soul registry\n~/.gaia/agent_registry" {
+  shape: stored_data
+}
+
+user: "you" {
+  shape: person
+}
+
+sources.chat -> board: create mission
+sources.cron -> board: scheduled task
+sources.soul -> board: "subtask (parent linked)"
+sources.analyzer -> board: proposal task
+
+board -> daemon.dispatcher: ready tasks
+daemon.dispatcher -> board: "post result,\nunblock dependents"
+daemon.smith <-> souls: reuse / persist
+daemon.dispatcher -> user: "push via connector\n(done / approve? / blocked)"
+user -> board: "/tasks approve"
