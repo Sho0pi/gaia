@@ -71,19 +71,29 @@ def test_openai_oauth_configured_can_be_kept(tmp_path: Path, monkeypatch) -> Non
     settings = _settings(tmp_path)
     monkeypatch.setattr("gaia.config.get_settings", lambda env_file=None: settings)
     monkeypatch.setattr(model_mod, "_openai_oauth_configured", lambda: True)
+    monkeypatch.setattr(model_mod, "_openai_oauth_access_token", lambda: "oauth-token")
     called: list[str] = []
+    fetched: list[tuple[str, str]] = []
     monkeypatch.setattr(
         "gaia.app.run_auth", lambda provider, *, env_file=None: called.append(provider)
     )
 
-    # method #2 oauth, do not re-login, default provider #1, fallback model #1
-    result = runner.invoke(app, ["model", "openai", "--no-fetch"], input="2\nn\n1\n1\n")
+    def fake_fetch(provider: str, key: str) -> list[str]:
+        fetched.append((provider, key))
+        return ["gpt-live"]
+
+    monkeypatch.setattr(model_mod, "_fetch_models", fake_fetch)
+
+    # method #2 oauth, do not re-login, default provider #1, live model #1
+    result = runner.invoke(app, ["model", "openai"], input="2\nn\n1\n1\n")
 
     assert result.exit_code == 0, result.output
     assert called == []
+    assert fetched == [("openai", "oauth-token")]
     assert "kept existing OpenAI OAuth" in result.output
     cfg = _config(tmp_path)
     assert cfg["llm"]["openai"]["use_oauth"] is True
+    assert cfg["llm"]["model"] == "gpt-live"
 
 
 def test_anthropic_fetch_failure_uses_fallback(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]

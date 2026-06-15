@@ -261,6 +261,22 @@ def _openai_oauth_configured() -> bool:
     return load_credentials() is not None
 
 
+def _openai_oauth_access_token() -> str | None:
+    """Return a fresh-enough ChatGPT OAuth access token for model listing."""
+    import asyncio
+
+    from gaia.providers.openai import refresh
+    from gaia.providers.openai.store import load_credentials
+
+    creds = load_credentials()
+    if creds is None:
+        return None
+    if creds.is_expired():
+        creds = asyncio.run(refresh(creds))
+        creds.save()
+    return creds.access_token
+
+
 def _settings_key(settings: Settings, provider: str) -> str | None:
     if provider == "gemini":
         return settings.google_api_key
@@ -283,6 +299,7 @@ def _configure_provider(
     use_oauth = False
     key = get_env_var(constants.ENV_FILE, spec.env_key) or _settings_key(settings, provider)
 
+    model_token = get_env_var(constants.ENV_FILE, spec.env_key) or api_key
     if provider == "openai":
         method = _choose_openai_method(key is not None)
         if method == "oauth":
@@ -295,12 +312,17 @@ def _configure_provider(
 
                 run_auth("openai", env_file=env_file)
             use_oauth = True
+            model_token = _openai_oauth_access_token()
         elif not _ensure_api_key(spec, key, api_key):
             return None
+        else:
+            model_token = get_env_var(constants.ENV_FILE, spec.env_key) or api_key
     elif not _ensure_api_key(spec, key, api_key):
         return None
+    else:
+        model_token = get_env_var(constants.ENV_FILE, spec.env_key) or api_key
 
-    models = _models_for(provider, get_env_var(constants.ENV_FILE, spec.env_key) or api_key, fetch)
+    models = _models_for(provider, model_token, fetch)
     return ConfiguredProvider(provider, models, use_oauth=use_oauth)
 
 
