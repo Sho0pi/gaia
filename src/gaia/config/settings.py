@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     google_api_key: str | None = Field(default=None, validation_alias="GEMINI_API_KEY")
     # OpenAI key for GPT models (provider: openai); read by litellm from the env.
     openai_api_key: str | None = Field(default=None, validation_alias="OPENAI_API_KEY")
+    # Anthropic key for Claude models (provider: anthropic); read by litellm from env.
+    anthropic_api_key: str | None = Field(default=None, validation_alias="ANTHROPIC_API_KEY")
 
     # Where reusable AgentCards are persisted.
     agent_registry_dir: Path = Field(
@@ -115,3 +117,5 @@ def configure_adk_env(settings: Settings) -> None:
         os.environ.setdefault("GOOGLE_API_KEY", settings.google_api_key)
     if settings.openai_api_key:
         os.environ.setdefault("OPENAI_API_KEY", settings.openai_api_key)
+    if settings.anthropic_api_key:
+        os.environ.setdefault("ANTHROPIC_API_KEY", settings.anthropic_api_key)
