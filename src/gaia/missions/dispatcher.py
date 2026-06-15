@@ -137,7 +137,10 @@ class MissionDispatcher:
         soul_input = f"{task.spec}\n\n{upstream}".strip() if upstream else task.spec
         user_id = task.owner or "gaia"
         decision = await decide_soul(self._gaia, soul_input)
-        return await execute_decision(self._gaia, decision, soul_input, user_id)
+        # Seed the soul's session so its task tools know which task they're running — a
+        # subtask it files is linked to this task (P3 parent re-dispatch).
+        state = {"task_id": task.id, "owner": task.owner, "mission_id": task.mission_id}
+        return await execute_decision(self._gaia, decision, soul_input, user_id, state=state)
 
     def _finish(self, task: Task, run: SoulRun) -> None:
         if run.ok:

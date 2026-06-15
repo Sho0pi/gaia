@@ -96,6 +96,30 @@ async def test_execute_decision_reuse_uses_stored_soul(
     assert run.ok and not run.created and run.summary == "reused output"
 
 
+async def test_execute_decision_seeds_session_state(
+    gaia: Gaia, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The dispatcher's task identity (task_id/owner) plus the soul's own key must reach the
+    # soul's session state — the seam P3 tools read to file subtasks / bound consult depth.
+    seen: dict[str, Any] = {}
+
+    async def spy(
+        g: Any, soul: Any, key: str, task: str, user_id: str, *, state: Any = None
+    ) -> str:
+        seen["state"] = state
+        return "done"
+
+    monkeypatch.setattr("gaia.souls.run.run_soul_agent", spy)
+
+    run = await execute_decision(
+        gaia, _FORGE, "write", user_id="itay", state={"task_id": "t1", "owner": "itay"}
+    )
+
+    assert run.ok
+    assert seen["state"]["task_id"] == "t1"
+    assert seen["state"]["created_by"] == "writer"  # stamped with the soul's own key
+
+
 async def test_decide_soul_roundtrips_through_json(
     gaia: Gaia, monkeypatch: pytest.MonkeyPatch
 ) -> None:

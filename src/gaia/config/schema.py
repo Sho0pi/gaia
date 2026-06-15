@@ -205,6 +205,32 @@ class MissionsConfig(BaseModel):
     poll_seconds: float = Field(
         default=2.0, description="How often the dispatcher polls the board for ready tasks."
     )
+    max_depth: int = Field(
+        default=3,
+        description="Max subtask nesting depth on the board (a soul filing a subtask deeper "
+        "than this is refused) — the runaway-nesting brake.",
+    )
+    max_tasks: int = Field(
+        default=20,
+        description="Max tasks a single mission may ever file (incl. done/failed). Hitting it "
+        "pauses the mission and asks you before more work is created.",
+    )
+    max_hours: float = Field(
+        default=0.0,
+        description="Wall-clock budget per mission in hours; 0 = unbounded. Past it the mission "
+        "pauses and asks you.",
+    )
+    consult_depth: int = Field(
+        default=2,
+        description="Max nesting depth for synchronous consult_soul calls (soul asks a soul a "
+        "question) — bounds in-turn recursion.",
+    )
+    approval_classes: list[str] = Field(
+        default_factory=list,
+        description="Action classes that require human approval before a task runs "
+        "(e.g. spend, book, send_as_me, destructive). A gated task parks in awaiting_approval "
+        "and pushes you an 'approve?' — release with /tasks approve <id>.",
+    )
 
 
 class VoiceConfig(BaseModel):

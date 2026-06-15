@@ -39,7 +39,9 @@ def _fake_run(monkeypatch: pytest.MonkeyPatch, fn: Any) -> list[str]:
     async def fake_decide(_gaia: Any, _task: str) -> Any:
         return SimpleNamespace(action="forge", reason="", soul_key=None, spec=None)
 
-    async def fake_execute(_gaia: Any, _decision: Any, task: str, _user: str) -> SoulRun:
+    async def fake_execute(
+        _gaia: Any, _decision: Any, task: str, _user: str, *, state: Any = None
+    ) -> SoulRun:
         inputs.append(task)
         return fn(task)
 
