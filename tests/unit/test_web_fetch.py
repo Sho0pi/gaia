@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from gaia.tools import web_fetch as wf
@@ -193,3 +195,48 @@ def test_too_many_redirects_refused(monkeypatch: pytest.MonkeyPatch) -> None:
 
     with pytest.raises(BlockedURLError, match="too many redirects"):
         wf._follow_redirects("https://example.com/start", send)
+
+
+def test_httpx_fetcher_sends_user_agent(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Many sites 403 a header-less client; httpx_fetcher must send a real UA + Accept.
+    import httpx
+
+    captured: dict[str, Any] = {}
+
+    class _FakeResponse:
+        status_code = 200
+        encoding = "utf-8"
+
+        def __init__(self) -> None:
+            self.headers: dict[str, str] = {}
+
+        def iter_bytes(self):  # type: ignore[no-untyped-def]
+            yield b"<html>ok</html>"
+
+        def __enter__(self):  # type: ignore[no-untyped-def]
+            return self
+
+        def __exit__(self, *_a: object) -> None:
+            return None
+
+    class _FakeClient:
+        def __init__(self, *_a: Any, headers: dict[str, str] | None = None, **_k: Any) -> None:
+            captured["headers"] = headers or {}
+
+        def __enter__(self):  # type: ignore[no-untyped-def]
+            return self
+
+        def __exit__(self, *_a: object) -> None:
+            return None
+
+        def stream(self, _method: str, _url: str) -> _FakeResponse:
+            return _FakeResponse()
+
+    monkeypatch.setattr(httpx, "Client", _FakeClient)
+    monkeypatch.setattr(wf, "_resolve_ips", lambda _host: ["93.184.216.34"])  # public, not blocked
+
+    wf.httpx_fetcher("https://example.com", 1000)
+
+    ua = captured["headers"].get("User-Agent", "")
+    assert ua.startswith("gaia/")
+    assert "Accept" in captured["headers"]

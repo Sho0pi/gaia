@@ -28,9 +28,6 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 #: Tool id, used as the ADK tool name (matches the closure name).
 NAME = "delegate_to_soul"
 
-#: How long a soul may run before the delegation is abandoned (seconds).
-SOUL_TIMEOUT = 300.0
-
 #: Cap on the number of workspace files reported back.
 MAX_FILES = 500
 
@@ -101,16 +98,17 @@ def make_delegate(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any]]]:
         before = _snapshot(primary)
         user_id = tool_context.user_id or "gaia"  # ADK public ToolContext API
 
+        timeout = gaia.config.souls.timeout_seconds  # read per call so yaml edits hot-reload
         try:
             summary = await asyncio.wait_for(
-                _run_soul(gaia, soul, spec.key, task, user_id), timeout=SOUL_TIMEOUT
+                _run_soul(gaia, soul, spec.key, task, user_id), timeout=timeout
             )
         except TimeoutError:
             return {
                 "status": "error",
                 "soul": spec.key,
                 "created": created,
-                "error_message": f"soul timed out after {SOUL_TIMEOUT:.0f}s",
+                "error_message": f"soul timed out after {timeout:.0f}s",
             }
         except Exception as exc:
             return {
