@@ -8,8 +8,14 @@ the ADK dict shape; none raise to the model, none self-log (``ToolLoggingPlugin`
 **Per-user scoping (#142):** every task is owned by the human that asked — read from the
 live invocation via ADK's public ``tool_context.user_id`` (the same per-user key the
 memory tools use). Listing and lookups are confined to the caller's own tasks, so one
-person's missions stay private on a shared channel. ``created_by`` is fixed to ``gaia`` in
-P1 (souls get these tools in P3).
+person's missions stay private on a shared channel.
+
+**Souls (P3):** these tools also run inside a soul mid-task. The dispatcher seeds the
+soul's session ``state`` (``task_id``/``created_by``); ``task_create`` reads it to file a
+subtask of the soul's own task and stamp ``created_by``, and ``task_get``/``update``/
+``complete`` default to that task — so a soul can save notes on its own task and file a
+subtask without ever learning its own id. Guards: ``max_depth`` (nesting), an ancestry
+cycle check, and a per-mission ``max_tasks`` cap that pauses the mission.
 """
 
 from __future__ import annotations
@@ -42,6 +48,26 @@ def _owner(tool_context: ToolContext) -> str:
     return tool_context.user_id or ""
 
 
+def _state(tool_context: ToolContext) -> dict[str, Any]:
+    """The soul's seeded session state (``task_id``/``created_by``…), or empty for Gaia.
+
+    The dispatcher seeds this when it runs a soul on a board task (see ``souls/run.py``); a
+    plain Gaia turn has none, so the tools behave exactly as in P1 there.
+    """
+    state = getattr(tool_context, "state", None)
+    return dict(state) if state else {}
+
+
+def _ancestor_ids(store: TaskStore, task_id: str) -> set[str]:
+    """The ids on ``task_id``'s parent chain (excluding itself); visited-guarded vs cycles."""
+    seen: set[str] = set()
+    current = store.get(task_id) if task_id else None
+    while current is not None and current.parent_id and current.parent_id not in seen:
+        seen.add(current.parent_id)
+        current = store.get(current.parent_id)
+    return seen
+
+
 def _split(csv: str) -> list[str]:
     """A comma-separated tool arg → a clean list (ADK schemas favour flat scalars)."""
     return [part.strip() for part in csv.split(",") if part.strip()]
@@ -53,8 +79,20 @@ def _owned(store: TaskStore, task_id: str, owner: str) -> Task | None:
     return task if task is not None and task.owner == owner else None
 
 
-def make_task_create(store: TaskStore) -> Callable[..., dict[str, Any]]:
-    """Return the ``task_create`` tool bound to ``store``."""
+def _pause_mission(store: TaskStore, mission_id: str, note: str) -> None:
+    """Park a mission's root task in ``awaiting_approval`` with ``note`` (cap breach)."""
+    root = store.get(mission_id)
+    if root is None or root.status in {TaskStatus.DONE, TaskStatus.FAILED}:
+        return
+    root.status = TaskStatus.AWAITING_APPROVAL
+    root.notes = f"{root.notes}\n[paused] {note}".strip()
+    store.update(root)
+
+
+def make_task_create(
+    store: TaskStore, *, max_depth: int = 3, max_tasks: int = 20
+) -> Callable[..., dict[str, Any]]:
+    """Return the ``task_create`` tool bound to ``store`` (with the P3 board guards)."""
 
     def task_create(
         title: str,
@@ -68,18 +106,26 @@ def make_task_create(store: TaskStore) -> Callable[..., dict[str, Any]]:
     ) -> dict[str, Any]:
         """File a new task on the board (status ``inbox``). Use this to track real work —
         a deliverable, a long job, a step that must wait for another — that should survive
-        beyond this turn.
+        beyond this turn. When a soul calls this mid-task it is filed as a SUBTASK of the
+        soul's current task automatically (it then saves notes and yields; it is re-run with
+        the subtask's results once done).
 
         Args:
             title: a short label for the task.
             spec: the full instruction for whoever will run it.
             mission_id: the mission this belongs to; omit to start a new mission.
-            parent_id: the parent task id when this is a subtask.
+            parent_id: the parent task id when this is a subtask (defaults to the caller's
+                own task when a soul files it).
             blocked_by: comma-separated task ids that must finish first.
             approval_class: spend | book | send_as_me | destructive — if it needs a human ok.
         """
         if not title.strip():
             return _err("title must not be empty")
+        state = _state(tool_context)
+        # A soul filing a subtask links it to its own task by default; created_by is the
+        # soul's key (Gaia turns have no state → parent stays unset, created_by "gaia").
+        parent_id = parent_id or state.get("task_id", "")
+        created_by = state.get("created_by", "gaia")
         deps = _split(blocked_by)
         missing = [d for d in deps if store.get(d) is None]
         if missing:
@@ -95,10 +141,21 @@ def make_task_create(store: TaskStore) -> Callable[..., dict[str, Any]]:
             if parent is None:
                 return _err(f"no parent task {parent_id!r}")
             depth = parent.depth + 1
+            if depth > max_depth:
+                return _err(f"subtask depth limit reached (max_depth={max_depth})")
+            # Cycle guard: a subtask must not wait on one of its own ancestors (deadlock).
+            ancestors = _ancestor_ids(store, parent_id) | {parent_id}
+            cyclic = [d for d in deps if d in ancestors]
+            if cyclic:
+                return _err(f"blocked_by would create an ancestry cycle: {', '.join(cyclic)}")
             mission_id = mission_id or parent.mission_id
             # A subtask inherits the parent's reply target when filed outside a live chat.
             notify_channel = notify_channel or parent.notify_channel
             notify_chat = notify_chat or parent.notify_chat
+        # Per-mission task cap (total ever filed) — breach pauses the mission, asks the user.
+        if mission_id and len(store.list(mission=mission_id)) >= max_tasks:
+            _pause_mission(store, mission_id, f"task cap reached (max_tasks={max_tasks})")
+            return _err(f"mission task limit reached (max_tasks={max_tasks}) — mission paused")
         task = store.create(
             Task(
                 title=title.strip(),
@@ -109,7 +166,7 @@ def make_task_create(store: TaskStore) -> Callable[..., dict[str, Any]]:
                 blocked_by=deps,
                 approval_class=approval_class.strip(),
                 owner=_owner(tool_context),
-                created_by="gaia",
+                created_by=created_by,
                 notify_channel=notify_channel,
                 notify_chat=notify_chat,
             )
@@ -175,7 +232,7 @@ def _order_refs(plan: list[dict[str, Any]]) -> list[str] | str:
     return order
 
 
-def make_task_plan(store: TaskStore) -> Callable[..., dict[str, Any]]:
+def make_task_plan(store: TaskStore, *, max_tasks: int = 20) -> Callable[..., dict[str, Any]]:
     """Return the ``task_plan`` tool bound to ``store`` (Gaia-only — files a whole mission)."""
 
     def task_plan(plan: str, *, tool_context: ToolContext) -> dict[str, Any]:
@@ -201,6 +258,8 @@ def make_task_plan(store: TaskStore) -> Callable[..., dict[str, Any]]:
             return _err("plan must be a non-empty array")
         if not all(isinstance(i, dict) and str(i.get("title", "")).strip() for i in items):
             return _err("each task needs at least a 'title'")
+        if len(items) > max_tasks:
+            return _err(f"plan exceeds the per-mission task cap (max_tasks={max_tasks})")
 
         order = _order_refs(items)
         if isinstance(order, str):
@@ -264,12 +323,13 @@ def make_task_list(store: TaskStore) -> Callable[..., dict[str, Any]]:
 def make_task_get(store: TaskStore) -> Callable[..., dict[str, Any]]:
     """Return the ``task_get`` tool bound to ``store``."""
 
-    def task_get(task_id: str, *, tool_context: ToolContext) -> dict[str, Any]:
+    def task_get(task_id: str = "", *, tool_context: ToolContext) -> dict[str, Any]:
         """Get one of your tasks by id (full detail).
 
         Args:
-            task_id: the task to fetch.
+            task_id: the task to fetch (defaults to the caller soul's own task).
         """
+        task_id = task_id or _state(tool_context).get("task_id", "")
         task = _owned(store, task_id, _owner(tool_context))
         if task is None:
             return _err(f"no task {task_id!r}")
@@ -282,7 +342,7 @@ def make_task_update(store: TaskStore) -> Callable[..., dict[str, Any]]:
     """Return the ``task_update`` tool bound to ``store``."""
 
     def task_update(
-        task_id: str,
+        task_id: str = "",
         status: str = "",
         notes: str = "",
         assignee: str = "",
@@ -292,12 +352,14 @@ def make_task_update(store: TaskStore) -> Callable[..., dict[str, Any]]:
         """Update one of your tasks — change its status, append notes, or set an assignee.
 
         Args:
-            task_id: the task to update.
+            task_id: the task to update (defaults to the caller soul's own task — use this to
+                save working notes before filing a subtask and yielding).
             status: a new status (inbox/assigned/running/blocked/awaiting_approval/
                 review/done/failed).
             notes: free-text progress notes (replaces the existing notes).
             assignee: the soul/agent now responsible.
         """
+        task_id = task_id or _state(tool_context).get("task_id", "")
         task = _owned(store, task_id, _owner(tool_context))
         if task is None:
             return _err(f"no task {task_id!r}")
@@ -320,15 +382,16 @@ def make_task_complete(store: TaskStore) -> Callable[..., dict[str, Any]]:
     """Return the ``task_complete`` tool bound to ``store``."""
 
     def task_complete(
-        task_id: str, result: str = "", artifacts: str = "", *, tool_context: ToolContext
+        task_id: str = "", result: str = "", artifacts: str = "", *, tool_context: ToolContext
     ) -> dict[str, Any]:
         """Mark one of your tasks done and record its result + artifacts.
 
         Args:
-            task_id: the task to complete.
+            task_id: the task to complete (defaults to the caller soul's own task).
             result: a short summary of the outcome.
             artifacts: comma-separated workspace paths the task produced.
         """
+        task_id = task_id or _state(tool_context).get("task_id", "")
         if _owned(store, task_id, _owner(tool_context)) is None:
             return _err(f"no task {task_id!r}")
         task = store.post_result(task_id, result, _split(artifacts))

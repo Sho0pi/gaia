@@ -188,7 +188,7 @@ class Gaia:
                 *self.tools.all(),
                 make_delegate(self),
                 make_message_user(self.users, self.connectors),
-                make_task_plan(self.tasks),
+                make_task_plan(self.tasks, max_tasks=self.config.missions.max_tasks),
                 *self.container.mcp_toolsets(),
                 *self.container.skill_toolsets(),
             ],
