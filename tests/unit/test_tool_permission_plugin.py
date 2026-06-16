@@ -69,15 +69,24 @@ async def test_non_registry_tool_not_gated(tmp_path: Path) -> None:
     assert await _call(plugin, "delegate_to_soul", "bob") is None
 
 
-async def test_mcp_browser_tool_is_gated_even_off_registry(tmp_path: Path) -> None:
-    # playwright-mcp browser_* tools attach as an MCP toolset (not the registry) but are
-    # named in the browser group — a user without 'browser' must still be denied.
+async def test_mcp_browser_tool_is_gated_by_prefix_off_registry(tmp_path: Path) -> None:
+    # playwright-mcp browser_* tools attach as an MCP toolset (not the registry); the
+    # browser_* PREFIX rule governs them, so a user without 'browser' is denied — even a
+    # tool name the GROUPS set never enumerates (browser_tab_new).
     store = UserStore(tmp_path / "users.json")
     store.register("cli", "bob", "Bob", role="user")
     store.revoke("bob", "browser")  # user role has browser by default; take it away
     plugin = ToolPermissionPlugin(_gaia(store))  # type: ignore[arg-type]
-    out = await _call(plugin, "browser_navigate", "bob")  # not in _REGISTRY_IDS
-    assert out is not None and out["status"] == "error"
+    for tool in ("browser_navigate", "browser_tab_new"):  # neither in _REGISTRY_IDS
+        out = await _call(plugin, tool, "bob")
+        assert out is not None and out["status"] == "error"
+
+
+async def test_browser_cap_allows_mcp_browser_tool(tmp_path: Path) -> None:
+    store = UserStore(tmp_path / "users.json")
+    store.register("cli", "bob", "Bob", role="user")  # user role includes browser
+    plugin = ToolPermissionPlugin(_gaia(store))  # type: ignore[arg-type]
+    assert await _call(plugin, "browser_tab_new", "bob") is None
 
 
 async def test_unresolved_user_is_trusted(tmp_path: Path) -> None:

@@ -7,6 +7,11 @@ A **capability** is a token a role or user holds. It is one of:
 * the wildcard ``"*"`` — every tool / every command right,
 * a raw **tool id** (e.g. ``"exec"``) — that one tool, for fine per-user grants.
 
+A group can also claim tools by **name prefix** (:data:`GROUP_PREFIXES`): ``browser``
+owns every ``browser_*`` tool. That's how the browser cap governs Microsoft's
+playwright-mcp tools, which attach as an MCP toolset (not the registry) and so can't be
+enumerated here — any ``browser_*`` name they expose is caught dynamically.
+
 Roles get a prebuilt capability set (:data:`DEFAULT_ROLE_CAPS`); a user may carry extra
 ``grants`` and ``denies`` on top (see :mod:`gaia.acl.resolve`). Groups are coarse on
 purpose: a new tool joins a group here once and every role holding that group gets it,
@@ -29,11 +34,9 @@ MANAGE_USERS = "manage_users"
 GROUPS: dict[str, frozenset[str]] = {
     "web": frozenset({"web_fetch", "web_search"}),
     "memory": frozenset({"remember", "load_memory"}),
-    # Both the native browser_* tools AND Microsoft's playwright-mcp tools live here. The
-    # mcp tools attach as an MCP toolset (not the registry), but they share the browser_*
-    # name prefix, so listing the names here lets the gate govern them too (see
-    # GROUP_TOOLS / ToolPermissionPlugin) — otherwise a user without the browser cap could
-    # still drive the mcp browser. Add new playwright-mcp tool names here as they're used.
+    # Native browser_* tools are listed for display (/acl); every browser_* name, native or
+    # playwright-mcp, is also caught by the GROUP_PREFIXES rule below — so the browser cap
+    # governs the whole surface without enumerating the mcp tools.
     "browser": frozenset(
         {
             "browser_navigate",
@@ -41,17 +44,6 @@ GROUPS: dict[str, frozenset[str]] = {
             "browser_click",
             "browser_type",
             "browser_screenshot",
-            # playwright-mcp surface (names as exposed by @playwright/mcp):
-            "browser_navigate_back",
-            "browser_hover",
-            "browser_select_option",
-            "browser_press_key",
-            "browser_file_upload",
-            "browser_tab_list",
-            "browser_tab_new",
-            "browser_tab_select",
-            "browser_tab_close",
-            "browser_wait_for",
         }
     ),
     "files": frozenset({"fs_read", "fs_write", "fs_edit", "fs_glob", "fs_grep"}),
@@ -61,10 +53,10 @@ GROUPS: dict[str, frozenset[str]] = {
     MANAGE_USERS: frozenset(),  # command right only — expands to no tool
 }
 
-#: Every tool id named in any group (the union). The gate governs a tool if it appears
-#: here — even when it isn't in the registry (e.g. playwright-mcp's browser_* tools attach
-#: as an MCP toolset). Tools in no group are not ACL'd.
-GROUP_TOOLS: frozenset[str] = frozenset().union(*GROUPS.values())
+#: Tool-name prefix -> the capability that governs every tool with that prefix. Lets a
+#: group claim tools it can't enumerate (off-registry MCP tools): ``browser_*`` (native and
+#: playwright-mcp) all fall under the ``browser`` cap. Checked in addition to GROUPS.
+GROUP_PREFIXES: dict[str, str] = {"browser_": "browser"}
 
 #: Built-in capabilities each role holds before per-user grants. Overridable per-role in
 #: ``gaia.yaml`` (``roles.<role>.capabilities``). ``guest`` holds nothing — guests are

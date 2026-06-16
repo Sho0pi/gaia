@@ -12,11 +12,26 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from gaia.acl.groups import ALL, DEFAULT_ROLE_CAPS, GROUPS
+from gaia.acl.groups import ALL, DEFAULT_ROLE_CAPS, GROUP_PREFIXES, GROUPS
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from gaia.config import GaiaConfig
     from gaia.users.store import Role, User
+
+
+def tool_capabilities(tool_id: str) -> set[str]:
+    """The capabilities that govern ``tool_id`` — by group membership or name prefix.
+
+    A tool may be claimed by a group that lists it (:data:`GROUPS`) or by a prefix rule
+    (:data:`GROUP_PREFIXES`, e.g. every ``browser_*`` -> ``browser``). Empty when no group
+    governs the tool (then it's only reachable via the wildcard or a raw-id grant). This is
+    what lets the browser cap cover off-registry playwright-mcp tools.
+    """
+    caps = {name for name, ids in GROUPS.items() if tool_id in ids}
+    for prefix, cap in GROUP_PREFIXES.items():
+        if tool_id.startswith(prefix):
+            caps.add(cap)
+    return caps
 
 
 def role_capabilities(role: Role, config: GaiaConfig | None) -> list[str]:
@@ -29,21 +44,12 @@ def role_capabilities(role: Role, config: GaiaConfig | None) -> list[str]:
 
 
 def _expand(caps: set[str], all_tool_ids: set[str]) -> set[str]:
-    """Expand capability tokens to concrete tool ids against the live registry ids."""
+    """The tool ids in ``all_tool_ids`` that ``caps`` grants (by group, prefix, or raw id)."""
     if ALL in caps:
         return set(all_tool_ids)
-    out: set[str] = set()
-    for cap in caps:
-        group = GROUPS.get(cap)
-        if group is not None:
-            # `group & all_tool_ids` is set intersection: the group's tool ids that are
-            # actually present right now (a group may name tools not registered in this
-            # config, e.g. browser when Playwright is absent). `out |= …` is set union:
-            # accumulate them into the result. Equivalent to out.update(group & ids).
-            out |= group & all_tool_ids
-        elif cap in all_tool_ids:
-            out.add(cap)  # a raw tool id (fine-grained per-user grant)
-    return out
+    # A tool is granted if any capability it carries (its governing groups/prefixes, plus
+    # its own id for a fine-grained raw grant) is one the caller holds.
+    return {tid for tid in all_tool_ids if caps & (tool_capabilities(tid) | {tid})}
 
 
 def effective_capabilities(user: User | None, config: GaiaConfig | None) -> set[str]:

@@ -35,15 +35,16 @@ class AclToolset(BaseToolset):
 
     async def get_tools(self, readonly_context: ReadonlyContext | None = None) -> list[BaseTool]:
         from gaia.acl import allowed_tool_ids
-        from gaia.acl.groups import GROUP_TOOLS
 
         registry = self._gaia.tools
-        governed = set(registry.names()) | GROUP_TOOLS
+        registry_ids = set(registry.names())
         user_id = getattr(readonly_context, "user_id", None)
         # No resolved user (cron / single-user / dev web) is trusted with every tool —
         # allowed_tool_ids returns all for a None user, matching the handler's admin default.
+        # Only registry tools live here; off-registry MCP tools attach separately and are
+        # gated by ToolPermissionPlugin (which applies the same group/prefix rules).
         user = self._gaia.users.get(user_id) if user_id else None
-        allowed = allowed_tool_ids(user, self._gaia.config, governed)
+        allowed = allowed_tool_ids(user, self._gaia.config, registry_ids)
 
         tools: list[BaseTool] = []
         for name in registry.names():

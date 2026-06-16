@@ -30,10 +30,6 @@ def require_manage_users(ctx: CommandContext) -> str | None:
     return None
 
 
-# Back-compat alias (same semantics, broadened to the manage_users capability).
-_require_admin = require_manage_users
-
-
 def _find(ctx: CommandContext, ref: str) -> str | None:
     """Resolve a user ref (canonical id or 'channel:sender') to a canonical user id."""
     store = ctx.gaia.users
@@ -52,7 +48,7 @@ class UsersCommand(Command):
     summary = "List known users, their roles, and the channels that reach them (admin)."
 
     async def run(self, ctx: CommandContext) -> str:
-        if refusal := _require_admin(ctx):
+        if refusal := require_manage_users(ctx):
             return refusal
         users = ctx.gaia.users.list()
         if not users:
@@ -72,7 +68,7 @@ class ApproveCommand(Command):
     aliases = ("role",)
 
     async def run(self, ctx: CommandContext) -> str:
-        if refusal := _require_admin(ctx):
+        if refusal := require_manage_users(ctx):
             return refusal
         ref, _, role = ctx.args.partition(" ")
         role = role.strip().lower()
@@ -93,7 +89,7 @@ class RemoveCommand(Command):
     aliases = ("deluser",)
 
     async def run(self, ctx: CommandContext) -> str:
-        if refusal := _require_admin(ctx):
+        if refusal := require_manage_users(ctx):
             return refusal
         ref = ctx.args.strip()
         if not ref:
@@ -114,7 +110,7 @@ class NameCommand(Command):
     usage = "<id|channel:sender> <name>"
 
     async def run(self, ctx: CommandContext) -> str:
-        if refusal := _require_admin(ctx):
+        if refusal := require_manage_users(ctx):
             return refusal
         ref, _, name = ctx.args.partition(" ")
         if not ref or not name.strip():
@@ -133,7 +129,7 @@ class LinkCommand(Command):
     usage = "<id> <channel:sender>"
 
     async def run(self, ctx: CommandContext) -> str:
-        if refusal := _require_admin(ctx):
+        if refusal := require_manage_users(ctx):
             return refusal
         user_id, _, ident = ctx.args.partition(" ")
         channel, _, sender = ident.strip().partition(":")
