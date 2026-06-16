@@ -20,6 +20,7 @@ from typing import Annotated
 
 import typer
 
+from gaia import constants
 from gaia.cli._console import console, emit_json
 from gaia.cli._options import CliState, state
 from gaia.cli._pidfile import PidFile
@@ -105,6 +106,7 @@ def status(ctx: typer.Context) -> None:
             "events": str(settings.log_dir / "events.jsonl"),
         },
         "pidfile": str(pidfile.path),
+        "socket": str(constants.SOCKET_FILE),
     }
     if st.json:
         emit_json(data)
@@ -117,12 +119,13 @@ def status(ctx: typer.Context) -> None:
         out.print(f"connectors: {', '.join(connectors) or 'none enabled'}")
         out.print(f"llm: {cfg.llm.provider} / {cfg.llm.model or 'default'}")
         out.print(f"logs: {settings.log_dir}")
+        out.print(f"socket: {constants.SOCKET_FILE}")
     raise typer.Exit(0 if pid is not None else EXIT_DAEMON)
 
 
 def _start(st: CliState) -> int:
     """Spawn the detached serve process; poll for its pidfile or early death."""
-    from gaia.config import BACKGROUND_CONNECTORS, ConfigSupplier, get_settings
+    from gaia.config import get_settings
 
     pidfile = PidFile()
     pid = pidfile.read_live()
@@ -130,16 +133,7 @@ def _start(st: CliState) -> int:
         console().print(f"already running (pid {pid})")
         return EXIT_DAEMON
 
-    # Fail fast in the parent (light config read; serve re-checks itself).
     settings = get_settings(st.env_file)
-    cfg = ConfigSupplier(settings.config_path).current
-    enabled = [name for name in BACKGROUND_CONNECTORS if getattr(cfg.connectors, name).enabled]
-    if not enabled:
-        console().print(
-            "no background channels enabled in gaia.yaml — enable connectors.telegram "
-            "or connectors.whatsapp first"
-        )
-        return 1
 
     argv = [sys.executable, "-m", "gaia.cli"]
     if st.env_file is not None:

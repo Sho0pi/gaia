@@ -130,16 +130,14 @@ def test_start_refuses_when_already_running(
     assert not fake_popen.instances  # never spawned
 
 
-def test_start_fails_fast_without_background_connectors(
-    settings: Settings, fake_popen: type[_FakePopen]
-) -> None:
+def test_start_allows_socket_only_daemon(settings: Settings, fake_popen: type[_FakePopen]) -> None:
     _disable_background(settings)
 
     result = runner.invoke(cli_app, ["start"])
 
-    assert result.exit_code == 1
-    assert "no background channels" in result.output
-    assert not fake_popen.instances
+    assert result.exit_code == 0
+    assert "started (pid 4242)" in result.output
+    assert fake_popen.instances
 
 
 def test_start_spawns_and_confirms_via_pidfile(
