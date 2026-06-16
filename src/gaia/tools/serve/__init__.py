@@ -17,9 +17,15 @@ from gaia.tools.serve.serve import (
     make_serve_list,
     make_serve_stop,
 )
+from gaia.tools.serve.tunnel import (
+    DEFAULT_TIMEOUT_SECONDS,
+    TunnelError,
+    TunnelManager,
+)
 
 __all__ = [
     "DEFAULT_IDLE_SECONDS",
+    "DEFAULT_TIMEOUT_SECONDS",
     "SERVE",
     "SERVE_LIST",
     "SERVE_STOP",
@@ -27,6 +33,8 @@ __all__ = [
     "ServedPorts",
     "ServedSite",
     "StaticServerManager",
+    "TunnelError",
+    "TunnelManager",
     "make_serve",
     "make_serve_list",
     "make_serve_stop",

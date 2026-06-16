@@ -45,8 +45,9 @@ def _prompt(task: Task, run: SoulRun) -> str:
         "call serve(<workspace>) to host it locally, then browser_navigate to the returned "
         "url (append the entry .html file if needed) and browser_screenshot RIGHT AWAY so the "
         "user sees a real render — do NOT use file://, it renders blank for real sites. "
-        "Include the live url in your reply so the user can open it. Serve + open + "
-        "screenshot + summarize, all here, then stop.",
+        "Include the local url in your reply. If the user asked to open it on their phone or "
+        "share it, call serve(path, public=True) and include the public_url too. Serve + "
+        "open + screenshot + summarize, all here, then stop.",
     ]
     return "\n".join(parts)
 

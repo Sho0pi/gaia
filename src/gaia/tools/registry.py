@@ -223,25 +223,39 @@ def _register_serve_tools(registry: ToolRegistry, config: GaiaConfig | None, ser
     """Attach the serve/serve_stop/serve_list tools, sharing one StaticServerManager.
 
     ``served`` is the ports set shared with browser_navigate (so it can open these sites).
-    Idle window is configurable via ``tools.serve.idle_seconds``.
+    Idle window is ``tools.serve.idle_seconds``; public tunneling is configured under
+    ``tools.serve.tunnel`` (off by default).
     """
     from gaia.tools import serve
 
-    factories = (
-        (serve.SERVE, serve.make_serve),
-        (serve.SERVE_STOP, serve.make_serve_stop),
-        (serve.SERVE_LIST, serve.make_serve_list),
-    )
-    if not any(_is_enabled(config, name) for name, _ in factories):
+    if not any(
+        _is_enabled(config, name) for name in (serve.SERVE, serve.SERVE_STOP, serve.SERVE_LIST)
+    ):
         return
     idle = _tool_setting(config, serve.SERVE, "idle_seconds")
     manager = serve.StaticServerManager(
         served, idle_seconds=float(idle) if idle else serve.DEFAULT_IDLE_SECONDS
     )
     registry.register_closeable(manager.close_all)  # closed by Gaia.close on the live loop
-    for name, make in factories:
-        if _is_enabled(config, name):
-            registry.register(name, make(manager))
+
+    # Public tunneling: read tools.serve.tunnel.{enabled,provider,runtime,timeout_seconds}.
+    tunnel_cfg = _tool_setting(config, serve.SERVE, "tunnel") or {}
+    tunnel_enabled = bool(tunnel_cfg.get("enabled", False))
+    tunnel = serve.TunnelManager(
+        provider=str(tunnel_cfg.get("provider", "pinggy")),
+        runtime=str(tunnel_cfg.get("runtime", "bunx")),
+        timeout_seconds=float(tunnel_cfg.get("timeout_seconds", serve.DEFAULT_TIMEOUT_SECONDS)),
+    )
+    registry.register_closeable(tunnel.close_all)
+
+    if _is_enabled(config, serve.SERVE):
+        registry.register(
+            serve.SERVE, serve.make_serve(manager, tunnel, tunnel_enabled=tunnel_enabled)
+        )
+    if _is_enabled(config, serve.SERVE_STOP):
+        registry.register(serve.SERVE_STOP, serve.make_serve_stop(manager, tunnel))
+    if _is_enabled(config, serve.SERVE_LIST):
+        registry.register(serve.SERVE_LIST, serve.make_serve_list(manager, tunnel))
 
 
 def _register_task_tools(
