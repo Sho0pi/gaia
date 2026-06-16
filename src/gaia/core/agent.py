@@ -59,7 +59,22 @@ class Gaia:
         # Live proactive senders (connector name → object with ``send_to``); the launcher
         # populates this same dict once connectors are running (empty outside the daemon).
         self.connectors: dict[str, Any] = self.container.connectors()
+        self._dispatcher: Any | None = None
         self._closed = False
+
+    @property
+    def dispatcher(self) -> Any:
+        """The one per-process :class:`~gaia.core.dispatch.Dispatcher` (built on first use).
+
+        Held here (not just inside the launcher) so other code — the ACL grant/revoke
+        commands — can reach the live per-user handler cache to invalidate it when a
+        user's permissions change.
+        """
+        if self._dispatcher is None:
+            from gaia.core.dispatch import Dispatcher
+
+            self._dispatcher = Dispatcher(self)
+        return self._dispatcher
 
     async def close(self) -> None:
         """Release every async resource on the *running* loop (idempotent, best-effort).
@@ -189,6 +204,7 @@ class Gaia:
 
         from gaia.souls import make_delegate
         from gaia.tools.message import make_message_user
+        from gaia.tools.permission import make_manage_permission
         from gaia.tools.task import make_task_plan
 
         # delegate_to_soul and message_user are attached to the root only — souls (built
@@ -207,6 +223,7 @@ class Gaia:
                 *scoped_tools,
                 make_delegate(self),
                 make_message_user(self.users, self.connectors),
+                make_manage_permission(self),
                 make_task_plan(self.tasks, max_tasks=self.config.missions.max_tasks),
                 *self.container.mcp_toolsets(),
                 *self.container.skill_toolsets(),

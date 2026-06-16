@@ -83,6 +83,9 @@ class ApproveCommand(Command):
             return f"No user matching {ref.strip()!r} (try /users)."
         updated = ctx.gaia.users.set_role(user_id, role)  # type: ignore[arg-type]
         assert updated is not None
+        # A role change alters the user's capabilities — evict their cached handler so the
+        # filtered toolset + prompt rebuild on their next turn.
+        await ctx.gaia.dispatcher.invalidate_user(updated.id)
         return f"{updated.id} is now {updated.role}."
 
 

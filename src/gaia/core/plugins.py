@@ -105,19 +105,21 @@ class ToolPermissionPlugin(BasePlugin):
         tool_context: ToolContext,
     ) -> dict[str, Any] | None:
         from gaia.acl import allowed_tool_ids
+        from gaia.acl.groups import GROUP_TOOLS
 
         name = getattr(tool, "name", type(tool).__name__)
-        registry_ids = set(self._gaia.tools.names())
-        # The ACL governs only registry tools. Root-only tools (delegate_to_soul,
-        # message_user, task_plan, consult_soul) and MCP/skill toolset tools aren't in the
-        # registry — they're not ACL'd here, so let them through.
-        if name not in registry_ids:
+        # The ACL governs a tool if it's in the registry OR named in a capability group.
+        # The group union catches MCP toolset tools that aren't in the registry but should
+        # still be gated (playwright-mcp's browser_*). Root-only tools (delegate_to_soul,
+        # message_user, task_plan, consult_soul) and ungrouped MCP tools fall through.
+        governed = set(self._gaia.tools.names()) | GROUP_TOOLS
+        if name not in governed:
             return None
         user_id = getattr(tool_context, "user_id", None)
         # No resolved user (cron / single-user / tests) is trusted — allowed_tool_ids
         # returns every tool for a None user, matching the handler's admin default.
         user = self._gaia.users.get(user_id) if user_id else None
-        allowed = allowed_tool_ids(user, self._gaia.config, registry_ids)
+        allowed = allowed_tool_ids(user, self._gaia.config, governed)
         if name in allowed:
             return None
         log_event("tool_denied", **_base_fields(name, tool_context))

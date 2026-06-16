@@ -28,6 +28,7 @@ def test_default_registry_has_every_builtin() -> None:
         "grant",
         "revoke",
         "perms",
+        "acl",
     }
 
 

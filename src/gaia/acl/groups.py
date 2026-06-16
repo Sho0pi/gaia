@@ -29,6 +29,11 @@ MANAGE_USERS = "manage_users"
 GROUPS: dict[str, frozenset[str]] = {
     "web": frozenset({"web_fetch", "web_search"}),
     "memory": frozenset({"remember", "load_memory"}),
+    # Both the native browser_* tools AND Microsoft's playwright-mcp tools live here. The
+    # mcp tools attach as an MCP toolset (not the registry), but they share the browser_*
+    # name prefix, so listing the names here lets the gate govern them too (see
+    # GROUP_TOOLS / ToolPermissionPlugin) — otherwise a user without the browser cap could
+    # still drive the mcp browser. Add new playwright-mcp tool names here as they're used.
     "browser": frozenset(
         {
             "browser_navigate",
@@ -36,6 +41,17 @@ GROUPS: dict[str, frozenset[str]] = {
             "browser_click",
             "browser_type",
             "browser_screenshot",
+            # playwright-mcp surface (names as exposed by @playwright/mcp):
+            "browser_navigate_back",
+            "browser_hover",
+            "browser_select_option",
+            "browser_press_key",
+            "browser_file_upload",
+            "browser_tab_list",
+            "browser_tab_new",
+            "browser_tab_select",
+            "browser_tab_close",
+            "browser_wait_for",
         }
     ),
     "files": frozenset({"fs_read", "fs_write", "fs_edit", "fs_glob", "fs_grep"}),
@@ -44,6 +60,11 @@ GROUPS: dict[str, frozenset[str]] = {
     "cron": frozenset({"cron"}),
     MANAGE_USERS: frozenset(),  # command right only — expands to no tool
 }
+
+#: Every tool id named in any group (the union). The gate governs a tool if it appears
+#: here — even when it isn't in the registry (e.g. playwright-mcp's browser_* tools attach
+#: as an MCP toolset). Tools in no group are not ACL'd.
+GROUP_TOOLS: frozenset[str] = frozenset().union(*GROUPS.values())
 
 #: Built-in capabilities each role holds before per-user grants. Overridable per-role in
 #: ``gaia.yaml`` (``roles.<role>.capabilities``). ``guest`` holds nothing — guests are

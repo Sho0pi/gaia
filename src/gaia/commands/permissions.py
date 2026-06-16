@@ -12,6 +12,25 @@ from gaia.commands.base import Command, CommandContext
 from gaia.commands.users import _find, require_manage_users
 
 
+class AclCommand(Command):
+    name = "acl"
+    summary = "List the available ACL capability groups and the tools each grants."
+
+    async def run(self, ctx: CommandContext) -> str:
+        from gaia.acl.groups import ALL, DEFAULT_ROLE_CAPS, GROUPS
+
+        lines = ["Capabilities you can /grant or set on a role:"]
+        for name in sorted(GROUPS):
+            tools = ", ".join(sorted(GROUPS[name])) or "(command right only)"
+            lines.append(f"- {name}: {tools}")
+        lines.append(f"- {ALL}: every tool + every command right (wildcard)")
+        lines.append("")
+        lines.append("Role defaults:")
+        for role, caps in DEFAULT_ROLE_CAPS.items():
+            lines.append(f"- {role}: {', '.join(caps) or '—'}")
+        return "\n".join(lines)
+
+
 class GrantCommand(Command):
     name = "grant"
     summary = "Grant a user an ACL capability. Usage: /grant <id|channel:sender> <capability>."
@@ -29,6 +48,9 @@ class GrantCommand(Command):
             return f"No user matching {ref.strip()!r} (try /users)."
         updated = ctx.gaia.users.grant(user_id, cap)
         assert updated is not None
+        # Evict the target's cached handler so the new capability shows up next turn (the
+        # baked-in toolset filter + prompt rebuild; the hard gate already reflects it).
+        await ctx.gaia.dispatcher.invalidate_user(updated.id)
         return f"Granted {cap!r} to {updated.id} (grants: {', '.join(updated.grants) or '—'})."
 
 
@@ -49,6 +71,7 @@ class RevokeCommand(Command):
             return f"No user matching {ref.strip()!r} (try /users)."
         updated = ctx.gaia.users.revoke(user_id, cap)
         assert updated is not None
+        await ctx.gaia.dispatcher.invalidate_user(updated.id)
         return f"Revoked {cap!r} from {updated.id} (denies: {', '.join(updated.denies) or '—'})."
 
 

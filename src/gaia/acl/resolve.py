@@ -36,7 +36,11 @@ def _expand(caps: set[str], all_tool_ids: set[str]) -> set[str]:
     for cap in caps:
         group = GROUPS.get(cap)
         if group is not None:
-            out |= group & all_tool_ids  # group -> its tools that actually exist
+            # `group & all_tool_ids` is set intersection: the group's tool ids that are
+            # actually present right now (a group may name tools not registered in this
+            # config, e.g. browser when Playwright is absent). `out |= …` is set union:
+            # accumulate them into the result. Equivalent to out.update(group & ids).
+            out |= group & all_tool_ids
         elif cap in all_tool_ids:
             out.add(cap)  # a raw tool id (fine-grained per-user grant)
     return out
