@@ -10,16 +10,8 @@ from gaia.tools.permission import make_manage_permission
 from gaia.users import UserStore
 
 
-class _FakeDispatcher:
-    def __init__(self) -> None:
-        self.invalidated: list[str] = []
-
-    def invalidate_user(self, user_id: str) -> None:
-        self.invalidated.append(user_id)
-
-
 def _gaia(store: UserStore) -> Any:
-    return SimpleNamespace(users=store, config=None, dispatcher=_FakeDispatcher())
+    return SimpleNamespace(users=store, config=None)
 
 
 def _store(tmp_path: Path) -> UserStore:
@@ -40,7 +32,6 @@ async def test_admin_can_grant(tmp_path: Path) -> None:
     out = await tool(user="alice", action="grant", capability="shell", tool_context=_ctx("root"))
     assert out["status"] == "success"
     assert store.get("alice").grants == ["shell"]  # type: ignore[union-attr]
-    assert gaia.dispatcher.invalidated == ["alice"]
 
 
 async def test_non_admin_refused(tmp_path: Path) -> None:

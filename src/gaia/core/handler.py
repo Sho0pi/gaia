@@ -76,7 +76,7 @@ class GaiaHandler:
             )
             self._runner = Runner(
                 app_name=constants.APP_NAME,
-                agent=self._gaia.build_root_agent(self._user_id),
+                agent=self._gaia.build_root_agent(),
                 session_service=session_service,
                 memory_service=self._gaia.memory_service,
                 plugins=[ToolPermissionPlugin(self._gaia), ToolLoggingPlugin()],
@@ -147,17 +147,6 @@ class GaiaHandler:
         for text in texts:
             log_event("message_out", user=self._user_id, chars=len(text))
             await send(text)
-
-    def invalidate_runner(self) -> None:
-        """Drop the cached Runner so the next message rebuilds the agent (used by the ACL).
-
-        Nulls ``_runner`` only — the next turn rebuilds the root agent with the user's
-        current capabilities (re-filtered toolset + prompt). Unlike :meth:`reset_session`
-        it keeps the pending memory buffer, and unlike :meth:`flush` it does no mem0
-        ingest, so a ``/grant`` never triggers an LLM call. The live ADK conversation is
-        rebuilt fresh (ADK can't hot-swap a running agent's tools).
-        """
-        self._runner = None
 
     def reset_session(self) -> None:
         """Drop the live ADK session and pending memory buffer (used by ``/reset``).

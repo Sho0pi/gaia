@@ -59,22 +59,7 @@ class Gaia:
         # Live proactive senders (connector name → object with ``send_to``); the launcher
         # populates this same dict once connectors are running (empty outside the daemon).
         self.connectors: dict[str, Any] = self.container.connectors()
-        self._dispatcher: Any | None = None
         self._closed = False
-
-    @property
-    def dispatcher(self) -> Any:
-        """The one per-process :class:`~gaia.core.dispatch.Dispatcher` (built on first use).
-
-        Held here (not just inside the launcher) so other code — the ACL grant/revoke
-        commands — can reach the live per-user handler cache to invalidate it when a
-        user's permissions change.
-        """
-        if self._dispatcher is None:
-            from gaia.core.dispatch import Dispatcher
-
-            self._dispatcher = Dispatcher(self)
-        return self._dispatcher
 
     async def close(self) -> None:
         """Release every async resource on the *running* loop (idempotent, best-effort).
@@ -130,14 +115,14 @@ class Gaia:
         """Keys of every subagent Gaia has already learned."""
         return self.souls.list_keys()
 
-    def build_root_agent(self, user_id: str | None = None) -> LlmAgent:
+    def build_root_agent(self) -> LlmAgent:
         """Construct the ADK root agent with all known subagents attached.
 
-        ``user_id`` (the caller, threaded from the handler) drives the ACL toolset filter:
-        tools the user's capabilities don't allow are dropped before the agent sees them
-        (UX + token savings). ``None`` — cron / single-user / tests — gets every tool. The
-        hard security gate is :class:`gaia.core.plugins.ToolPermissionPlugin`; this is
-        belt-and-suspenders.
+        Registry tools are attached through :class:`~gaia.core.acl_toolset.AclToolset`, a
+        dynamic toolset ADK re-resolves every turn against the caller's *current*
+        capabilities — so ``/grant`` / ``/revoke`` take effect on the next message without
+        rebuilding the agent (the conversation is preserved). The hard security gate is
+        :class:`gaia.core.plugins.ToolPermissionPlugin`; the toolset is the UX layer.
 
         Deferred ADK import keeps the rest of Gaia importable without a model.
         """
@@ -184,24 +169,12 @@ class Gaia:
             "files. Use task_create only for a single standalone task. Never put a made-up "
             "id in blocked_by — let task_plan resolve dependencies."
         )
-        # ACL: keep only the registry tools this caller may use; name them in the prompt so
-        # the model doesn't reach for tools it lacks. Non-registry tools (delegate_to_soul,
-        # message_user, task_plan, MCP/skill toolsets) are not ACL'd and always attach.
-        from gaia.acl import allowed_tool_ids
-
-        user = self.users.get(user_id) if user_id else None
-        allowed = allowed_tool_ids(user, self.config, set(self.tools.names()))
-        scoped_tools = self.tools.resolve(sorted(allowed))
-        if user is not None:
-            base_instruction += (
-                f"\nTools available to you for this user: {', '.join(sorted(allowed)) or 'none'}."
-            )
-
         bound = self.config.agents.get("gaia", AgentBinding())
         instruction = attach_skills(base_instruction, bound.skills, self.skills_dir)
         style = bound.communication_style or self.config.default_communication_style
         instruction = apply_communication_style(instruction, style)
 
+        from gaia.core.acl_toolset import AclToolset
         from gaia.souls import make_delegate
         from gaia.tools.message import make_message_user
         from gaia.tools.permission import make_manage_permission
@@ -220,7 +193,7 @@ class Gaia:
             description="Root orchestrator that routes tasks to specialized subagents.",
             instruction=instruction,
             tools=[
-                *scoped_tools,
+                AclToolset(self),
                 make_delegate(self),
                 make_message_user(self.users, self.connectors),
                 make_manage_permission(self),

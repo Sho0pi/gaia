@@ -1,11 +1,12 @@
 """The ``manage_permission`` tool: let an admin grant/revoke ACL capabilities by chat.
 
 Root-only and bound to the live :class:`~gaia.core.agent.Gaia` (like ``message_user`` /
-``delegate_to_soul``) because it mutates the user store *and* must evict the target's
-cached handler so the change takes effect on their next turn. Self-gated: the call is
-refused unless the *caller* (``tool_context.user_id``) holds ``manage_users`` — so even
-though the tool is attached to every root agent, only an admin can actually use it. Tools
-never raise to the model; refusals come back as an error dict.
+``delegate_to_soul``) because it mutates the user store. The change takes effect on the
+target's next turn — the dynamic :class:`~gaia.core.acl_toolset.AclToolset` re-reads
+capabilities each turn, so no handler rebuild is needed. Self-gated: the call is refused
+unless the *caller* (``tool_context.user_id``) holds ``manage_users`` — so even though the
+tool is attached to every root agent, only an admin can actually use it. Tools never raise
+to the model; refusals come back as an error dict.
 """
 
 from __future__ import annotations
@@ -77,7 +78,6 @@ def make_manage_permission(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any]
             else gaia.users.revoke(target.id, cap)
         )
         assert updated is not None
-        gaia.dispatcher.invalidate_user(updated.id)
         return {
             "status": "success",
             "user": updated.id,

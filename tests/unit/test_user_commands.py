@@ -11,18 +11,8 @@ from gaia.commands.base import CommandContext
 from gaia.users import UserStore
 
 
-class _FakeDispatcher:
-    def invalidate_user(self, user_id: str) -> None:
-        return None
-
-
 def _ctx(store: UserStore, *, args: str = "", role: str = "admin") -> CommandContext:
-    gaia = SimpleNamespace(
-        users=store,
-        config=SimpleNamespace(),
-        settings=SimpleNamespace(),
-        dispatcher=_FakeDispatcher(),
-    )
+    gaia = SimpleNamespace(users=store, config=SimpleNamespace(), settings=SimpleNamespace())
     return CommandContext(
         args=args,
         gaia=gaia,  # type: ignore[arg-type]

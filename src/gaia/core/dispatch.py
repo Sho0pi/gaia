@@ -46,20 +46,6 @@ class Dispatcher:
         for handler in list(self._handlers.values()):
             await handler.flush()
 
-    def invalidate_user(self, user_id: str) -> None:
-        """Rebuild ``user_id``'s cached handlers on their next message (used by the ACL).
-
-        ADK has no API to hot-swap a live agent's tool list, and each handler caches its
-        Runner with the ACL-filtered toolset + prompt baked in at build. So when a user's
-        capabilities change (``/grant`` / ``/revoke`` / ``/approve``), we null each cached
-        handler's Runner; the next turn rebuilds it with the current permissions. No memory
-        flush and no eviction — the handler (and its pending memory buffer) stay, so this
-        is cheap and never triggers an LLM call. (The hard gate already reflects the change
-        immediately; this refreshes the toolset-filter + prompt UX layer.)
-        """
-        for key in [k for k in self._handlers if k[0] == user_id]:
-            self._handlers[key].invalidate_runner()
-
     async def _dispatch(
         self, channel: str, sender_id: str, name: str, text: str, send: Send
     ) -> None:
@@ -119,10 +105,5 @@ class Dispatcher:
 
 
 def build_dispatcher(gaia: Gaia) -> Dispatcher:
-    """Return the process-wide :class:`Dispatcher` for ``gaia``.
-
-    One instance per ``Gaia`` (owned by the facade), so every connector launcher and the
-    ACL commands share a single per-user handler cache — invalidation on a grant reaches
-    the same handlers that serve messages.
-    """
-    return gaia.dispatcher  # type: ignore[no-any-return]
+    """Return the process-wide :class:`Dispatcher` for ``gaia``."""
+    return Dispatcher(gaia)
