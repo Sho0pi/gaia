@@ -33,7 +33,7 @@ def _user(role: str = "user", **kw: object) -> User:
 
 
 def test_role_default_used_when_no_override() -> None:
-    assert role_capabilities("user", None) == ["web", "memory", "browser", "tasks"]
+    assert role_capabilities("user", None) == ["web", "memory", "browser", "tasks", "serve"]
     assert role_capabilities("admin", None) == [ALL]
     assert role_capabilities("guest", None) == []
 

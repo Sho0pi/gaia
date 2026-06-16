@@ -146,7 +146,9 @@ _BROWSER_TOOLS = (
 )
 
 
-def _register_browser_tools(registry: ToolRegistry, config: GaiaConfig | None) -> None:
+def _register_browser_tools(
+    registry: ToolRegistry, config: GaiaConfig | None, served: Any = None
+) -> None:
     """Attach the browser tools, but only when Playwright is installed.
 
     Like fs_glob/fs_grep need ``fd``/``rg``, the browser tools need the optional
@@ -177,16 +179,23 @@ def _register_browser_tools(registry: ToolRegistry, config: GaiaConfig | None) -
     manager = browser.BrowserSessionManager()
     registry.register_closeable(manager.close_all)  # closed by Gaia.close on the live loop
     for name, make in _BROWSER_TOOLS:
-        if _is_enabled(config, name):
+        if not _is_enabled(config, name):
+            continue
+        if name == browser.NAVIGATE:
+            # navigate also needs the served-ports set so it can open our own serve-d sites
+            # (loopback) past the SSRF guard; the other browser tools take only the manager.
+            registry.register(name, browser.make_browser_navigate(manager, served))
+        else:
             registry.register(name, make(manager))
 
 
-def _register_shell_tools(registry: ToolRegistry, config: GaiaConfig | None) -> None:
+def _register_shell_tools(registry: ToolRegistry, config: GaiaConfig | None, served: Any) -> None:
     """Attach the exec tool + its background-process trio, sharing one ProcessManager.
 
     Safety comes from ``tools.exec.security`` (default ``allowlist``) and an optional
     ``tools.exec.allowlist`` override, both read from config. The trio (poll/kill/list)
-    is only useful alongside ``exec``, but each stays individually gateable.
+    is only useful alongside ``exec``, but each stays individually gateable. ``served`` (the
+    shared ServedPorts) lets a background dev server's port be opened by browser_navigate.
     """
     security = _tool_setting(config, shell.EXEC, "security") or "allowlist"
     configured = _tool_setting(config, shell.EXEC, "allowlist")
@@ -194,7 +203,7 @@ def _register_shell_tools(registry: ToolRegistry, config: GaiaConfig | None) -> 
 
     # One manager per registry, shared by the four tools below (each closure captures
     # it); it cleans up its processes on exit. No module-level singleton.
-    manager = shell.ProcessManager()
+    manager = shell.ProcessManager(served=served)
     registry.register_closeable(manager.close_all)  # closed by Gaia.close on the live loop
     spawner = shell.local_spawner
     if _is_enabled(config, shell.EXEC):
@@ -208,6 +217,31 @@ def _register_shell_tools(registry: ToolRegistry, config: GaiaConfig | None) -> 
         registry.register(shell.KILL, shell.make_exec_kill(manager))
     if _is_enabled(config, shell.LIST):
         registry.register(shell.LIST, shell.make_exec_list(manager))
+
+
+def _register_serve_tools(registry: ToolRegistry, config: GaiaConfig | None, served: Any) -> None:
+    """Attach the serve/serve_stop/serve_list tools, sharing one StaticServerManager.
+
+    ``served`` is the ports set shared with browser_navigate (so it can open these sites).
+    Idle window is configurable via ``tools.serve.idle_seconds``.
+    """
+    from gaia.tools import serve
+
+    factories = (
+        (serve.SERVE, serve.make_serve),
+        (serve.SERVE_STOP, serve.make_serve_stop),
+        (serve.SERVE_LIST, serve.make_serve_list),
+    )
+    if not any(_is_enabled(config, name) for name, _ in factories):
+        return
+    idle = _tool_setting(config, serve.SERVE, "idle_seconds")
+    manager = serve.StaticServerManager(
+        served, idle_seconds=float(idle) if idle else serve.DEFAULT_IDLE_SECONDS
+    )
+    registry.register_closeable(manager.close_all)  # closed by Gaia.close on the live loop
+    for name, make in factories:
+        if _is_enabled(config, name):
+            registry.register(name, make(manager))
 
 
 def _register_task_tools(
@@ -293,8 +327,15 @@ def default_registry(
                 fs.GREP, "'rg' not on PATH (brew install ripgrep / apt install ripgrep)"
             )
 
-    _register_browser_tools(registry, config)
-    _register_shell_tools(registry, config)
+    # The serve tools and browser_navigate share one ServedPorts set: serve writes the
+    # ports it opens, navigate reads them to allow our own loopback sites past the SSRF
+    # guard. Build it first so both registrations get the same instance.
+    from gaia.tools.serve import ServedPorts
+
+    served = ServedPorts()
+    _register_serve_tools(registry, config, served)
+    _register_browser_tools(registry, config, served)
+    _register_shell_tools(registry, config, served)
 
     # Memory tools are only useful when long-term memory is on (mem0 wired into the
     # Runner); each is still individually gateable via tools.<name>.enabled.

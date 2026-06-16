@@ -42,9 +42,11 @@ def _prompt(task: Task, run: SoulRun) -> str:
         "delegate_to_soul, do NOT create tasks, and do NOT hand off to any specialist: if "
         "you transfer, the screenshot never reaches the user. Read the files if helpful, then "
         "give a short, useful summary of what was produced. If the deliverable is a website, "
-        "OPEN it in your browser via its absolute local path "
-        "(file://<workspace>/<the .html file>) and take a screenshot RIGHT AWAY so the user "
-        "sees it — open + screenshot + summarize, all here, then stop.",
+        "call serve(<workspace>) to host it locally, then browser_navigate to the returned "
+        "url (append the entry .html file if needed) and browser_screenshot RIGHT AWAY so the "
+        "user sees a real render — do NOT use file://, it renders blank for real sites. "
+        "Include the live url in your reply so the user can open it. Serve + open + "
+        "screenshot + summarize, all here, then stop.",
     ]
     return "\n".join(parts)
 

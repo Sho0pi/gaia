@@ -26,7 +26,10 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from gaia.tools.serve.base import ServedPorts
 
 #: Per-poll and per-foreground output cap (chars) before truncation kicks in.
 OUTPUT_CHAR_CAP = 50_000
@@ -37,6 +40,11 @@ BUFFER_CHAR_CAP = 1_000_000
 
 #: Subdir of the agent workspace where background process logs are written.
 LOG_DIR_NAME = ".gaia-logs"
+
+#: A localhost URL/bind a dev server prints on startup ("Local: http://localhost:5173",
+#: "Running on http://127.0.0.1:8000"). The captured port is trusted for browser_navigate
+#: so the agent can open the dev server it just launched in the background.
+_LISTEN_RE = re.compile(r"(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]):(\d{2,5})\b")
 
 #: Grace period (seconds) between terminate() and a hard kill().
 KILL_GRACE = 5.0
@@ -151,12 +159,34 @@ class ManagedProcess:
     # so the manager can await it after terminating the process (so the final output
     # and exit_code are captured before we report back). Set by ProcessManager.spawn.
     _pump_task: asyncio.Task[None] | None = None
+    # Loopback ports this process serves, trusted for browser_navigate while it runs (a
+    # declared port + any auto-detected from its output). Released when it exits/is killed.
+    _served: ServedPorts | None = None
+    _ports: set[int] = field(default_factory=set)
+
+    def _trust_port(self, port: int) -> None:
+        """Mark ``port`` as one this process serves (so browser_navigate may open it)."""
+        if 0 < port < 65536 and port not in self._ports:
+            self._ports.add(port)
+            if self._served is not None:
+                self._served.add(port)
+
+    def release_ports(self) -> None:
+        """Stop trusting this process's ports (on exit / kill)."""
+        if self._served is not None:
+            for port in self._ports:
+                self._served.discard(port)
+        self._ports.clear()
 
     def _append(self, chunk: str) -> None:
         self._total += len(chunk)
         self._buf += chunk
         if len(self._buf) > BUFFER_CHAR_CAP:
             self._buf = self._buf[-BUFFER_CHAR_CAP:]
+        # Auto-trust a dev-server port the moment it announces itself in the output.
+        if self._served is not None:
+            for match in _LISTEN_RE.finditer(chunk):
+                self._trust_port(int(match.group(1)))
 
     async def pump(self) -> None:
         """Drain the merged output stream into the buffer + log until the process exits."""
@@ -173,6 +203,7 @@ class ManagedProcess:
             self.exit_code = await self.proc.wait()
         finally:
             log.close()
+            self.release_ports()  # the process is gone — stop trusting its ports
 
     def consume_new_output(self) -> tuple[str, bool]:
         """Return the output produced since the last call, and mark it as consumed.
@@ -204,8 +235,12 @@ class ProcessManager:
     when the process exits, so a forgotten background process can't outlive gaia.
     """
 
-    def __init__(self, spawner: Spawner | None = None) -> None:
+    def __init__(self, spawner: Spawner | None = None, served: ServedPorts | None = None) -> None:
         self._spawner = spawner or local_spawner
+        # Shared with browser_navigate: a background process's loopback port (declared or
+        # auto-detected from its output) is trusted here so the agent can open the dev
+        # server it launches. Released when the process exits/is killed.
+        self._served = served
         self._procs: dict[str, ManagedProcess] = {}
         self._counter = 0
         self._cleanup_registered = False
@@ -226,17 +261,35 @@ class ProcessManager:
             pass
 
     async def spawn(
-        self, agent: str, command: str, cwd: Path, *, env: dict[str, str] | None = None
+        self,
+        agent: str,
+        command: str,
+        cwd: Path,
+        *,
+        env: dict[str, str] | None = None,
+        port: int = 0,
     ) -> ManagedProcess:
-        """Start ``command`` in the background and register it; returns the record."""
+        """Start ``command`` in the background and register it; returns the record.
+
+        ``port`` (optional) is a loopback port the command binds — declared up front so
+        the agent can open it with browser_navigate immediately, before the server prints
+        its address (auto-detection from the output also runs).
+        """
         self._register_cleanup_once()
         self._counter += 1
         process_id = f"proc-{self._counter}"
         log_path = cwd / LOG_DIR_NAME / f"{process_id}.log"
         proc = await self._spawner(command, cwd, env)
         managed = ManagedProcess(
-            process_id=process_id, agent=agent, command=command, proc=proc, log_path=log_path
+            process_id=process_id,
+            agent=agent,
+            command=command,
+            proc=proc,
+            log_path=log_path,
+            _served=self._served,
         )
+        if port:
+            managed._trust_port(port)
         managed._pump_task = asyncio.create_task(managed.pump())
         self._procs[process_id] = managed
         return managed
@@ -263,6 +316,7 @@ class ProcessManager:
                 await managed.proc.wait()
         if managed._pump_task is not None:
             await managed._pump_task
+        managed.release_ports()  # idempotent with pump's release; covers a never-pumped proc
         return managed.exit_code
 
     async def close_all(self) -> None:
