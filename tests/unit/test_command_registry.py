@@ -25,6 +25,9 @@ def test_default_registry_has_every_builtin() -> None:
         "name",
         "link",
         "tasks",
+        "grant",
+        "revoke",
+        "perms",
     }
 
 

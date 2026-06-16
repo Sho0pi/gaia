@@ -115,8 +115,14 @@ class Gaia:
         """Keys of every subagent Gaia has already learned."""
         return self.souls.list_keys()
 
-    def build_root_agent(self) -> LlmAgent:
+    def build_root_agent(self, user_id: str | None = None) -> LlmAgent:
         """Construct the ADK root agent with all known subagents attached.
+
+        ``user_id`` (the caller, threaded from the handler) drives the ACL toolset filter:
+        tools the user's capabilities don't allow are dropped before the agent sees them
+        (UX + token savings). ``None`` — cron / single-user / tests — gets every tool. The
+        hard security gate is :class:`gaia.core.plugins.ToolPermissionPlugin`; this is
+        belt-and-suspenders.
 
         Deferred ADK import keeps the rest of Gaia importable without a model.
         """
@@ -163,6 +169,19 @@ class Gaia:
             "files. Use task_create only for a single standalone task. Never put a made-up "
             "id in blocked_by — let task_plan resolve dependencies."
         )
+        # ACL: keep only the registry tools this caller may use; name them in the prompt so
+        # the model doesn't reach for tools it lacks. Non-registry tools (delegate_to_soul,
+        # message_user, task_plan, MCP/skill toolsets) are not ACL'd and always attach.
+        from gaia.acl import allowed_tool_ids
+
+        user = self.users.get(user_id) if user_id else None
+        allowed = allowed_tool_ids(user, self.config, set(self.tools.names()))
+        scoped_tools = self.tools.resolve(sorted(allowed))
+        if user is not None:
+            base_instruction += (
+                f"\nTools available to you for this user: {', '.join(sorted(allowed)) or 'none'}."
+            )
+
         bound = self.config.agents.get("gaia", AgentBinding())
         instruction = attach_skills(base_instruction, bound.skills, self.skills_dir)
         style = bound.communication_style or self.config.default_communication_style
@@ -185,7 +204,7 @@ class Gaia:
             description="Root orchestrator that routes tasks to specialized subagents.",
             instruction=instruction,
             tools=[
-                *self.tools.all(),
+                *scoped_tools,
                 make_delegate(self),
                 make_message_user(self.users, self.connectors),
                 make_task_plan(self.tasks, max_tasks=self.config.missions.max_tasks),

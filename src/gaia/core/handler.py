@@ -67,7 +67,7 @@ class GaiaHandler:
         from google.adk.runners import Runner
         from google.adk.sessions import InMemorySessionService
 
-        from gaia.core.plugins import ToolLoggingPlugin
+        from gaia.core.plugins import ToolLoggingPlugin, ToolPermissionPlugin
 
         if self._runner is None:
             session_service = InMemorySessionService()  # type: ignore[no-untyped-call]
@@ -76,10 +76,10 @@ class GaiaHandler:
             )
             self._runner = Runner(
                 app_name=constants.APP_NAME,
-                agent=self._gaia.build_root_agent(),
+                agent=self._gaia.build_root_agent(self._user_id),
                 session_service=session_service,
                 memory_service=self._gaia.memory_service,
-                plugins=[ToolLoggingPlugin()],
+                plugins=[ToolPermissionPlugin(self._gaia), ToolLoggingPlugin()],
             )
         return self._runner
 

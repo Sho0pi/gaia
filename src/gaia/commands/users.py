@@ -12,11 +12,26 @@ from gaia.commands.base import Command, CommandContext
 _ROLES = ("admin", "user", "guest")
 
 
-def _require_admin(ctx: CommandContext) -> str | None:
-    """Return a refusal string if the caller isn't an admin, else ``None``."""
-    if ctx.role != "admin":
+def require_manage_users(ctx: CommandContext) -> str | None:
+    """Refusal string unless the caller holds the ``manage_users`` capability, else ``None``.
+
+    Admins hold it via the ``*`` wildcard; a non-admin can be granted it explicitly
+    (``/grant <user> manage_users``). Replaces the old admin-only check.
+    """
+    from gaia.acl import MANAGE_USERS, can
+
+    user = ctx.gaia.users.get(ctx.user_id)
+    if user is None:
+        # Unresolved caller (cron / single-user / cli / tests): fall back to the role on
+        # the context — admins pass, everyone else is refused (the pre-ACL behaviour).
+        return None if ctx.role == "admin" else "Only an admin can run that."
+    if not can(user, MANAGE_USERS, ctx.gaia.config):
         return "Only an admin can run that."
     return None
+
+
+# Back-compat alias (same semantics, broadened to the manage_users capability).
+_require_admin = require_manage_users
 
 
 def _find(ctx: CommandContext, ref: str) -> str | None:
