@@ -85,7 +85,7 @@ class ApproveCommand(Command):
         assert updated is not None
         # A role change alters the user's capabilities — evict their cached handler so the
         # filtered toolset + prompt rebuild on their next turn.
-        await ctx.gaia.dispatcher.invalidate_user(updated.id)
+        ctx.gaia.dispatcher.invalidate_user(updated.id)
         return f"{updated.id} is now {updated.role}."
 
 

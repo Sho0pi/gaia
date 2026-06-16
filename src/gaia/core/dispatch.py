@@ -46,19 +46,19 @@ class Dispatcher:
         for handler in list(self._handlers.values()):
             await handler.flush()
 
-    async def invalidate_user(self, user_id: str) -> None:
-        """Drop ``user_id``'s cached handlers so their next message rebuilds fresh.
+    def invalidate_user(self, user_id: str) -> None:
+        """Rebuild ``user_id``'s cached handlers on their next message (used by the ACL).
 
         ADK has no API to hot-swap a live agent's tool list, and each handler caches its
-        Runner (with the ACL-filtered toolset + prompt baked in at build). So when a
-        user's capabilities change (``/grant`` / ``/revoke``), the only way the filter and
-        prompt pick it up is to rebuild — we flush each stale handler's memory buffer, then
-        evict it. The next turn builds a new handler with the current permissions. (The
-        hard gate already reflects the change immediately; this refreshes the UX layer.)
+        Runner with the ACL-filtered toolset + prompt baked in at build. So when a user's
+        capabilities change (``/grant`` / ``/revoke`` / ``/approve``), we null each cached
+        handler's Runner; the next turn rebuilds it with the current permissions. No memory
+        flush and no eviction — the handler (and its pending memory buffer) stay, so this
+        is cheap and never triggers an LLM call. (The hard gate already reflects the change
+        immediately; this refreshes the toolset-filter + prompt UX layer.)
         """
         for key in [k for k in self._handlers if k[0] == user_id]:
-            handler = self._handlers.pop(key)
-            await handler.flush()
+            self._handlers[key].invalidate_runner()
 
     async def _dispatch(
         self, channel: str, sender_id: str, name: str, text: str, send: Send

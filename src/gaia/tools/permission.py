@@ -77,7 +77,7 @@ def make_manage_permission(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any]
             else gaia.users.revoke(target.id, cap)
         )
         assert updated is not None
-        await gaia.dispatcher.invalidate_user(updated.id)
+        gaia.dispatcher.invalidate_user(updated.id)
         return {
             "status": "success",
             "user": updated.id,

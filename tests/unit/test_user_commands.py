@@ -12,7 +12,7 @@ from gaia.users import UserStore
 
 
 class _FakeDispatcher:
-    async def invalidate_user(self, user_id: str) -> None:
+    def invalidate_user(self, user_id: str) -> None:
         return None
 
 

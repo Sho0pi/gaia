@@ -15,7 +15,7 @@ class _FakeDispatcher:
     def __init__(self) -> None:
         self.invalidated: list[str] = []
 
-    async def invalidate_user(self, user_id: str) -> None:
+    def invalidate_user(self, user_id: str) -> None:
         self.invalidated.append(user_id)
 
 

@@ -48,9 +48,9 @@ class GrantCommand(Command):
             return f"No user matching {ref.strip()!r} (try /users)."
         updated = ctx.gaia.users.grant(user_id, cap)
         assert updated is not None
-        # Evict the target's cached handler so the new capability shows up next turn (the
+        # Rebuild the target's cached handler so the new capability shows up next turn (the
         # baked-in toolset filter + prompt rebuild; the hard gate already reflects it).
-        await ctx.gaia.dispatcher.invalidate_user(updated.id)
+        ctx.gaia.dispatcher.invalidate_user(updated.id)
         return f"Granted {cap!r} to {updated.id} (grants: {', '.join(updated.grants) or '—'})."
 
 
@@ -71,7 +71,7 @@ class RevokeCommand(Command):
             return f"No user matching {ref.strip()!r} (try /users)."
         updated = ctx.gaia.users.revoke(user_id, cap)
         assert updated is not None
-        await ctx.gaia.dispatcher.invalidate_user(updated.id)
+        ctx.gaia.dispatcher.invalidate_user(updated.id)
         return f"Revoked {cap!r} from {updated.id} (denies: {', '.join(updated.denies) or '—'})."
 
 
