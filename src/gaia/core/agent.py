@@ -118,6 +118,12 @@ class Gaia:
     def build_root_agent(self) -> LlmAgent:
         """Construct the ADK root agent with all known subagents attached.
 
+        Registry tools are attached through :class:`~gaia.core.acl_toolset.AclToolset`, a
+        dynamic toolset ADK re-resolves every turn against the caller's *current*
+        capabilities — so ``/grant`` / ``/revoke`` take effect on the next message without
+        rebuilding the agent (the conversation is preserved). The hard security gate is
+        :class:`gaia.core.plugins.ToolPermissionPlugin`; the toolset is the UX layer.
+
         Deferred ADK import keeps the rest of Gaia importable without a model.
         """
         from google.adk.agents import BaseAgent, LlmAgent
@@ -168,8 +174,10 @@ class Gaia:
         style = bound.communication_style or self.config.default_communication_style
         instruction = apply_communication_style(instruction, style)
 
+        from gaia.core.acl_toolset import AclToolset
         from gaia.souls import make_delegate
         from gaia.tools.message import make_message_user
+        from gaia.tools.permission import make_manage_permission
         from gaia.tools.task import make_task_plan
 
         # delegate_to_soul and message_user are attached to the root only — souls (built
@@ -185,9 +193,10 @@ class Gaia:
             description="Root orchestrator that routes tasks to specialized subagents.",
             instruction=instruction,
             tools=[
-                *self.tools.all(),
+                AclToolset(self),
                 make_delegate(self),
                 make_message_user(self.users, self.connectors),
+                make_manage_permission(self),
                 make_task_plan(self.tasks, max_tasks=self.config.missions.max_tasks),
                 *self.container.mcp_toolsets(),
                 *self.container.skill_toolsets(),

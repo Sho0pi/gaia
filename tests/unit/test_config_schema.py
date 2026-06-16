@@ -24,7 +24,7 @@ _POC = {
     "default_communication_style": "human",
     "skills_dir": "/custom/skills",
     "agents": {"gaia": {"communication_style": "caveman", "skills": ["caveman"]}},
-    "roles": {"guest": {"tools": ["web_search"]}},
+    "roles": {"guest": {"capabilities": ["web"]}},
     "tools": {"web_extract": {"enabled": True, "max_chars": 8000}},
     "souls": {"gaia": None},
 }
@@ -46,7 +46,7 @@ def test_parses_poc_sample() -> None:
     assert str(config.skills_dir) == "/custom/skills"
     assert config.agents["gaia"].communication_style == "caveman"
     assert config.agents["gaia"].skills == ["caveman"]
-    assert config.roles["guest"].tools == ["web_search"]
+    assert config.roles["guest"].capabilities == ["web"]
     # ToolConfig keeps unknown tool-specific keys verbatim (extra="allow").
     assert config.tools["web_extract"].model_extra == {"max_chars": 8000}
 

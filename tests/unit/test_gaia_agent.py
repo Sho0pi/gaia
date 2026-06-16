@@ -39,13 +39,15 @@ def test_root_agent_attaches_all_registered_tools(
 
     kwargs = _capture_root_kwargs(gaia, monkeypatch)
 
-    # The root agent gets every registered tool plus the root-only delegate_to_soul tool.
+    # Registry tools are attached through the dynamic AclToolset (resolved per turn against
+    # the caller's capabilities), not as a flat list; the root-only tools follow it.
+    from gaia.core.acl_toolset import AclToolset
+
     tools = kwargs["tools"]
-    assert gaia.tools.all() == tools[: len(gaia.tools.all())]  # registry tools come first
-    # web_fetch + the fs_* bundle are on by default, web_search via the configured engine
-    # (fs_glob/fs_grep depend on fd/rg), and delegate_to_soul is appended for Gaia alone.
+    assert isinstance(tools[0], AclToolset)
+    # delegate_to_soul / message_user / manage_permission are appended for Gaia alone.
     names = {getattr(t, "__name__", t) for t in tools}  # type: ignore[union-attr]
-    expected = {"web_fetch", "web_search", "fs_read", "fs_write", "fs_edit", "delegate_to_soul"}
+    expected = {"delegate_to_soul", "message_user", "manage_permission"}
     assert expected <= names
 
 

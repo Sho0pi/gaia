@@ -32,6 +32,8 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from google.adk.tools.base_tool import BaseTool
     from google.adk.tools.tool_context import ToolContext
 
+    from gaia.core.agent import Gaia
+
 #: Arg keys whose value is replaced with ``[filtered]`` regardless of tool. Substrings
 #: follow Rails' filter_parameters defaults (``passw`` not ``pass`` to spare "compass";
 #: ``key``/``auth`` need word boundaries to spare "keywords"/"author").
@@ -77,6 +79,55 @@ def _base_fields(name: str, tool_context: ToolContext | None) -> dict[str, Any]:
     if agent:
         fields["agent"] = agent
     return fields
+
+
+class ToolPermissionPlugin(BasePlugin):
+    """Hard ACL gate: deny a tool call the caller's capabilities don't allow.
+
+    This is the security boundary — the toolset filter (``gaia.core.agent``) and the
+    prompt hint only stop the model *trying*; this stops it *running*. ADK fires
+    ``before_tool_callback`` for every tool, on the root agent and on every soul / nested
+    delegation alike (they all carry the caller's ``user_id``). Returning a non-``None``
+    dict short-circuits the tool and feeds the dict back as its result — so a denied call
+    never executes and the model sees a normal error dict (the tool idiom), never an
+    exception.
+    """
+
+    def __init__(self, gaia: Gaia) -> None:
+        super().__init__(name="tool_permission")
+        self._gaia = gaia
+
+    async def before_tool_callback(
+        self,
+        *,
+        tool: BaseTool,
+        tool_args: dict[str, Any],
+        tool_context: ToolContext,
+    ) -> dict[str, Any] | None:
+        from gaia.acl import allowed_tool_ids
+        from gaia.acl.resolve import tool_capabilities
+
+        name = getattr(tool, "name", type(tool).__name__)
+        registry_ids = set(self._gaia.tools.names())
+        # The ACL governs a tool if it's a registry tool OR a group/prefix claims it. The
+        # prefix rule catches off-registry MCP tools (playwright-mcp's browser_*). Root-only
+        # tools (delegate_to_soul, message_user, …) and ungrouped MCP tools fall through.
+        if name not in registry_ids and not tool_capabilities(name):
+            return None
+        user_id = getattr(tool_context, "user_id", None)
+        # No resolved user (cron / single-user / tests) is trusted — allowed_tool_ids
+        # returns every tool for a None user, matching the handler's admin default.
+        user = self._gaia.users.get(user_id) if user_id else None
+        # Include this tool in the universe so group/prefix/raw rules resolve it even when
+        # it isn't in the registry (the mcp case).
+        allowed = allowed_tool_ids(user, self._gaia.config, registry_ids | {name})
+        if name in allowed:
+            return None
+        log_event("tool_denied", **_base_fields(name, tool_context))
+        return {
+            "status": "error",
+            "error_message": f"Permission denied: you may not use the {name!r} tool.",
+        }
 
 
 class ToolLoggingPlugin(BasePlugin):

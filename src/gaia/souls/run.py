@@ -94,7 +94,7 @@ async def run_soul_agent(
     from google.adk.sessions import InMemorySessionService
     from google.genai import types
 
-    from gaia.core.plugins import ToolLoggingPlugin
+    from gaia.core.plugins import ToolLoggingPlugin, ToolPermissionPlugin
 
     session_service = InMemorySessionService()  # type: ignore[no-untyped-call]
     session_id = f"soul-{key}"
@@ -106,7 +106,7 @@ async def run_soul_agent(
         agent=soul,
         session_service=session_service,
         memory_service=gaia.memory_service,
-        plugins=[ToolLoggingPlugin()],
+        plugins=[ToolPermissionPlugin(gaia), ToolLoggingPlugin()],
     )
     content = types.Content(role="user", parts=[types.Part(text=task)])
     parts: list[str] = []

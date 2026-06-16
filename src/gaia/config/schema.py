@@ -8,8 +8,8 @@ scaffold updates itself, no second copy to maintain.
 Secrets (tokens, api keys) are *not* modelled here; they stay in
 :class:`gaia.config.settings.Settings` (env). ``tools`` is wired: it toggles which
 registered tools are available (see :mod:`gaia.tools`). ``souls.timeout_seconds`` is wired
-(the delegate timeout); ``roles`` is typed but **not yet wired** into the runtime — validated
-and carried forward so future work has a stable shape to build on.
+(the delegate timeout); ``roles`` is wired — each role's ``capabilities`` drive the ACL
+(see :mod:`gaia.acl`), gating which tools a user may call.
 """
 
 from __future__ import annotations
@@ -348,11 +348,18 @@ class ConnectorsConfig(BaseModel):
 
 
 class RoleConfig(BaseModel):
-    """Per-role overrides. Typed but not yet wired (see issue #10 follow-ups)."""
+    """Per-role overrides: the capabilities (ACL groups) the role holds.
+
+    Empty ``capabilities`` means "use the built-in default" (:data:`gaia.acl.groups.
+    DEFAULT_ROLE_CAPS`); set it to override. A capability is a group name (``web``,
+    ``shell``, ``manage_users``…), the wildcard ``*``, or a raw tool id.
+    """
 
     llm: LLMConfig = Field(default_factory=LLMConfig)
-    tools: list[str] = Field(
-        default_factory=list, description="Allowed tool ids; empty = all tools."
+    capabilities: list[str] = Field(
+        default_factory=list,
+        description="ACL capabilities this role holds (group names like 'web'/'shell', "
+        "'*' for all, or a raw tool id). Empty = built-in default for the role.",
     )
 
 
@@ -497,7 +504,9 @@ class GaiaConfig(BaseModel):
     )
     # Forward-looking, validated-but-unwired sections.
     roles: dict[str, RoleConfig] = Field(
-        default_factory=dict, description="Per-role overrides (not yet wired)."
+        default_factory=dict,
+        description="Per-role ACL overrides keyed by role (admin/user/guest), e.g. "
+        "user.capabilities: [web, memory]. Empty = built-in defaults.",
     )
     tools: dict[str, ToolConfig] = Field(
         default_factory=dict,

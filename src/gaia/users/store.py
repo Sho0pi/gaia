@@ -47,6 +47,12 @@ class User(BaseModel):
     name: str = ""
     role: Role = "guest"
     identities: list[str] = Field(default_factory=list)  # ["channel:sender", …]
+    # Per-user ACL on top of the role's default capabilities: extra capabilities granted
+    # (e.g. "shell" for a user trusted with exec) and ones removed. Both hold capability
+    # tokens — a group name, "*", or a raw tool id (see gaia.acl). Default empty keeps
+    # existing users.json backward-compatible.
+    grants: list[str] = Field(default_factory=list)
+    denies: list[str] = Field(default_factory=list)
 
 
 #: Annotation aliases: inside UserStore the name `list` is the method, not the builtin,
@@ -98,6 +104,34 @@ class UserStore:
     def set_role(self, user_id: str, role: Role) -> User | None:
         """Change a user's role; returns the updated user (or ``None`` if unknown)."""
         return self._mutate(user_id, lambda u: u.model_copy(update={"role": role}))
+
+    def grant(self, user_id: str, capability: str) -> User | None:
+        """Add a capability to the user's ``grants`` (and clear it from ``denies``).
+
+        Idempotent. Returns the updated user, or ``None`` if unknown.
+        """
+
+        def add(u: User) -> User:
+            grants = u.grants if capability in u.grants else [*u.grants, capability]
+            denies = [d for d in u.denies if d != capability]
+            return u.model_copy(update={"grants": grants, "denies": denies})
+
+        return self._mutate(user_id, add)
+
+    def revoke(self, user_id: str, capability: str) -> User | None:
+        """Remove a capability the user holds: drop it from ``grants`` and add to ``denies``.
+
+        Adding to ``denies`` matters when the capability comes from the role default (not
+        ``grants``) — an explicit deny is the only way to take it back. Returns the updated
+        user, or ``None`` if unknown.
+        """
+
+        def remove(u: User) -> User:
+            grants = [g for g in u.grants if g != capability]
+            denies = u.denies if capability in u.denies else [*u.denies, capability]
+            return u.model_copy(update={"grants": grants, "denies": denies})
+
+        return self._mutate(user_id, remove)
 
     def remove(self, user_id: str) -> User | None:
         """Delete a user entirely; returns the removed user (or ``None`` if unknown).

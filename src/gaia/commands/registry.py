@@ -14,6 +14,12 @@ from gaia.commands.base import Command
 from gaia.commands.forget import ForgetCommand
 from gaia.commands.help import HelpCommand
 from gaia.commands.memories import MemoriesCommand
+from gaia.commands.permissions import (
+    AclCommand,
+    GrantCommand,
+    PermsCommand,
+    RevokeCommand,
+)
 from gaia.commands.remember import RememberCommand
 from gaia.commands.reset import ResetCommand
 from gaia.commands.status import StatusCommand
@@ -46,6 +52,10 @@ _BUILTINS: tuple[Command, ...] = (
     NameCommand(),
     LinkCommand(),
     TasksCommand(),
+    GrantCommand(),
+    RevokeCommand(),
+    PermsCommand(),
+    AclCommand(),
 )
 
 
