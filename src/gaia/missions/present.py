@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from gaia.connectors.base import Reply
+from gaia.connectors.base import Reply, current_chat
 from gaia.missions.notify import _target
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -42,9 +42,12 @@ def _prompt(task: Task, run: SoulRun) -> str:
         "delegate_to_soul, do NOT create tasks, and do NOT hand off to any specialist: if "
         "you transfer, the screenshot never reaches the user. Read the files if helpful, then "
         "give a short, useful summary of what was produced. If the deliverable is a website, "
-        "OPEN it in your browser via its absolute local path "
-        "(file://<workspace>/<the .html file>) and take a screenshot RIGHT AWAY so the user "
-        "sees it — open + screenshot + summarize, all here, then stop.",
+        "call serve(<workspace>) to host it locally, then browser_navigate to the returned "
+        "url (append the entry .html file if needed) and browser_screenshot RIGHT AWAY so the "
+        "user sees a real render — do NOT use file://, it renders blank for real sites. "
+        "serve also returns a public_url for remote users — include it in your reply so they "
+        "can open the site on their phone. Serve + open + screenshot + summarize, all here, "
+        "then stop.",
     ]
     return "\n".join(parts)
 
@@ -67,6 +70,9 @@ async def present_result(gaia: Gaia, task: Task, run: SoulRun) -> None:
         await sender.send_to(chat, reply)
 
     handler = build_handler(gaia, user_id=task.owner or "gaia", session_id=f"mission-{task.id}")
+    # Bind the delivery channel for this turn so serve's auto-public picks it up (a remote
+    # owner gets a public_url; a local one stays private) — same contextvar message_user reads.
+    current_chat.set(target)
     try:
         await handler(_prompt(task, run), send)
     except Exception:  # pragma: no cover - presentation is best-effort

@@ -39,20 +39,23 @@ def make_exec(
         timeout_seconds: float = 30.0,
         workdir: str = "",
         background: bool = False,
+        port: int = 0,
         *,
         tool_context: ToolContext,
     ) -> dict[str, Any]:
         """Run a shell command in your workspace (install deps, build, test, CLIs).
 
-        Set background=True for a long-running process (a dev server, a long build):
-        it returns a process_id immediately — then exec_poll reads its output,
-        exec_kill stops it, exec_list lists them.
+        Set background=True for a long-running process (dev server, long build): returns a
+        process_id; then exec_poll reads output, exec_kill stops it, exec_list lists them.
+        For a background dev server, pass the port it binds (e.g. 'vite --port 5173' +
+        port=5173) so you can browser_navigate to it.
 
         Args:
             command: the shell command to run.
             timeout_seconds: foreground only — max seconds to wait (1-300).
             workdir: subdirectory to run in (must stay inside your workspace).
-            background: run as a long-lived background process instead of waiting.
+            background: run a long-lived background process instead of waiting.
+            port: loopback port a background server binds (0 = none/auto-detect).
         """
         agent = tool_context.agent_name
 
@@ -68,15 +71,18 @@ def make_exec(
 
         if background:
             try:
-                managed = await manager.spawn(agent, command, cwd)
+                managed = await manager.spawn(agent, command, cwd, port=port)
             except Exception as exc:
                 return err(f"failed to start process: {exc}")
-            return {
+            started: dict[str, Any] = {
                 "status": "running",
                 "process_id": managed.process_id,
                 "command": command,
                 "log": str(managed.log_path),
             }
+            if port:
+                started["url"] = f"http://127.0.0.1:{port}/"
+            return started
 
         timeout = max(MIN_TIMEOUT, min(timeout_seconds, MAX_TIMEOUT))
         try:
