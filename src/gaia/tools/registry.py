@@ -17,7 +17,7 @@ from collections.abc import Awaitable, Callable, Iterable
 from typing import TYPE_CHECKING, Any, Union
 
 from gaia import constants
-from gaia.tools import browser, fs, shell
+from gaia.tools import browser, fs, image, shell
 from gaia.tools.cron import NAME as CRON
 from gaia.tools.cron import make_cron
 from gaia.tools.remember import NAME as REMEMBER
@@ -305,6 +305,11 @@ def default_registry(
 
     if _is_enabled(config, CRON):
         registry.register(CRON, make_cron())
+
+    if _is_enabled(config, image.NAME):
+        provider = _tool_setting(config, image.NAME, "provider") or "gemini"
+        model = _tool_setting(config, image.NAME, "model") or ""
+        registry.register(image.NAME, image.make_generate_image(str(provider), str(model)))
 
     # Missions task board (P1): the five task_* tools share one TaskStore so they all hit
     # the same ~/.gaia/tasks.db. Gaia-only for now; souls get them in P3.

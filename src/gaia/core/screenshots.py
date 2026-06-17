@@ -54,11 +54,14 @@ def _screenshot_media(name: str, result: Any) -> Media | None:
     """A :class:`Media` reply for a screenshot tool result, or ``None`` if it isn't one."""
     from gaia.connectors.base import Media
     from gaia.tools.browser import SCREENSHOT
+    from gaia.tools.image import NAME as GENERATE_IMAGE
 
     if not isinstance(result, dict):
         return None
     if name == SCREENSHOT and result.get("status") == "success" and result.get("path"):
         return Media(Path(result["path"]), caption="screenshot")
+    if name == GENERATE_IMAGE and result.get("status") == "success" and result.get("path"):
+        return Media(Path(result["path"]), caption="image")
     if name == _MCP_SCREENSHOT and not result.get("isError"):
         path = _mcp_screenshot_path(result)
         if path is not None:
