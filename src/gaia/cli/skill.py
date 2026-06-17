@@ -172,21 +172,32 @@ def install(
 @app.command()
 def remove(
     ctx: typer.Context,
-    skill_id: Annotated[str, typer.Argument(help="The skill id to delete.")],
+    patterns: Annotated[
+        list[str], typer.Argument(help="Skill ids or globs to delete; 'all' for everything.")
+    ],
     yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip the confirmation.")] = False,
 ) -> None:
-    """Delete a skill folder from the skills dir."""
-    import shutil
+    """Delete skills by id, glob (huashu-*), or 'all'."""
+    from gaia.skills import list_skill_ids, remove_skills
 
-    folder = _skills_dir(ctx) / skill_id
+    skills_dir = _skills_dir(ctx)
     out = console()
-    if not folder.is_dir():
-        out.print(f"no skill named {skill_id!r} (try 'gaia skill list')")
+    # Resolve the match set first so we can confirm before deleting anything.
+    import fnmatch
+
+    ids = list_skill_ids(skills_dir)
+    matched = (
+        list(ids)
+        if any(p.strip().lower() in ("all", "*") for p in patterns)
+        else sorted({i for i in ids for p in patterns if i == p or fnmatch.fnmatch(i, p)})
+    )
+    if not matched:
+        out.print(f"no skills matched {' '.join(patterns)!r} (try 'gaia skill list')")
         raise typer.Exit(1)
     if not yes:
-        typer.confirm(f"delete skill {skill_id!r} at {folder}?", abort=True)
-    shutil.rmtree(folder, ignore_errors=True)
-    out.print(f"removed skill {skill_id!r}")
+        typer.confirm(f"delete {len(matched)} skill(s): {', '.join(matched)}?", abort=True)
+    removed = remove_skills(skills_dir, patterns)
+    out.print(f"removed {len(removed)} skill(s): {', '.join(removed)}")
 
 
 def _draft_skill(cfg: GaiaConfig, name: str, brief: str) -> tuple[str, str]:

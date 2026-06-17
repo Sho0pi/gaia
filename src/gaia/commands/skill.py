@@ -13,7 +13,7 @@ from gaia.commands.base import Command, CommandContext
 
 class SkillCommand(Command):
     name = "skill"
-    summary = "Manage skills: list, show, search, install, remove."
+    summary = "Manage skills: list, show, search, install, remove (id/glob/all)."
     usage = "<list|show|search|install|remove> [args]"
     agent_access = "user"
 
@@ -32,7 +32,7 @@ class SkillCommand(Command):
             return await _search(ctx, rest)
         if sub == "install":
             return _install(skills_dir, rest)
-        if sub == "remove":
+        if sub in ("remove", "uninstall", "rm"):
             return _remove(skills_dir, rest)
         return "Usage: /skill <list|show|search|install|remove> [args]"
 
@@ -74,17 +74,16 @@ def _install(skills_dir: object, source: str) -> str:
     return f"Installed: {', '.join(ids)}. Ready to use right away."
 
 
-def _remove(skills_dir: object, skill_id: str) -> str:
-    import shutil
-    from pathlib import Path
+def _remove(skills_dir: object, rest: str) -> str:
+    from gaia.skills import remove_skills
 
-    if not skill_id:
-        return "Usage: /skill remove <id>"
-    folder = Path(skills_dir) / skill_id  # type: ignore[arg-type]
-    if not folder.is_dir():
-        return f"No skill named {skill_id!r} (try /skill list)."
-    shutil.rmtree(folder, ignore_errors=True)
-    return f"Removed skill {skill_id!r}."
+    patterns = rest.split()
+    if not patterns:
+        return "Usage: /skill remove <id|glob|all> [more…]  (e.g. /skill remove huashu-* )"
+    removed = remove_skills(skills_dir, patterns)  # type: ignore[arg-type]
+    if not removed:
+        return f"No skills matched {' '.join(patterns)!r} (try /skill list)."
+    return f"Removed {len(removed)} skill(s): {', '.join(removed)}."
 
 
 async def _search(ctx: CommandContext, query: str) -> str:

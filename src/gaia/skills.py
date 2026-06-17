@@ -204,6 +204,24 @@ async def skill_search(
     return hits[:limit]
 
 
+def remove_skills(skills_dir: Path, patterns: list[str]) -> list[str]:
+    """Delete installed skills matching ``patterns``; return the ids removed.
+
+    Each pattern is an exact id or a glob (``huashu-*``); ``all`` / ``*`` removes every
+    installed skill. Unmatched patterns are simply ignored (empty result).
+    """
+    import fnmatch
+
+    ids = list_skill_ids(skills_dir)
+    if any(p.strip().lower() in ("all", "*", "--all") for p in patterns):
+        targets = list(ids)
+    else:
+        targets = sorted({i for i in ids for p in patterns if i == p or fnmatch.fnmatch(i, p)})
+    for skill_id in targets:
+        shutil.rmtree(Path(skills_dir) / skill_id, ignore_errors=True)
+    return targets
+
+
 def _looks_like_git(source: str) -> bool:
     """Heuristic: a git remote rather than a local path (scp-style or a URL scheme)."""
     return source.startswith(("git@", "ssh://")) or (
