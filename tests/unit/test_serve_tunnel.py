@@ -141,6 +141,32 @@ async def test_serve_public_enabled_returns_url() -> None:
     assert out["public_url"] == "https://pub-4321.loca.lt"
 
 
+async def test_serve_auto_public_by_channel(monkeypatch: pytest.MonkeyPatch) -> None:
+    from gaia.connectors.base import current_chat
+
+    serve = make_serve(_FakeServer(), _FakeTunnel(), tunnel_enabled=True)  # type: ignore[arg-type]
+
+    # Remote channel (whatsapp) -> public by default (no explicit public arg).
+    current_chat.set(("whatsapp", "972..."))
+    assert "public_url" in await serve("/ws")
+
+    # Local channel (cli/socket) -> stays private by default.
+    current_chat.set(("cli", "local"))
+    out = await serve("/ws")
+    assert "public_url" not in out and "public_url_error" not in out
+    current_chat.set(("", ""))
+
+
+async def test_serve_explicit_false_overrides_remote(monkeypatch: pytest.MonkeyPatch) -> None:
+    from gaia.connectors.base import current_chat
+
+    serve = make_serve(_FakeServer(), _FakeTunnel(), tunnel_enabled=True)  # type: ignore[arg-type]
+    current_chat.set(("whatsapp", "972..."))
+    out = await serve("/ws", public=False)
+    assert "public_url" not in out
+    current_chat.set(("", ""))
+
+
 async def test_serve_stop_closes_tunnel() -> None:
     tun = _FakeTunnel()
     stop = make_serve_stop(_FakeServer(), tun)  # type: ignore[arg-type]

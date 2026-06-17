@@ -42,26 +42,17 @@ class TunnelSpec:
     url_re: re.Pattern[str]
 
 
+#: ssh flags so the tunnel never blocks on a host-key / password prompt (the hang we
+#: chased): non-interactive, accept the host key, no stdin.
+_PINGGY_SSH_OPTS = (
+    "-p 443 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
+    "-o BatchMode=yes -o ServerAliveInterval=30 -n"
+).split()
+
+
 def pinggy_spec(port: int) -> TunnelSpec:
-    """pinggy over ssh. BatchMode + StrictHostKeyChecking off so ssh never blocks on a
-    host-key / password prompt (that would hang the tool — the exact failure we chased)."""
-    argv = [
-        "ssh",
-        "-p",
-        "443",
-        "-o",
-        "StrictHostKeyChecking=no",
-        "-o",
-        "UserKnownHostsFile=/dev/null",
-        "-o",
-        "BatchMode=yes",
-        "-o",
-        "ServerAliveInterval=30",
-        "-n",  # no stdin — never wait on a prompt
-        "-R",
-        f"0:localhost:{port}",
-        "free.pinggy.io",
-    ]
+    """pinggy over ssh (zero-install): ``ssh -R 0:localhost:<port> free.pinggy.io``."""
+    argv = ["ssh", *_PINGGY_SSH_OPTS, "-R", f"0:localhost:{port}", "free.pinggy.io"]
     return TunnelSpec(argv, re.compile(r"https://[\w.-]+\.pinggy[\w.-]*\.link"))
 
 
