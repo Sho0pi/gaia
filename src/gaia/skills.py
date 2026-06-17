@@ -21,6 +21,8 @@ from __future__ import annotations
 import logging
 import re
 import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -129,3 +131,108 @@ def write_skill(skills_dir: Path, name: str, description: str, instructions: str
         shutil.rmtree(folder, ignore_errors=True)
         raise ValueError(f"written skill {skill_id!r} failed ADK validation — removed")
     return folder
+
+
+def list_skill_ids(skills_dir: Path) -> list[str]:
+    """Every skill id under ``skills_dir`` (ADK loader's view); empty if missing."""
+    skills_dir = Path(skills_dir)
+    if not skills_dir.is_dir():
+        return []
+    from google.adk.skills import list_skills_in_dir
+
+    return sorted(list_skills_in_dir(skills_dir))
+
+
+def _looks_like_git(source: str) -> bool:
+    """Heuristic: a git remote rather than a local path (scp-style or a URL scheme)."""
+    return source.startswith(("git@", "ssh://")) or (
+        "://" in source and not Path(source.split("#", 1)[0]).exists()
+    )
+
+
+def _skill_dirs_under(root: Path) -> list[Path]:
+    """The skill folders under ``root``: ``root`` itself if it holds a SKILL.md, else its
+    immediate children that do."""
+    if (root / "SKILL.md").is_file():
+        return [root]
+    return sorted(d for d in root.iterdir() if d.is_dir() and (d / "SKILL.md").is_file())
+
+
+def _install_one(src: Path, skills_dir: Path, *, dest_id: str, force: bool) -> str:
+    """Copy one skill folder into ``skills_dir`` under ``dest_id``, validate, return the id."""
+    dest = Path(skills_dir) / dest_id
+    if dest.exists():
+        if not force:
+            raise FileExistsError(f"skill {dest_id!r} already exists — pass force to overwrite")
+        shutil.rmtree(dest, ignore_errors=True)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(src, dest)
+    if src.name != dest_id:
+        _rename_skill_frontmatter(dest / "SKILL.md", dest_id)  # ADK requires name == folder
+    if load_skill(skills_dir, dest_id) is None:  # round-trip through ADK's loader
+        shutil.rmtree(dest, ignore_errors=True)
+        raise ValueError(f"skill {dest_id!r} failed ADK validation — removed")
+    return dest_id
+
+
+def _rename_skill_frontmatter(skill_md: Path, new_name: str) -> None:
+    """Rewrite a SKILL.md's frontmatter ``name`` so it matches a renamed folder."""
+    text = skill_md.read_text()
+    if not text.startswith("---"):
+        raise ValueError("SKILL.md has no frontmatter")
+    _, front, body = text.split("---", 2)
+    data = yaml.safe_load(front) or {}
+    data["name"] = new_name
+    dumped = yaml.safe_dump(data, sort_keys=False, allow_unicode=True).strip()
+    skill_md.write_text(f"---\n{dumped}\n---{body}")
+
+
+def install_skill(
+    skills_dir: Path, source: str, *, name: str | None = None, force: bool = False
+) -> list[str]:
+    """Install skill(s) from a local path or a git url into ``skills_dir``; return the ids.
+
+    ``source`` is either a local path (a SKILL.md folder, or a folder of them) or a git url
+    (optionally ``url#subdir`` to pick a folder inside the repo). ``name`` renames the id
+    when installing exactly one skill. Each copied skill is validated through ADK's loader;
+    an invalid one is removed and raises. Existing ids are refused unless ``force``.
+    """
+    skills_dir = Path(skills_dir)
+    skills_dir.mkdir(parents=True, exist_ok=True)
+
+    if _looks_like_git(source):
+        url, _, subdir = source.partition("#")
+        tmp = Path(tempfile.mkdtemp(prefix="gaia-skill-"))
+        try:
+            subprocess.run(
+                ["git", "clone", "--depth", "1", url, str(tmp)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            root = tmp / subdir if subdir else tmp
+            if not root.is_dir():
+                raise FileNotFoundError(f"{subdir!r} not found in the cloned repo")
+            return _install_from_root(root, skills_dir, name=name, force=force)
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError(f"git clone failed: {exc.stderr.strip() or exc}") from exc
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    root = Path(source).expanduser()
+    if not root.is_dir():
+        raise FileNotFoundError(f"no such directory: {root}")
+    return _install_from_root(root, skills_dir, name=name, force=force)
+
+
+def _install_from_root(root: Path, skills_dir: Path, *, name: str | None, force: bool) -> list[str]:
+    folders = _skill_dirs_under(root)
+    if not folders:
+        raise FileNotFoundError(f"no SKILL.md found under {root}")
+    if name is not None and len(folders) > 1:
+        raise ValueError("name can only be set when installing a single skill")
+    installed = []
+    for folder in folders:
+        dest_id = skill_id_for(name) if name is not None else folder.name
+        installed.append(_install_one(folder, skills_dir, dest_id=dest_id, force=force))
+    return installed
