@@ -7,6 +7,7 @@ from gaia.commands.base import Command, CommandContext
 
 class StatusCommand(Command):
     name = "status"
+    agent_access = "user"
     aliases = ("stats",)
     summary = "Show model, memory settings, and registered counts."
 

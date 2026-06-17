@@ -45,6 +45,7 @@ def _find(ctx: CommandContext, ref: str) -> str | None:
 
 class UsersCommand(Command):
     name = "users"
+    agent_access = "admin"
     summary = "List known users, their roles, and the channels that reach them (admin)."
 
     async def run(self, ctx: CommandContext) -> str:
@@ -63,6 +64,7 @@ class UsersCommand(Command):
 
 class ApproveCommand(Command):
     name = "approve"
+    agent_access = "admin"
     summary = "Set a user's role (approve a guest). Usage: /approve <id|channel:sender> <role>."
     usage = "<id|channel:sender> <role>"
     aliases = ("role",)
@@ -84,6 +86,7 @@ class ApproveCommand(Command):
 
 class RemoveCommand(Command):
     name = "remove"
+    agent_access = "admin"
     summary = "Delete a user from the store. Usage: /remove <id|channel:sender> (admin)."
     usage = "<id|channel:sender>"
     aliases = ("deluser",)
@@ -106,6 +109,7 @@ class RemoveCommand(Command):
 
 class NameCommand(Command):
     name = "name"
+    agent_access = "admin"
     summary = "Set a user's display name. Usage: /name <id|channel:sender> <name>."
     usage = "<id|channel:sender> <name>"
 
@@ -125,6 +129,7 @@ class NameCommand(Command):
 
 class LinkCommand(Command):
     name = "link"
+    agent_access = "admin"
     summary = "Attach another channel id to a user. Usage: /link <id> <channel:sender>."
     usage = "<id> <channel:sender>"
 

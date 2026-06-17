@@ -7,6 +7,7 @@ from gaia.commands.base import Command, CommandContext
 
 class ForgetCommand(Command):
     name = "forget"
+    agent_access = "admin"
     summary = "Wipe your long-term memory. Send '/forget yes' to confirm."
     usage = "[yes]"
 

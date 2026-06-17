@@ -14,6 +14,7 @@ from gaia.commands.users import _find, require_manage_users
 
 class AclCommand(Command):
     name = "acl"
+    agent_access = "user"
     summary = "List the available ACL capability groups and the tools each grants."
 
     async def run(self, ctx: CommandContext) -> str:
@@ -33,6 +34,7 @@ class AclCommand(Command):
 
 class GrantCommand(Command):
     name = "grant"
+    agent_access = "admin"
     summary = "Grant a user an ACL capability. Usage: /grant <id|channel:sender> <capability>."
     usage = "<id|channel:sender> <capability>"
 
@@ -53,6 +55,7 @@ class GrantCommand(Command):
 
 class RevokeCommand(Command):
     name = "revoke"
+    agent_access = "admin"
     summary = "Revoke an ACL capability from a user. Usage: /revoke <id|channel:sender> <cap>."
     usage = "<id|channel:sender> <capability>"
 
@@ -73,6 +76,7 @@ class RevokeCommand(Command):
 
 class PermsCommand(Command):
     name = "perms"
+    agent_access = "user"
     summary = "Show a user's effective ACL capabilities. Usage: /perms [id|channel:sender]."
     usage = "[id|channel:sender]"
     aliases = ("permissions",)

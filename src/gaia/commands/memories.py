@@ -7,6 +7,7 @@ from gaia.commands.base import Command, CommandContext
 
 class MemoriesCommand(Command):
     name = "memories"
+    agent_access = "user"
     aliases = ("memory",)
     summary = "List what Gaia remembers about you long-term."
 

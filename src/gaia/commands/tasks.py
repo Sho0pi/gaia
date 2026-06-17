@@ -14,6 +14,7 @@ from gaia.missions import CLOSED, TaskStatus, TaskStore
 
 class TasksCommand(Command):
     name = "tasks"
+    agent_access = "user"
     summary = "List your open missions/tasks. Usage: /tasks [approve|reject <id>]."
     usage = "[approve|reject <id>]"
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, Literal
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from gaia.commands.registry import CommandRegistry
@@ -45,6 +45,11 @@ class Command(ABC):
     summary: ClassVar[str]
     aliases: ClassVar[tuple[str, ...]] = ()
     usage: ClassVar[str] = ""
+    #: Whether the AI may run this command itself (via the ``run_command`` tool), and at
+    #: what trust level. ``"none"`` (default) = human-only; ``"user"`` = any caller's agent
+    #: may run it; ``"admin"`` = only when the caller is an admin (dangerous ops:
+    #: user-mgmt, ACL, forget). The command's own ACL check still applies on top.
+    agent_access: ClassVar[Literal["none", "user", "admin"]] = "none"
 
     @abstractmethod
     async def run(self, ctx: CommandContext) -> str:

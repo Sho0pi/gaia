@@ -76,7 +76,7 @@ class GaiaHandler:
             )
             self._runner = Runner(
                 app_name=constants.APP_NAME,
-                agent=self._gaia.build_root_agent(),
+                agent=self._gaia.build_root_agent(self),
                 session_service=session_service,
                 memory_service=self._gaia.memory_service,
                 plugins=[ToolPermissionPlugin(self._gaia), ToolLoggingPlugin()],

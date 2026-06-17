@@ -7,6 +7,7 @@ from gaia.commands.base import Command, CommandContext
 
 class ResetCommand(Command):
     name = "reset"
+    agent_access = "user"
     aliases = ("clear", "new")
     summary = "Start fresh: clear this conversation (keeps long-term memory)."
 
