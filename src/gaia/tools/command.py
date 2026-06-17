@@ -38,18 +38,24 @@ def make_run_command(
     ) -> dict[str, Any]:
         """Run an in-chat command for the current user (e.g. manage skills).
 
-        Use this to act on the user's command surface — most importantly skills:
-        run_command("skill", "search caveman"), run_command("skill", "install <git-url>"),
-        run_command("skill", "list"). You can only run commands available to you; dangerous
+        Pass the whole command line as ``command`` — e.g.
+        run_command("skill install https://github.com/acme/skills"),
+        run_command("skill search caveman"), run_command("skill list"). (Splitting it into
+        command + args also works.) You can only run commands available to you; dangerous
         ones (managing users/permissions) need an admin user.
 
         Args:
-            command: the command name without the leading slash (e.g. "skill", "status").
-            args: the rest of the command line (e.g. "install https://...").
+            command: the command line (command name + its arguments), with or without a
+                leading slash, e.g. "skill install <git-url>".
+            args: optional extra arguments, appended to ``command``.
         """
         from gaia.commands import CommandContext, default_registry
 
-        name = command.strip().lstrip("/").lower()
+        # The model usually passes the whole line in `command`; split off the first token
+        # as the command name and treat the rest (+ any `args`) as the arguments.
+        name, _, inline = command.strip().lstrip("/").partition(" ")
+        name = name.lower()
+        full_args = " ".join(p for p in (inline.strip(), args.strip()) if p)
         registry = default_registry(gaia.config)
         cmd = registry.get(name)
         if cmd is None:
@@ -74,7 +80,7 @@ def make_run_command(
             return {"status": "error", "error_message": f"{name!r} isn't available here"}
 
         ctx = CommandContext(
-            args=args.strip(),
+            args=full_args,
             gaia=gaia,
             handler=handler,  # type: ignore[arg-type]  # None only for handler-free callers, gated above
             registry=registry,

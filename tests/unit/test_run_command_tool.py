@@ -54,6 +54,19 @@ async def test_admin_tier_allowed_for_admin(tmp_path: Path) -> None:
     assert "shell" in store.get("bob").grants  # type: ignore[union-attr]
 
 
+async def test_whole_line_in_command_arg(tmp_path: Path) -> None:
+    # The model usually passes the entire command line as `command` (args="").
+    store = _store(tmp_path)
+    out = await _run(store, "grant bob shell", "", "root")
+    assert out["status"] == "success"
+    assert "shell" in store.get("bob").grants  # type: ignore[union-attr]
+
+
+async def test_leading_slash_tolerated(tmp_path: Path) -> None:
+    out = await _run(_store(tmp_path), "/help", "", "bob")
+    assert out["status"] == "success"
+
+
 async def test_handler_dependent_refused_without_handler(tmp_path: Path) -> None:
     # reset needs the live handler; with handler=None it's refused, not crashed.
     out = await _run(_store(tmp_path), "reset", "", "root")
