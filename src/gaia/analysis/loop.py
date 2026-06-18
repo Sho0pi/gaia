@@ -24,25 +24,31 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 logger = logging.getLogger(__name__)
 
 
-async def run_cycle(gaia: Gaia) -> list[Improvement]:
-    """Run one improve cycle; return the improvements applied (empty when nothing changed)."""
-    from gaia.analysis.apply import apply_report
+async def analyze(gaia: Gaia) -> tuple[AnalysisReport | None, str | None]:
+    """Digest recent usage and run the analyst — no writes. Returns (report, single_user)."""
     from gaia.analysis.events import digest_events, read_events, render_digest
 
-    cfg = gaia.config
-    window_days = cfg.analysis.window_days
+    window_days = gaia.config.analysis.window_days
     events = read_events(gaia.settings.log_dir, datetime.now() - timedelta(days=window_days))
     if not events:
-        return []
+        return None, None
     digest = digest_events(events)
-
     try:
         report = await _run_analyst(gaia, render_digest(digest))
     except Exception as exc:
         logger.warning("improve cycle: analyst failed: %s", exc)
-        return []
+        return None, None
+    return report, _single_user(digest)
 
-    applied = await apply_report(gaia, report, user_id=_single_user(digest))
+
+async def run_cycle(gaia: Gaia) -> list[Improvement]:
+    """Run one improve cycle; return the improvements applied (empty when nothing changed)."""
+    from gaia.analysis.apply import apply_report
+
+    report, single_user = await analyze(gaia)
+    if report is None:
+        return []
+    applied = await apply_report(gaia, report, user_id=single_user)
     if applied:
         log_event("improved", count=len(applied), summary=report.summary[:200])
         await _notify_owner(gaia, report, applied)
