@@ -177,6 +177,15 @@ def test_delete_aborts_on_no(registry_dir: Path) -> None:
     assert (registry_dir / "note_taker.md").exists()  # not deleted
 
 
+def test_remove_is_an_alias_for_rm(registry_dir: Path) -> None:
+    SoulRegistry(registry_dir).save(_spec())
+
+    result = runner.invoke(cli_app, ["soul", "remove", "note_taker", "--force"])
+
+    assert result.exit_code == 0
+    assert not (registry_dir / "note_taker.md").exists()
+
+
 # --- edit --------------------------------------------------------------------------
 
 

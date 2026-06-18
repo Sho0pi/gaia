@@ -123,8 +123,8 @@ def rm(ctx: typer.Context, job_id: JobIdArg) -> None:
     console().print(f"removed {job_id}")
 
 
-# `remove` stays as a hidden alias for `rm` (back-compat).
-app.command("remove", hidden=True)(rm)
+# `remove` is a visible alias for `rm`.
+app.command("remove")(rm)
 
 
 @app.command()

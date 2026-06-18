@@ -15,6 +15,7 @@ from gaia.cli._options import state
 app = typer.Typer(name="llm", help="Model provider operations.", no_args_is_help=True)
 
 #: Known providers (provider is a free-form string in the schema — litellm ids also work).
+#: An interactive list-and-pick flow is tracked in #201.
 _PROVIDERS = {
     "gemini": "Google Gemini (GEMINI_API_KEY)",
     "openai": "OpenAI / Sign in with ChatGPT (needs the 'llm' dep group)",

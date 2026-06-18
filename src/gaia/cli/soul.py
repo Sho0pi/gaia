@@ -367,5 +367,5 @@ def delete(
     out.print(f"deleted soul {key!r}")
 
 
-# `remove` stays as a hidden alias for `rm` (back-compat).
-app.command("remove", hidden=True)(delete)
+# `remove` is a visible alias for `rm`.
+app.command("remove")(delete)

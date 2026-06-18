@@ -207,8 +207,8 @@ def remove(
     out.print(f"removed {len(removed)} skill(s): {', '.join(removed)}")
 
 
-# `remove` stays as a hidden alias for `rm` (back-compat).
-app.command("remove", hidden=True)(remove)
+# `remove` is a visible alias for `rm`.
+app.command("remove")(remove)
 
 
 def _draft(ctx: typer.Context, name: str, brief: str) -> tuple[str, str]:
