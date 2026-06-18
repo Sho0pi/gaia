@@ -12,15 +12,12 @@ ADK / the model are imported inside the commands that need them.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
 
 import typer
 
 from gaia.cli._console import console, emit_json
 from gaia.cli._options import state
-
-if TYPE_CHECKING:  # pragma: no cover - typing only
-    from gaia.config import GaiaConfig
 
 app = typer.Typer(
     name="skill", help="List, author, install, and manage skills.", no_args_is_help=True
@@ -35,12 +32,6 @@ def _skills_dir(ctx: typer.Context) -> Path:
 
     settings = get_settings(state(ctx).env_file)
     return resolve_skills_dir(ConfigSupplier(settings.config_path).current)
-
-
-def _config(ctx: typer.Context) -> GaiaConfig:
-    from gaia.config import ConfigSupplier, get_settings
-
-    return ConfigSupplier(get_settings(state(ctx).env_file).config_path).current
 
 
 def _truncate(text: str, width: int = _DESC_WIDTH) -> str:
@@ -126,9 +117,7 @@ def new(
     out = console()
 
     if from_ is not None:
-        from gaia.agents.skill_author import draft_skill
-
-        description, instructions = draft_skill(_config(ctx), name, from_)
+        description, instructions = _draft(ctx, name, from_)
     elif instruction_file is not None:
         instructions = instruction_file.read_text()
         description = description or name
@@ -189,3 +178,18 @@ def remove(
         typer.confirm(f"delete skill {skill_id!r} at {folder}?", abort=True)
     shutil.rmtree(folder, ignore_errors=True)
     out.print(f"removed skill {skill_id!r}")
+
+
+def _draft(ctx: typer.Context, name: str, brief: str) -> tuple[str, str]:
+    """Build a Gaia so the skill author can research (tools + memory), then draft + close it."""
+    import asyncio
+
+    from gaia.agents.skill_author import draft_skill
+    from gaia.config import get_settings
+    from gaia.core import Gaia
+
+    gaia = Gaia(get_settings(state(ctx).env_file))
+    try:
+        return draft_skill(gaia, name, brief)
+    finally:
+        asyncio.run(gaia.close())
