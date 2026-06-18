@@ -14,7 +14,7 @@ def test_default_registry_has_every_builtin() -> None:
         "help",
         "reset",
         "whoami",
-        "agents",
+        "souls",
         "status",
         "remember",
         "memories",
@@ -30,7 +30,8 @@ def test_default_registry_has_every_builtin() -> None:
         "perms",
         "acl",
         "skill",
-        "improvements",
+        "grow",
+        "model",
     }
 
 

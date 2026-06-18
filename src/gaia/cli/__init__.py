@@ -7,12 +7,11 @@ siblings) at module level, so ``gaia --help`` never imports ADK or the connector
 from __future__ import annotations
 
 from gaia.cli import (
-    analyze,
     connect,
     cron,
     daemon,
     doctor,
-    improvements,
+    grow,
     llm,
     logs,
     root,
@@ -25,11 +24,10 @@ from gaia.cli import (
 app = root.app
 app.add_typer(cron.app, name="cron")
 app.add_typer(llm.app, name="llm")
-app.add_typer(improvements.app, name="improvements")
+app.add_typer(grow.app, name="grow")
 app.add_typer(skill.app, name="skill")
 app.add_typer(soul.app, name="soul")
 app.add_typer(tasks.app, name="tasks")
-app.command()(analyze.analyze)
 app.command()(connect.connect)
 app.command()(daemon.serve)
 app.command()(daemon.start)

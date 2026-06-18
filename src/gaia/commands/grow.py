@@ -1,14 +1,13 @@
-"""``/improvements`` — show the skill/soul changes gaia has made (from git history)."""
+"""``/grow`` — show the skill/soul changes gaia has made (from git history)."""
 
 from __future__ import annotations
 
 from gaia.commands.base import Command, CommandContext
 
 
-class ImprovementsCommand(Command):
-    name = "improvements"
+class GrowCommand(Command):
+    name = "grow"
     summary = "List the skills/souls gaia changed (its own learning history)."
-    aliases = ("improved",)
 
     async def run(self, ctx: CommandContext) -> str:
         from gaia.state import StateRepo

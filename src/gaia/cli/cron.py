@@ -76,7 +76,7 @@ def show(ctx: typer.Context, job_id: JobIdArg) -> None:
         console().print(job.model_dump())
 
 
-@app.command()
+@app.command("new")
 def add(
     ctx: typer.Context,
     expr: ExprArg = "",
@@ -121,6 +121,10 @@ def rm(ctx: typer.Context, job_id: JobIdArg) -> None:
         console().print(f"no job {job_id!r}")
         raise typer.Exit(1)
     console().print(f"removed {job_id}")
+
+
+# `remove` is a visible alias for `rm`.
+app.command("remove")(rm)
 
 
 @app.command()

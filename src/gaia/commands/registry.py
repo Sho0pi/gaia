@@ -9,12 +9,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from gaia.commands.agents import AgentsCommand
 from gaia.commands.base import Command
 from gaia.commands.forget import ForgetCommand
+from gaia.commands.grow import GrowCommand
 from gaia.commands.help import HelpCommand
-from gaia.commands.improvements import ImprovementsCommand
 from gaia.commands.memories import MemoriesCommand
+from gaia.commands.model import ModelCommand
 from gaia.commands.permissions import (
     AclCommand,
     GrantCommand,
@@ -24,6 +24,7 @@ from gaia.commands.permissions import (
 from gaia.commands.remember import RememberCommand
 from gaia.commands.reset import ResetCommand
 from gaia.commands.skill import SkillCommand
+from gaia.commands.souls import SoulsCommand
 from gaia.commands.status import StatusCommand
 from gaia.commands.tasks import TasksCommand
 from gaia.commands.users import (
@@ -43,7 +44,7 @@ _BUILTINS: tuple[Command, ...] = (
     HelpCommand(),
     ResetCommand(),
     WhoamiCommand(),
-    AgentsCommand(),
+    SoulsCommand(),
     StatusCommand(),
     RememberCommand(),
     MemoriesCommand(),
@@ -59,7 +60,8 @@ _BUILTINS: tuple[Command, ...] = (
     PermsCommand(),
     AclCommand(),
     SkillCommand(),
-    ImprovementsCommand(),
+    GrowCommand(),
+    ModelCommand(),
 )
 
 
