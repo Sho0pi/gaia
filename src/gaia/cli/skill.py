@@ -175,7 +175,7 @@ def install(
     console().print(f"installed: {', '.join(ids)}")
 
 
-@app.command()
+@app.command("rm")
 def remove(
     ctx: typer.Context,
     patterns: PatternsArg,
@@ -205,6 +205,10 @@ def remove(
 
     commit_change(f"skill: removed {', '.join(removed)}")
     out.print(f"removed {len(removed)} skill(s): {', '.join(removed)}")
+
+
+# `remove` stays as a hidden alias for `rm` (back-compat).
+app.command("remove", hidden=True)(remove)
 
 
 def _draft(ctx: typer.Context, name: str, brief: str) -> tuple[str, str]:

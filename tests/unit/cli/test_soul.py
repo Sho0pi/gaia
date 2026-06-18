@@ -47,7 +47,7 @@ def _spec(**over: object) -> AgentSpec:
 def test_create_manual_roundtrip(registry_dir: Path) -> None:
     result = runner.invoke(
         cli_app,
-        ["soul", "create", "Note Taker", "--description", "Takes notes", "--instruction", "Do it."],
+        ["soul", "new", "Note Taker", "--description", "Takes notes", "--instruction", "Do it."],
     )
 
     assert result.exit_code == 0
@@ -62,7 +62,7 @@ def test_create_reads_instruction_file(registry_dir: Path, tmp_path: Path) -> No
 
     result = runner.invoke(
         cli_app,
-        ["soul", "create", "Note Taker", "--description", "d", "--instruction-file", str(f)],
+        ["soul", "new", "Note Taker", "--description", "d", "--instruction-file", str(f)],
     )
 
     assert result.exit_code == 0
@@ -76,7 +76,7 @@ def test_create_rejects_both_instruction_sources(registry_dir: Path, tmp_path: P
         cli_app,
         [
             "soul",
-            "create",
+            "new",
             "N",
             "--description",
             "d",
@@ -92,7 +92,7 @@ def test_create_rejects_both_instruction_sources(registry_dir: Path, tmp_path: P
 
 
 def test_create_no_input_missing_field_exits_2(registry_dir: Path) -> None:
-    result = runner.invoke(cli_app, ["soul", "create", "N", "--instruction", "y", "--no-input"])
+    result = runner.invoke(cli_app, ["soul", "new", "N", "--instruction", "y", "--no-input"])
 
     assert result.exit_code == 2
     assert "description" in result.output
@@ -101,7 +101,7 @@ def test_create_no_input_missing_field_exits_2(registry_dir: Path) -> None:
 def test_create_prompts_for_missing_field(registry_dir: Path) -> None:
     # description omitted → prompted; supply it on stdin.
     result = runner.invoke(
-        cli_app, ["soul", "create", "Note Taker", "--instruction", "y"], input="Prompted desc\n"
+        cli_app, ["soul", "new", "Note Taker", "--instruction", "y"], input="Prompted desc\n"
     )
 
     assert result.exit_code == 0
@@ -110,7 +110,7 @@ def test_create_prompts_for_missing_field(registry_dir: Path) -> None:
 
 def test_create_refuses_overwrite_without_force(registry_dir: Path) -> None:
     SoulRegistry(registry_dir).save(_spec())
-    args = ["soul", "create", "Note Taker", "--description", "d", "--instruction", "y"]
+    args = ["soul", "new", "Note Taker", "--description", "d", "--instruction", "y"]
 
     refused = runner.invoke(cli_app, args)
     assert refused.exit_code == 1
@@ -154,7 +154,7 @@ def test_list_json(registry_dir: Path) -> None:
 
 
 def test_delete_unknown_exits_1(registry_dir: Path) -> None:
-    result = runner.invoke(cli_app, ["soul", "delete", "ghost"])
+    result = runner.invoke(cli_app, ["soul", "rm", "ghost"])
 
     assert result.exit_code == 1
 
@@ -162,7 +162,7 @@ def test_delete_unknown_exits_1(registry_dir: Path) -> None:
 def test_delete_force_removes(registry_dir: Path) -> None:
     SoulRegistry(registry_dir).save(_spec())
 
-    result = runner.invoke(cli_app, ["soul", "delete", "note_taker", "--force"])
+    result = runner.invoke(cli_app, ["soul", "rm", "note_taker", "--force"])
 
     assert result.exit_code == 0
     assert not (registry_dir / "note_taker.md").exists()
@@ -171,7 +171,7 @@ def test_delete_force_removes(registry_dir: Path) -> None:
 def test_delete_aborts_on_no(registry_dir: Path) -> None:
     SoulRegistry(registry_dir).save(_spec())
 
-    result = runner.invoke(cli_app, ["soul", "delete", "note_taker"], input="n\n")
+    result = runner.invoke(cli_app, ["soul", "rm", "note_taker"], input="n\n")
 
     assert result.exit_code == 0
     assert (registry_dir / "note_taker.md").exists()  # not deleted
@@ -232,9 +232,7 @@ def test_ai_forge_saves_under_name(registry_dir: Path, monkeypatch: pytest.Monke
     )
     monkeypatch.setattr(soul, "_forge", lambda *a, **k: forged)
 
-    result = runner.invoke(
-        cli_app, ["soul", "create", "Mailer", "--ai", "summarize email", "--yes"]
-    )
+    result = runner.invoke(cli_app, ["soul", "new", "Mailer", "--ai", "summarize email", "--yes"])
 
     assert result.exit_code == 0
     saved = SoulRegistry(registry_dir).get("mailer")  # NAME overrides the smith's name
@@ -249,7 +247,7 @@ def test_ai_reuse_confirmed_saves_nothing(
     monkeypatch.setattr(soul, "_forge", lambda *a, **k: decision)
 
     # confirm reuse (input 'y'); --yes not passed so it prompts
-    result = runner.invoke(cli_app, ["soul", "create", "Mailer", "--ai", "take notes"], input="y\n")
+    result = runner.invoke(cli_app, ["soul", "new", "Mailer", "--ai", "take notes"], input="y\n")
 
     assert result.exit_code == 0
     assert SoulRegistry(registry_dir).get("mailer") is None  # nothing new saved
@@ -268,7 +266,7 @@ def test_ai_reuse_declined_forges_under_name(
     monkeypatch.setattr(soul, "_forge", lambda *a, **k: next(decisions))
 
     # decline reuse ('n'), then confirm save ('y')
-    result = runner.invoke(cli_app, ["soul", "create", "Mailer", "--ai", "x"], input="n\ny\n")
+    result = runner.invoke(cli_app, ["soul", "new", "Mailer", "--ai", "x"], input="n\ny\n")
 
     assert result.exit_code == 0
     assert SoulRegistry(registry_dir).get("mailer") is not None

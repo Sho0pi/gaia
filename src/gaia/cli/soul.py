@@ -140,7 +140,7 @@ def show(ctx: typer.Context, key: KeyArg) -> None:
     out.print(f"\ninstruction:\n{spec.instruction}")
 
 
-@app.command()
+@app.command("new")
 def create(
     ctx: typer.Context,
     name: NameArg,
@@ -349,7 +349,7 @@ def edit(ctx: typer.Context, key: KeyArg) -> None:
     out.print(f"saved soul {new_spec.key!r}")
 
 
-@app.command()
+@app.command("rm")
 def delete(
     ctx: typer.Context,
     key: KeyArg,
@@ -365,3 +365,7 @@ def delete(
         raise typer.Exit(0)
     registry.delete(key)
     out.print(f"deleted soul {key!r}")
+
+
+# `remove` stays as a hidden alias for `rm` (back-compat).
+app.command("remove", hidden=True)(delete)

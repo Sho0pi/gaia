@@ -1,4 +1,4 @@
-"""System test: ``gaia soul create --ai`` forges a real, valid soul via the smith.
+"""System test: ``gaia soul new --ai`` forges a real, valid soul via the smith.
 
 Skipped unless a Gemini key is configured, so CI stays green without secrets.
 """
@@ -35,7 +35,7 @@ def test_create_ai_forges_valid_spec(tmp_path: Path, monkeypatch: pytest.MonkeyP
     monkeypatch.setattr("gaia.config.get_settings", lambda env_file=None: settings)
 
     result = runner.invoke(
-        cli_app, ["soul", "create", "Mailer", "--ai", "summarize my email", "--yes"]
+        cli_app, ["soul", "new", "Mailer", "--ai", "summarize my email", "--yes"]
     )
 
     assert result.exit_code == 0, result.output

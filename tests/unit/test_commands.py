@@ -72,9 +72,9 @@ async def test_whoami_shows_user_and_memory() -> None:
     assert "long-term memory: on" in out
 
 
-async def test_agents_empty_and_populated() -> None:
-    assert "No specialist" in await _run("agents", _ctx())
-    assert "- researcher" in await _run("agents", _ctx(agents=["researcher"]))
+async def test_souls_empty_and_populated() -> None:
+    assert "No souls" in await _run("souls", _ctx())
+    assert "- researcher" in await _run("souls", _ctx(agents=["researcher"]))
 
 
 async def test_status_reports_counts() -> None:
