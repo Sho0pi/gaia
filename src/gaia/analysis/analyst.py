@@ -24,27 +24,31 @@ class SkillProposal(BaseModel):
 
     name: str = Field(description="Short kebab-case skill id (becomes the folder name).")
     description: str = Field(description="One line: what the skill does / when it applies.")
-    instructions: str = Field(description="The SKILL.md body: how the agent should behave.")
-    rationale: str = Field(description="The digest evidence behind this proposal.")
+    instructions: str = Field(
+        default="", description="The SKILL.md body (optional; researched on apply)."
+    )
+    rationale: str = Field(default="", description="The digest evidence behind this proposal.")
 
 
 class MemoryProposal(BaseModel):
     """A durable user fact worth writing to long-term memory."""
 
-    user_id: str = Field(description="The user this fact belongs to (from the digest).")
+    user_id: str = Field(default="", description="The user this fact belongs to (from the digest).")
     fact: str = Field(description="A short, self-contained statement about the user.")
-    rationale: str = Field(description="The digest evidence behind this proposal.")
+    rationale: str = Field(default="", description="The digest evidence behind this proposal.")
 
 
 class SoulProposal(BaseModel):
     """A new specialist soul to forge, or an existing one to refine."""
 
-    action: str = Field(description="'create' a new soul, or 'refine' an existing one.")
-    key: str = Field(description="For 'refine': the existing soul key. For 'create': leave blank.")
+    action: str = Field(default="create", description="'create' a new soul, or 'refine' one.")
+    key: str = Field(
+        default="", description="For 'refine': the existing soul key; blank to create."
+    )
     name: str = Field(description="Human name for the soul (its key is slugged from this).")
-    description: str = Field(description="One-line ROLE (a reusable specialist, not a task).")
-    instruction: str = Field(description="The soul's system prompt / how it should work.")
-    rationale: str = Field(description="The digest evidence behind this proposal.")
+    description: str = Field(default="", description="One-line ROLE (a reusable specialist).")
+    instruction: str = Field(default="", description="The soul's system prompt / how it works.")
+    rationale: str = Field(default="", description="The digest evidence behind this proposal.")
 
 
 class AnalysisReport(BaseModel):

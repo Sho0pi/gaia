@@ -13,6 +13,18 @@ from gaia.analysis.analyst import SkillProposal, SoulProposal
 from gaia.analysis.apply import apply_report, revert_improvement
 from gaia.analysis.journal import Improvement, ImprovementJournal
 
+# --- schema leniency (real models omit optional fields) ----------------------------------
+
+
+def test_report_parses_proposal_missing_rationale() -> None:
+    from gaia.analysis.analyst import AnalysisReport
+
+    # gpt-5.4-mini omitted memory.rationale — one missing optional field must not abort.
+    raw = '{"summary":"x","memories":[{"user_id":"itay","fact":"likes acl"}]}'
+    report = AnalysisReport.model_validate_json(raw)
+    assert report.memories[0].fact == "likes acl" and report.memories[0].rationale == ""
+
+
 # --- journal -----------------------------------------------------------------------------
 
 
