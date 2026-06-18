@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 
 import pytest
+from google.adk.tools.base_toolset import BaseToolset
 
 from gaia.agents import AgentSpec
 from gaia.config import Settings
@@ -28,6 +29,16 @@ pytestmark = [
 _NATIVE_BROWSER = "browser:\n  backend: native\n"
 
 
+def _function_tool_names(agent: object) -> set[str]:
+    """Names of an agent's plain function tools, excluding the skill/MCP toolsets that
+    every soul also carries (skills learn-and-grow loop, #84)."""
+    return {
+        getattr(t, "__name__", getattr(t, "name", ""))
+        for t in agent.tools  # type: ignore[attr-defined]
+        if not isinstance(t, BaseToolset)
+    }
+
+
 def test_subagent_with_web_search_builds(tmp_path: Path) -> None:
     config_path = tmp_path / "gaia.yaml"
     config_path.write_text(_NATIVE_BROWSER + "tools:\n  web_search:\n    engine: duckduckgo\n")
@@ -44,7 +55,7 @@ def test_subagent_with_web_search_builds(tmp_path: Path) -> None:
     agent = gaia.ensure_agent(spec)
 
     assert agent.name == "researcher"
-    assert len(agent.tools) == 1
+    assert _function_tool_names(agent) == {"web_search"}
 
 
 def test_subagent_with_web_fetch_builds(tmp_path: Path) -> None:
@@ -64,7 +75,7 @@ def test_subagent_with_web_fetch_builds(tmp_path: Path) -> None:
     agent = gaia.ensure_agent(spec)
 
     assert agent.name == "reader"
-    assert len(agent.tools) == 1
+    assert _function_tool_names(agent) == {"web_fetch"}
 
 
 def test_subagent_with_fs_read_builds(tmp_path: Path) -> None:
@@ -84,4 +95,4 @@ def test_subagent_with_fs_read_builds(tmp_path: Path) -> None:
     agent = gaia.ensure_agent(spec)
 
     assert agent.name == "filer"
-    assert len(agent.tools) == 1
+    assert _function_tool_names(agent) == {"fs_read"}
