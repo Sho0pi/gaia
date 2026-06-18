@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from gaia.skills import install_skill, list_skill_ids
+from gaia.skills import install_skill, list_skill_ids, remove_skills
 
 
 def _skill_folder(root: Path, name: str, body: str = "Do the thing.") -> Path:
@@ -63,6 +63,25 @@ def test_install_rejects_malformed(tmp_path: Path) -> None:
 def test_install_missing_path(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         install_skill(tmp_path / "skills", str(tmp_path / "nope"))
+
+
+def test_remove_skills_glob_and_all(tmp_path: Path) -> None:
+    skills = tmp_path / "skills"
+    for n in ("huashu-image", "huashu-video", "other"):
+        _skill_folder(skills, n)
+    # glob removes the matching family, leaves the rest
+    assert sorted(remove_skills(skills, ["huashu-*"])) == ["huashu-image", "huashu-video"]
+    assert list_skill_ids(skills) == ["other"]
+    # 'all' clears whatever remains
+    assert remove_skills(skills, ["all"]) == ["other"]
+    assert list_skill_ids(skills) == []
+
+
+def test_remove_skills_no_match(tmp_path: Path) -> None:
+    skills = tmp_path / "skills"
+    _skill_folder(skills, "keep")
+    assert remove_skills(skills, ["ghost-*"]) == []
+    assert list_skill_ids(skills) == ["keep"]
 
 
 def test_install_from_git_file_url(tmp_path: Path) -> None:

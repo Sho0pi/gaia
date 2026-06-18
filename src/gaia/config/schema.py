@@ -498,6 +498,11 @@ class GaiaConfig(BaseModel):
     skills_dir: Path | None = Field(
         default=None, description="Skills folder; empty = the default under the home dir."
     )
+    skill_index: list[str] = Field(
+        default_factory=list,
+        description="Skill index urls (json manifests of {name, description, source}) that "
+        "'skill search' / Gaia search for installable skills; empty = web-search fallback only.",
+    )
     agents: dict[str, AgentBinding] = Field(
         default_factory=dict,
         description="Per-agent bindings; the root orchestrator uses key 'gaia'.",

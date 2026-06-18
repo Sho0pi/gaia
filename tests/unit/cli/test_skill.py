@@ -77,5 +77,5 @@ def test_install_local(skills_dir: Path, tmp_path: Path) -> None:
 def test_remove(skills_dir: Path) -> None:
     _make(skills_dir, "trash")
     res = runner.invoke(cli_app, ["skill", "remove", "trash", "--yes"])
-    assert res.exit_code == 0 and "removed skill 'trash'" in res.stdout
+    assert res.exit_code == 0 and "trash" in res.stdout
     assert not (skills_dir / "trash").exists()

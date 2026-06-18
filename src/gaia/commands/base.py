@@ -45,6 +45,11 @@ class Command(ABC):
     summary: ClassVar[str]
     aliases: ClassVar[tuple[str, ...]] = ()
     usage: ClassVar[str] = ""
+    #: The ACL capability required to run this command, or ``None`` for no restriction
+    #: (anyone who can chat). Gated the same way for the human (``/cmd``) and the agent
+    #: (``run_command``) — both go through :func:`authorize`. Examples: ``"manage_users"``
+    #: for user/permission/forget commands, ``"skills"`` for ``/skill``.
+    capability: ClassVar[str | None] = None
 
     @abstractmethod
     async def run(self, ctx: CommandContext) -> str:
@@ -59,6 +64,31 @@ class Command(ABC):
         if self.aliases:
             line += " (aka " + ", ".join(f"{PREFIX}{a}" for a in self.aliases) + ")"
         return line
+
+
+def authorize(command: Command, ctx: CommandContext) -> str | None:
+    """Return a refusal string if the caller may not run ``command``, else ``None``.
+
+    The single ACL gate for both entry points — the human ``/cmd`` path
+    (``handler._maybe_run_command``) and the agent ``run_command`` tool. A command with no
+    ``capability`` is open to anyone; otherwise the caller must hold that capability
+    (:func:`gaia.acl.can`). An unresolved caller (cli / cron / tests) falls back to the
+    context role, so the trusted local operator keeps full access.
+    """
+    cap = command.capability
+    if cap is None:
+        return None
+    from gaia.acl import can
+
+    user = ctx.gaia.users.get(ctx.user_id)
+    if user is None:
+        if ctx.role == "admin":
+            return None
+    elif can(user, cap, ctx.gaia.config):
+        return None
+    if cap == "manage_users":
+        return "Only an admin can run that."
+    return f"You don't have permission to run /{command.name}."
 
 
 def parse(text: str) -> tuple[str, str] | None:

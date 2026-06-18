@@ -22,8 +22,9 @@ _RESEARCH_TOOLS = ("web_search", "web_fetch", "fs_read", "load_memory")
 _INSTRUCTION = (
     "You author a SKILL for an AI agent: concise, reusable prompt KNOWLEDGE (how to do a "
     "thing well), not code. Work in this order:\n"
-    "1. Read a couple of the existing skills under the skills folder (fs_read) to match the "
-    "house style and avoid duplicating one.\n"
+    "1. Discover the existing skills (list_skills) and read a couple relevant ones "
+    "(load_skill, or fs_read in the skills folder) to reuse their knowledge, match the house "
+    "style, and avoid duplicating one.\n"
     "2. If the topic needs real, current detail (an API, a technique, a format), web_search "
     "and web_fetch to ground it — don't invent specifics.\n"
     "3. If load_memory is available, recall the user's relevant preferences and fold them in.\n"
@@ -55,6 +56,9 @@ async def _draft_skill_async(gaia: Gaia, name: str, brief: str, *, user_id: str)
     cfg = gaia.config
     available = set(gaia.tools.names())
     tools: list[Any] = [gaia.tools.get(t) for t in _RESEARCH_TOOLS if t in available]
+    # The on-demand skill toolset (list_skills / load_skill / load_skill_resource): lets the
+    # author discover and read existing skills to reuse their knowledge and match house style.
+    tools.extend(gaia.container.skill_toolsets())
 
     skills_dir = resolve_skills_dir(cfg)
     author = LlmAgent(

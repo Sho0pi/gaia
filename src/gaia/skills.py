@@ -23,6 +23,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -141,6 +142,84 @@ def list_skill_ids(skills_dir: Path) -> list[str]:
     from google.adk.skills import list_skills_in_dir
 
     return sorted(list_skills_in_dir(skills_dir))
+
+
+async def skill_search(
+    query: str,
+    *,
+    index: list[str],
+    search_provider: Callable[[str, int, str | None], list[dict[str, str]]] | None = None,
+    limit: int = 8,
+) -> list[dict[str, str]]:
+    """Find installable skills matching ``query`` — from the index, then a web fallback.
+
+    Each index url points at a json manifest (a list of ``{name, description, source}``,
+    where ``source`` is a git url / path :func:`install_skill` accepts). Entries whose name
+    or description contains ``query`` (case-insensitive) are returned. If none match and a
+    ``search_provider`` (a ``gaia.tools.web_search`` provider) is given, fall back to a web
+    search for SKILL.md repos and surface those urls as sources. Returns ``[]`` on no hits;
+    never raises (network errors are logged + skipped).
+    """
+    import httpx
+
+    q = query.strip().lower()
+    hits: list[dict[str, str]] = []
+    seen: set[str] = set()
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+        for url in index:
+            try:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                entries = resp.json()
+            except Exception as exc:
+                logger.warning("skill index %s unreadable: %s", url, exc)
+                continue
+            for entry in entries if isinstance(entries, list) else []:
+                name = str(entry.get("name", ""))
+                desc = str(entry.get("description", ""))
+                src = str(entry.get("source", ""))
+                if not src or src in seen:
+                    continue
+                if q in name.lower() or q in desc.lower():
+                    seen.add(src)
+                    hits.append({"name": name, "description": desc, "source": src})
+
+    if not hits and search_provider is not None:
+        import asyncio
+
+        try:
+            # SearchProvider is a sync callable (query, max_results, timelimit) -> dicts.
+            results = await asyncio.to_thread(
+                search_provider, f"{query} SKILL.md github", limit, None
+            )
+            for r in results:
+                url = str(r.get("url", ""))
+                if url and url not in seen:
+                    seen.add(url)
+                    hits.append(
+                        {"name": r.get("title", url), "description": "(web result)", "source": url}
+                    )
+        except Exception as exc:
+            logger.warning("skill web-search fallback failed: %s", exc)
+    return hits[:limit]
+
+
+def remove_skills(skills_dir: Path, patterns: list[str]) -> list[str]:
+    """Delete installed skills matching ``patterns``; return the ids removed.
+
+    Each pattern is an exact id or a glob (``huashu-*``); ``all`` / ``*`` removes every
+    installed skill. Unmatched patterns are simply ignored (empty result).
+    """
+    import fnmatch
+
+    ids = list_skill_ids(skills_dir)
+    if any(p.strip().lower() in ("all", "*", "--all") for p in patterns):
+        targets = list(ids)
+    else:
+        targets = sorted({i for i in ids for p in patterns if i == p or fnmatch.fnmatch(i, p)})
+    for skill_id in targets:
+        shutil.rmtree(Path(skills_dir) / skill_id, ignore_errors=True)
+    return targets
 
 
 def _looks_like_git(source: str) -> bool:

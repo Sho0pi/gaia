@@ -22,6 +22,7 @@ from gaia.commands.permissions import (
 )
 from gaia.commands.remember import RememberCommand
 from gaia.commands.reset import ResetCommand
+from gaia.commands.skill import SkillCommand
 from gaia.commands.status import StatusCommand
 from gaia.commands.tasks import TasksCommand
 from gaia.commands.users import (
@@ -56,6 +57,7 @@ _BUILTINS: tuple[Command, ...] = (
     RevokeCommand(),
     PermsCommand(),
     AclCommand(),
+    SkillCommand(),
 )
 
 

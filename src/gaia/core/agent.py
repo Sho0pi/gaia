@@ -115,8 +115,12 @@ class Gaia:
         """Keys of every subagent Gaia has already learned."""
         return self.souls.list_keys()
 
-    def build_root_agent(self) -> LlmAgent:
+    def build_root_agent(self, handler: Any = None) -> LlmAgent:
         """Construct the ADK root agent with all known subagents attached.
+
+        ``handler`` (the live :class:`~gaia.core.handler.GaiaHandler`, passed by it) is
+        threaded into the root-only ``run_command`` tool so Gaia can run handler-dependent
+        commands (``/reset``) for the user; ``None`` for handler-free callers (dev web).
 
         Registry tools are attached through :class:`~gaia.core.acl_toolset.AclToolset`, a
         dynamic toolset ADK re-resolves every turn against the caller's *current*
@@ -167,7 +171,15 @@ class Gaia:
             "whole plan as JSON (tasks with local refs + depends_on); it wires the real "
             "dependency edges so a step waits for its inputs and receives their results + "
             "files. Use task_create only for a single standalone task. Never put a made-up "
-            "id in blocked_by — let task_plan resolve dependencies."
+            "id in blocked_by — let task_plan resolve dependencies.\n"
+            "You can run the user's slash-commands yourself with the run_command tool — pass "
+            "the whole command line, e.g. run_command('skill install <git-url>'), "
+            "run_command('skill search <query>'), run_command('skill list'). Use it to manage "
+            "SKILLS (reusable know-how) — a freshly installed skill is usable right away — and, "
+            "when the user is an ADMIN, to manage users and permissions on their behalf: "
+            "run_command('grant <user> <capability>'), run_command('approve <user> <role>'), "
+            "run_command('users'), run_command('perms <user>'). run_command only runs commands "
+            "available to you; if it returns an error, tell the user what it said."
         )
         bound = self.config.agents.get("gaia", AgentBinding())
         instruction = attach_skills(base_instruction, bound.skills, self.skills_dir)
@@ -176,6 +188,7 @@ class Gaia:
 
         from gaia.core.acl_toolset import AclToolset
         from gaia.souls import make_delegate
+        from gaia.tools.command import make_run_command
         from gaia.tools.message import make_message_user
         from gaia.tools.permission import make_manage_permission
         from gaia.tools.task import make_task_plan
@@ -195,6 +208,7 @@ class Gaia:
             tools=[
                 AclToolset(self),
                 make_delegate(self),
+                make_run_command(self, handler),
                 make_message_user(self.users, self.connectors),
                 make_manage_permission(self),
                 make_task_plan(self.tasks, max_tasks=self.config.missions.max_tasks),

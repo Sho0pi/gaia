@@ -33,12 +33,11 @@ class AclCommand(Command):
 
 class GrantCommand(Command):
     name = "grant"
+    capability = "manage_users"
     summary = "Grant a user an ACL capability. Usage: /grant <id|channel:sender> <capability>."
     usage = "<id|channel:sender> <capability>"
 
     async def run(self, ctx: CommandContext) -> str:
-        if refusal := require_manage_users(ctx):
-            return refusal
         ref, _, cap = ctx.args.partition(" ")
         cap = cap.strip()
         if not ref or not cap:
@@ -53,12 +52,11 @@ class GrantCommand(Command):
 
 class RevokeCommand(Command):
     name = "revoke"
+    capability = "manage_users"
     summary = "Revoke an ACL capability from a user. Usage: /revoke <id|channel:sender> <cap>."
     usage = "<id|channel:sender> <capability>"
 
     async def run(self, ctx: CommandContext) -> str:
-        if refusal := require_manage_users(ctx):
-            return refusal
         ref, _, cap = ctx.args.partition(" ")
         cap = cap.strip()
         if not ref or not cap:
