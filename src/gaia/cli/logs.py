@@ -24,6 +24,20 @@ import typer
 from gaia.cli._console import console
 from gaia.cli._options import state
 
+# Argument/option types named once so the command signature below stays readable.
+FollowOpt = Annotated[
+    bool, typer.Option("-f", "--follow", help="Follow the file (survives rotation).")
+]
+LinesOpt = Annotated[int, typer.Option("-n", "--lines", help="How many trailing lines to print.")]
+ErrorsOpt = Annotated[bool, typer.Option("--errors", help="Show errors.log (WARNING+).")]
+EventsOpt = Annotated[
+    bool, typer.Option("--events", help="Show events.jsonl (structured activity).")
+]
+DaemonOpt = Annotated[bool, typer.Option("--daemon", help="Show daemon.log (start/serve).")]
+JsonRawOpt = Annotated[
+    bool, typer.Option("--json", help="With --events: print raw JSON lines, not pretty.")
+]
+
 #: Seconds between stat/read polls while following (``-f``).
 _FOLLOW_POLL = 0.25
 
@@ -90,22 +104,12 @@ def _follow(path: Path, *, events: bool, raw: bool) -> None:
 
 def logs(
     ctx: typer.Context,
-    follow: Annotated[
-        bool, typer.Option("-f", "--follow", help="Follow the file (survives rotation).")
-    ] = False,
-    lines: Annotated[
-        int, typer.Option("-n", "--lines", help="How many trailing lines to print.")
-    ] = 50,
-    errors: Annotated[bool, typer.Option("--errors", help="Show errors.log (WARNING+).")] = False,
-    events: Annotated[
-        bool, typer.Option("--events", help="Show events.jsonl (structured activity).")
-    ] = False,
-    daemon: Annotated[
-        bool, typer.Option("--daemon", help="Show daemon.log (start/serve).")
-    ] = False,
-    json_raw: Annotated[
-        bool, typer.Option("--json", help="With --events: print raw JSON lines, not pretty.")
-    ] = False,
+    follow: FollowOpt = False,
+    lines: LinesOpt = 50,
+    errors: ErrorsOpt = False,
+    events: EventsOpt = False,
+    daemon: DaemonOpt = False,
+    json_raw: JsonRawOpt = False,
 ) -> None:
     """Tail (and optionally follow) one of Gaia's log files."""
     from gaia.config import get_settings

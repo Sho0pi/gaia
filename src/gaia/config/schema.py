@@ -302,9 +302,6 @@ class WhatsAppConnectorConfig(BaseModel):
     """WhatsApp connector toggle + access policy."""
 
     enabled: bool = Field(default=False, description="Run the WhatsApp connector.")
-    store_path: Path | None = Field(
-        default=None, description="Session db path; empty = the default under the home dir."
-    )
     allow: list[str] = Field(
         default_factory=list,
         description="Allowed sender ids; empty = everyone (enforcement is a follow-up).",
@@ -315,7 +312,6 @@ class WhatsAppConnectorConfig(BaseModel):
         description="Look active while working: blue-tick the message and show the 'typing…' "
         "(or 'recording audio…') indicator for the turn.",
     )
-    default_soul: str = Field(default="gaia", description="Soul used for new chats.")
     default_role: Literal["admin", "user", "guest"] = Field(
         default="guest",
         description="Role for a first-seen sender (admin/user/guest). 'guest' is gated "
@@ -329,7 +325,6 @@ class CLIConnectorConfig(BaseModel):
     enabled: bool = Field(
         default=False, description="Run the local terminal chat; foreground-exclusive."
     )
-    default_soul: str = Field(default="gaia", description="Soul used in the CLI session.")
     default_role: Literal["admin", "user", "guest"] = Field(
         default="admin", description="Role for the local operator."
     )
