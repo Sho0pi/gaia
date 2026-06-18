@@ -79,9 +79,11 @@ Propose durable artifacts ONLY where the evidence is strong:
 You are given the EXISTING SKILLS and EXISTING SOULS — never propose one that
 duplicates an existing entry; prefer refining a soul over forging a near-duplicate.
 
-Be conservative: empty lists are a perfectly good answer when the window is thin or
-noisy. Never propose secrets or anything containing credentials. Return only the
-structured report.
+Be conservative — propose nothing unless the evidence is strong. **Doing nothing is a
+valid and common outcome**: when the window is thin, noisy, or already well-served by the
+existing skills/souls, return empty skills/souls/memories lists (just the summary). Do not
+invent improvements to look busy. Never propose secrets or anything containing credentials.
+Return only the structured report.
 """
 
 

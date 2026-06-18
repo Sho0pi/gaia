@@ -42,6 +42,33 @@ def list_improvements(ctx: typer.Context) -> None:
 
 
 @app.command()
+def run(ctx: typer.Context) -> None:
+    """Run one self-improve cycle now (analyze recent usage and apply). Needs a model key."""
+    import asyncio
+
+    from gaia.analysis.loop import run_cycle
+    from gaia.config import get_settings
+    from gaia.core import Gaia
+
+    out = console()
+
+    async def _go() -> None:
+        gaia = Gaia(get_settings(state(ctx).env_file))
+        try:
+            applied = await run_cycle(gaia)
+        finally:
+            await gaia.close()
+        if not applied:
+            out.print("no improvements this cycle (nothing worth changing — that's fine)")
+            return
+        for imp in applied:
+            out.print(f"- {imp.action} {imp.type}: {imp.target}  ({imp.id})")
+        out.print(f"\napplied {len(applied)} improvement(s); see 'gaia improvements list'")
+
+    asyncio.run(_go())
+
+
+@app.command()
 def revert(
     ctx: typer.Context,
     improvement_id: Annotated[str, typer.Argument(help="The improvement id (from 'list').")],
