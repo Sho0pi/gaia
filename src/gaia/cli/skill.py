@@ -19,6 +19,27 @@ import typer
 from gaia.cli._console import console, emit_json
 from gaia.cli._options import state
 
+# Argument/option types named once so the command signatures below stay readable.
+SkillIdArg = Annotated[str, typer.Argument(help="The skill id.")]
+NameArg = Annotated[str, typer.Argument(help="Skill name (slugified into its id).")]
+SourceArg = Annotated[str, typer.Argument(help="A local path or a git url (url#subdir).")]
+PatternsArg = Annotated[
+    list[str], typer.Argument(help="Skill ids or globs to delete; 'all' for everything.")
+]
+DescriptionOpt = Annotated[str | None, typer.Option("--description", help="One-line description.")]
+InstructionFileOpt = Annotated[
+    Path | None, typer.Option("--instruction-file", help="Read the SKILL.md body from this file.")
+]
+FromOpt = Annotated[
+    str | None,
+    typer.Option("--from", help="Have a model draft the skill from this one-line brief."),
+]
+NameOpt = Annotated[
+    str | None, typer.Option("--name", help="Rename the id (single-skill installs only).")
+]
+ForceOpt = Annotated[bool, typer.Option("--force", help="Overwrite existing skill(s).")]
+YesOpt = Annotated[bool, typer.Option("--yes", "-y", help="Skip the confirmation.")]
+
 app = typer.Typer(
     name="skill", help="List, author, install, and manage skills.", no_args_is_help=True
 )
@@ -68,9 +89,7 @@ def list_skills(ctx: typer.Context) -> None:
 
 
 @app.command()
-def show(
-    ctx: typer.Context, skill_id: Annotated[str, typer.Argument(help="The skill id.")]
-) -> None:
+def show(ctx: typer.Context, skill_id: SkillIdArg) -> None:
     """Print a skill's description and full instructions (SKILL.md body)."""
     from gaia.skills import load_skill
 
@@ -96,19 +115,11 @@ def show(
 @app.command()
 def new(
     ctx: typer.Context,
-    name: Annotated[str, typer.Argument(help="Skill name (slugified into its id).")],
-    description: Annotated[
-        str | None, typer.Option("--description", help="One-line description.")
-    ] = None,
-    instruction_file: Annotated[
-        Path | None,
-        typer.Option("--instruction-file", help="Read the SKILL.md body from this file."),
-    ] = None,
-    from_: Annotated[
-        str | None,
-        typer.Option("--from", help="Have a model draft the skill from this one-line brief."),
-    ] = None,
-    force: Annotated[bool, typer.Option("--force", help="Overwrite an existing skill.")] = False,
+    name: NameArg,
+    description: DescriptionOpt = None,
+    instruction_file: InstructionFileOpt = None,
+    from_: FromOpt = None,
+    force: ForceOpt = False,
 ) -> None:
     """Author a new skill — manually, from a file, or drafted by a model (--from)."""
     from gaia.skills import skill_id_for, write_skill
@@ -146,11 +157,9 @@ def new(
 @app.command()
 def install(
     ctx: typer.Context,
-    source: Annotated[str, typer.Argument(help="A local path or a git url (url#subdir).")],
-    name: Annotated[
-        str | None, typer.Option("--name", help="Rename the id (single-skill installs only).")
-    ] = None,
-    force: Annotated[bool, typer.Option("--force", help="Overwrite existing skills.")] = False,
+    source: SourceArg,
+    name: NameOpt = None,
+    force: ForceOpt = False,
 ) -> None:
     """Install skill(s) from a local folder or a git repo into the skills dir."""
     from gaia.skills import install_skill
@@ -169,10 +178,8 @@ def install(
 @app.command()
 def remove(
     ctx: typer.Context,
-    patterns: Annotated[
-        list[str], typer.Argument(help="Skill ids or globs to delete; 'all' for everything.")
-    ],
-    yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip the confirmation.")] = False,
+    patterns: PatternsArg,
+    yes: YesOpt = False,
 ) -> None:
     """Delete skills by id, glob (huashu-*), or 'all'."""
     from gaia.skills import list_skill_ids, remove_skills

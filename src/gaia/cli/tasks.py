@@ -19,13 +19,19 @@ from gaia.cli._options import state
 
 app = typer.Typer(name="tasks", help="Inspect the missions task board.", no_args_is_help=True)
 
+# Argument/option types named once so the command signatures below stay readable.
+MissionOpt = Annotated[str, typer.Option("--mission", help="Only this mission's tasks.")]
+StatusOpt = Annotated[str, typer.Option("--status", help="Only tasks in this status.")]
+UserOpt = Annotated[str, typer.Option("--user", help="Only this owner's tasks.")]
+TaskIdArg = Annotated[str, typer.Argument(help="Task id.")]
+
 
 @app.command("list")
 def list_tasks(
     ctx: typer.Context,
-    mission: Annotated[str, typer.Option("--mission", help="Only this mission's tasks.")] = "",
-    status: Annotated[str, typer.Option("--status", help="Only tasks in this status.")] = "",
-    user: Annotated[str, typer.Option("--user", help="Only this owner's tasks.")] = "",
+    mission: MissionOpt = "",
+    status: StatusOpt = "",
+    user: UserOpt = "",
 ) -> None:
     """List tasks on the board (newest first)."""
     from gaia.missions import TaskStatus, TaskStore
@@ -65,7 +71,7 @@ def list_tasks(
 
 
 @app.command()
-def show(ctx: typer.Context, task_id: Annotated[str, typer.Argument(help="Task id.")]) -> None:
+def show(ctx: typer.Context, task_id: TaskIdArg) -> None:
     """Print one task in full (raw JSON with --json)."""
     from gaia.missions import TaskStore
 

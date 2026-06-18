@@ -17,6 +17,13 @@ app = typer.Typer(
     name="improvements", help="Inspect and revert gaia's self-improvements.", no_args_is_help=True
 )
 
+# Argument/option types named once so the command signatures below stay readable.
+CommitArg = Annotated[str, typer.Argument(help="The commit sha (from 'list').")]
+RevertCommitArg = Annotated[str, typer.Argument(help="The commit sha to revert (from 'list').")]
+DryRunOpt = Annotated[
+    bool, typer.Option("--dry-run", help="Analyze and print proposals without applying.")
+]
+
 
 @app.command("list")
 def list_improvements(ctx: typer.Context) -> None:
@@ -46,7 +53,7 @@ def list_improvements(ctx: typer.Context) -> None:
 @app.command()
 def show(
     ctx: typer.Context,
-    commit: Annotated[str, typer.Argument(help="The commit sha (from 'list').")],
+    commit: CommitArg,
 ) -> None:
     """Show a change's full commit message + diff."""
     from gaia.state import StateRepo
@@ -57,9 +64,7 @@ def show(
 @app.command()
 def run(
     ctx: typer.Context,
-    dry_run: Annotated[
-        bool, typer.Option("--dry-run", help="Analyze and print proposals without applying.")
-    ] = False,
+    dry_run: DryRunOpt = False,
 ) -> None:
     """Run one self-improve cycle now (analyze recent usage and apply). Needs a model key."""
     import asyncio
@@ -105,7 +110,7 @@ def run(
 @app.command()
 def revert(
     ctx: typer.Context,
-    commit: Annotated[str, typer.Argument(help="The commit sha to revert (from 'list').")],
+    commit: RevertCommitArg,
 ) -> None:
     """Revert one change by commit sha (a new commit undoing it)."""
     from gaia.state import StateRepo

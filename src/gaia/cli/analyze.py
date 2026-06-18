@@ -23,17 +23,21 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from gaia.analysis import AnalysisReport, EventDigest
     from gaia.config import GaiaConfig
 
+# Argument/option types named once so the command signature below stays readable.
+DaysOpt = Annotated[int, typer.Option("--days", help="How many days of events to analyze.")]
+UserOpt = Annotated[
+    str | None, typer.Option("--user", help="Memory-write target; default: the single user seen.")
+]
+YesOpt = Annotated[
+    bool, typer.Option("--yes", "-y", help="Approve every proposal without prompting.")
+]
+
 
 def analyze(
     ctx: typer.Context,
-    days: Annotated[int, typer.Option("--days", help="How many days of events to analyze.")] = 7,
-    user: Annotated[
-        str | None,
-        typer.Option("--user", help="Memory-write target; default: the single user seen."),
-    ] = None,
-    yes: Annotated[
-        bool, typer.Option("--yes", "-y", help="Approve every proposal without prompting.")
-    ] = False,
+    days: DaysOpt = 7,
+    user: UserOpt = None,
+    yes: YesOpt = False,
 ) -> None:
     """Mine recent usage into proposed skills/memories (each needs your approval)."""
     from gaia.analysis import digest_events, read_events, render_digest

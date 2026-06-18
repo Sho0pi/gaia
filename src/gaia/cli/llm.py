@@ -13,11 +13,13 @@ from gaia.cli._options import state
 
 app = typer.Typer(name="llm", help="Model provider operations.", no_args_is_help=True)
 
+ProviderArg = Annotated[str, typer.Argument(help='Provider to sign in to (e.g. "openai").')]
+
 
 @app.command()
 def auth(
     ctx: typer.Context,
-    provider: Annotated[str, typer.Argument(help='Provider to sign in to (e.g. "openai").')],
+    provider: ProviderArg,
 ) -> None:
     """Interactive provider login; stores credentials under ~/.gaia."""
     from gaia.app import run_auth
