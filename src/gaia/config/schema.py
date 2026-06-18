@@ -430,12 +430,13 @@ class MemoryConfig(BaseModel):
     )
     preload: bool = Field(
         default=True,
-        description="Inject the user's known facts into every turn (always-on recall); "
-        "off = the agent must call load_memory to recall anything.",
+        description="At session start, distil the user's facts + recent projects into a "
+        "profile baked into the prompt (always-on recall); off = the agent must call "
+        "load_memory to recall anything.",
     )
     preload_limit: int = Field(
         default=20,
-        description="How many of the user's most recent facts to preload each turn.",
+        description="Max bullet points the session-start profile keeps (importance-ranked).",
     )
     # Provider-agnostic components. Defaults wire Gemini (reusing the agent's model; keys
     # come from env like the agent) + a local chroma store; override provider/model per

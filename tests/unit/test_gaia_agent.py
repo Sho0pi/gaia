@@ -51,7 +51,7 @@ def test_root_agent_attaches_all_registered_tools(
     assert expected <= names
 
 
-def test_profile_facts_are_baked_into_the_instruction(
+def test_profile_is_baked_into_the_instruction(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import google.adk.agents as adk
@@ -64,24 +64,24 @@ def test_profile_facts_are_baked_into_the_instruction(
             captured.update(kwargs)
 
     monkeypatch.setattr(adk, "LlmAgent", _Recorder)
-    gaia.build_root_agent(profile_facts=["drinks oat milk", "sister is Maya"])
+    gaia.build_root_agent(profile="- Name: Itay\n- follows football (Arsenal)")
 
     instruction = captured["instruction"]
     assert isinstance(instruction, str)
     # The closing tag only comes from the injected block (the static guidance mentions the
-    # opening tag), so it's the reliable marker that facts were actually baked in.
-    assert "</KNOWN_FACTS>" in instruction
-    assert "drinks oat milk" in instruction and "sister is Maya" in instruction
+    # opening tag), so it's the reliable marker that the profile was actually baked in.
+    assert "</USER_PROFILE>" in instruction
+    assert "Name: Itay" in instruction and "Arsenal" in instruction
 
 
-def test_no_known_facts_block_without_a_profile(
+def test_no_profile_block_without_a_profile(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     gaia = _gaia(tmp_path)
 
     captured = _capture_root_kwargs(gaia, monkeypatch)  # build_root_agent() — no profile
 
-    assert "</KNOWN_FACTS>" not in captured["instruction"]  # type: ignore[operator]
+    assert "</USER_PROFILE>" not in captured["instruction"]  # type: ignore[operator]
 
 
 def test_root_agent_attaches_skill_toolset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

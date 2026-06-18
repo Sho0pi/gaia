@@ -115,9 +115,7 @@ class Gaia:
         """Keys of every subagent Gaia has already learned."""
         return self.souls.list_keys()
 
-    def build_root_agent(
-        self, handler: Any = None, *, profile_facts: list[str] | None = None
-    ) -> LlmAgent:
+    def build_root_agent(self, handler: Any = None, *, profile: str | None = None) -> LlmAgent:
         """Construct the ADK root agent with all known subagents attached.
 
         ``handler`` (the live :class:`~gaia.core.handler.GaiaHandler`, passed by it) is
@@ -182,26 +180,25 @@ class Gaia:
             "run_command('grant <user> <capability>'), run_command('approve <user> <role>'), "
             "run_command('users'), run_command('perms <user>'). run_command only runs commands "
             "available to you; if it returns an error, tell the user what it said.\n"
-            "You have long-term memory of this user: durable facts you already know about "
-            "them are provided above under <KNOWN_FACTS> — use them and don't re-ask. When "
-            "the user shares something durable (preferences, identity, ongoing context), save "
-            "it with the remember tool. For older or more specific details not shown, call "
-            "load_memory(query) to search your memory."
+            "You have long-term memory of this user: what you already know about them "
+            "(facts + recent projects) is provided above under <USER_PROFILE> — use it and "
+            "don't re-ask. When the user shares something durable (preferences, identity, "
+            "ongoing context), save it with the remember tool. For older or more specific "
+            "details not in the profile, call load_memory(query) to search your memory."
         )
         bound = self.config.agents.get("gaia", AgentBinding())
         instruction = attach_skills(base_instruction, bound.skills, self.skills_dir)
         style = bound.communication_style or self.config.default_communication_style
         instruction = apply_communication_style(instruction, style)
 
-        # Profile recall: the user's known facts, fetched once when the handler builds this
-        # agent (session start / config reload) and baked into the prompt — like the
-        # timestamp above. Facts learned mid-session are already in the live history, so
-        # there's no need to re-inject every turn; the next session reloads a fresh profile.
-        if profile_facts:
-            block = "\n".join(f"- {fact}" for fact in profile_facts)
+        # Profile recall: a compact, importance-ranked block of what gaia knows about the
+        # user (durable facts + recent projects), distilled by one LLM call when the handler
+        # builds this agent (session start / config reload) and baked into the prompt — like
+        # the timestamp above. Always fresh per session; deep lookups stay in load_memory.
+        if profile:
             instruction += (
-                "\n\nDurable facts you already know about the user (your long-term memory):\n"
-                f"<KNOWN_FACTS>\n{block}\n</KNOWN_FACTS>"
+                "\n\nWhat you know about the user (long-term memory + recent projects):\n"
+                f"<USER_PROFILE>\n{profile}\n</USER_PROFILE>"
             )
 
         from gaia.core.acl_toolset import AclToolset

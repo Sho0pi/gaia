@@ -69,24 +69,21 @@ class GaiaHandler:
         # critical path so mem0's extraction LLM call never delays the next reply.
         self._flush_task: asyncio.Task[None] | None = None
 
-    async def _profile_facts(self) -> list[str] | None:
-        """The user's known facts to bake into the prompt, or None (memory off / empty).
+    async def _profile_block(self) -> str | None:
+        """The user's distilled profile to bake into the prompt, or None.
 
-        Fetched once per runner build (session start / config reload), not per turn: facts
-        learned mid-session are already in the live history, and a new session reloads them.
+        One LLM call per runner build (session start / config reload) — see
+        :func:`gaia.memory.profile.distill_profile`. Gated on ``memory.preload``; the
+        distiller itself returns None (no model call) when memory is off or the user has
+        nothing stored, so a fresh store never triggers one.
         """
-        service = self._gaia.memory_service
-        memory = self._gaia.config.memory
-        if service is None or not memory.preload:
+        if not self._gaia.config.memory.preload:
             return None
-        try:
-            facts = await service.list_memories(user_id=self._user_id)
-        except Exception:
-            logging.getLogger(constants.LOGGER_NAME).warning("profile preload failed")
-            return None
-        return facts[: memory.preload_limit] or None
+        from gaia.memory.profile import distill_profile
 
-    def _build_runner(self, profile_facts: list[str] | None) -> Any:
+        return await distill_profile(self._gaia, self._user_id)
+
+    def _build_runner(self, profile: str | None) -> Any:
         """Build a Runner over the (reused) session service against the live config.
 
         Re-reads ``build_root_agent`` (model/instruction/profile) and ``memory_service``
@@ -99,7 +96,7 @@ class GaiaHandler:
 
         return Runner(
             app_name=constants.APP_NAME,
-            agent=self._gaia.build_root_agent(self, profile_facts=profile_facts),
+            agent=self._gaia.build_root_agent(self, profile=profile),
             session_service=self._session_service,
             memory_service=self._gaia.memory_service,
             plugins=[ToolPermissionPlugin(self._gaia), ToolLoggingPlugin()],
@@ -114,14 +111,14 @@ class GaiaHandler:
                 app_name=constants.APP_NAME, user_id=self._user_id, session_id=self._session_id
             )
             self._runner_config = self._gaia.config
-            self._runner = self._build_runner(await self._profile_facts())
+            self._runner = self._build_runner(await self._profile_block())
         elif self._runner_config is not None and self._gaia.config is not self._runner_config:
             # gaia.yaml changed on disk (ConfigSupplier returns a new object): rebuild the
             # agent so the live conversation picks up the new model/instruction/memory. The
             # shared session service keeps this session's history intact.
             log_event("config_reloaded", user=self._user_id, session=self._session_id)
             self._runner_config = self._gaia.config
-            self._runner = self._build_runner(await self._profile_facts())
+            self._runner = self._build_runner(await self._profile_block())
         return self._runner
 
     async def __call__(self, text: str, send: Send) -> None:

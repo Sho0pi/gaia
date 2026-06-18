@@ -128,7 +128,7 @@ async def test_runner_rebuilds_when_config_changes(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr("gaia.core.plugins.ToolPermissionPlugin", lambda gaia: object())
     monkeypatch.setattr("gaia.core.plugins.ToolLoggingPlugin", lambda: object())
 
-    def _build(_handler: object, *, profile_facts: object = None) -> object:
+    def _build(_handler: object, *, profile: object = None) -> object:
         agent = object()
         builds.append(agent)
         return agent
@@ -165,26 +165,19 @@ async def test_user_message_is_included_in_the_event_stream() -> None:
     assert captured.get("yield_user_message") is True
 
 
-async def test_profile_facts_caps_and_respects_flags() -> None:
-    facts = [f"fact {i}" for i in range(30)]
+async def test_profile_block_distills_when_preload_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_distill(gaia: object, user_id: str) -> str:
+        return f"PROFILE for {user_id}"
 
-    async def list_memories(*, user_id: str) -> list[str]:
-        return facts
-
-    memory = SimpleNamespace(preload=True, preload_limit=5)
-    gaia = SimpleNamespace(
-        memory_service=SimpleNamespace(list_memories=list_memories),
-        config=SimpleNamespace(memory=memory),
-    )
+    monkeypatch.setattr("gaia.memory.profile.distill_profile", fake_distill)
+    memory = SimpleNamespace(preload=True)
+    gaia = SimpleNamespace(config=SimpleNamespace(memory=memory))
     handler = GaiaHandler(gaia, user_id="u1")
 
-    assert await handler._profile_facts() == facts[:5]  # newest-N profile
+    assert await handler._profile_block() == "PROFILE for u1"
 
     memory.preload = False
-    assert await handler._profile_facts() is None  # preload off
-
-    off = SimpleNamespace(memory_service=None, config=SimpleNamespace(memory=memory))
-    assert await GaiaHandler(off)._profile_facts() is None  # memory disabled
+    assert await handler._profile_block() is None  # gated off → no distill
 
 
 class _BoomRunner:
