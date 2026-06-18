@@ -189,6 +189,24 @@ class CronConfig(BaseModel):
     )
 
 
+class AnalysisConfig(BaseModel):
+    """The self-improve loop: gaia mines its own usage to grow skills/souls/memory."""
+
+    enabled: bool = Field(
+        default=False,
+        description="Run the self-improve loop in the daemon — periodically analyze usage and "
+        "apply new/refined skills, souls, and memories. Off by default (opt-in).",
+    )
+    interval_hours: float = Field(
+        default=24.0, description="How often the improve cycle runs (hours)."
+    )
+    window_days: int = Field(default=7, description="How many days of usage each cycle analyzes.")
+    autonomous: bool = Field(
+        default=True,
+        description="Apply proposals automatically. (A HITL review mode is a follow-up.)",
+    )
+
+
 class MissionsConfig(BaseModel):
     """The missions task board engine (the dispatcher inside the daemon)."""
 
@@ -490,6 +508,7 @@ class GaiaConfig(BaseModel):
     browser: BrowserConfig = Field(default_factory=BrowserConfig)
     cron: CronConfig = Field(default_factory=CronConfig)
     missions: MissionsConfig = Field(default_factory=MissionsConfig)
+    analysis: AnalysisConfig = Field(default_factory=AnalysisConfig)
     voice: VoiceConfig = Field(default_factory=VoiceConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     default_communication_style: str = Field(

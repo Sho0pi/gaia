@@ -20,6 +20,11 @@ class SoulRegistry:
         self._dir = Path(directory)
         self._dir.mkdir(parents=True, exist_ok=True)
 
+    @property
+    def directory(self) -> Path:
+        """The folder holding the soul ``.md`` files (and their ``.bak`` backups)."""
+        return self._dir
+
     def _path(self, key: str) -> Path:
         return self._dir / f"{key}.md"
 
@@ -33,6 +38,20 @@ class SoulRegistry:
     def save(self, spec: AgentSpec) -> None:
         """Persist ``spec`` so the next matching task reuses it."""
         self._path(spec.key).write_text(spec.to_markdown())
+
+    def update(self, key: str, **fields: object) -> AgentSpec | None:
+        """Refine an existing soul: apply ``fields`` (e.g. description/instruction) and save.
+
+        Backs up the prior markdown to ``<key>.md.bak`` first (so a bad self-edit by the
+        improve loop is one revert away). Returns the updated spec, or ``None`` if unknown.
+        """
+        spec = self.get(key)
+        if spec is None:
+            return None
+        self._path(key).with_suffix(".md.bak").write_text(spec.to_markdown())
+        updated = spec.model_copy(update=fields)
+        self.save(updated)
+        return updated
 
     def list_keys(self) -> list[str]:
         """All learned soul keys, sorted."""

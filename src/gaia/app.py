@@ -290,6 +290,7 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
 
         scheduler = _start_cron(gaia)
         mission_dispatcher = _start_dispatcher(gaia)
+        improve_scheduler = _start_improve(gaia)
         try:
             await asyncio.gather(*tasks)
         except asyncio.CancelledError:
@@ -303,11 +304,27 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
         finally:
             if scheduler is not None:
                 scheduler.shutdown()
+            if improve_scheduler is not None:
+                improve_scheduler.shutdown()
             if mission_dispatcher is not None:
                 await mission_dispatcher.stop()
             # Drain any turns still buffered for memory before the process exits, so a
             # Ctrl-C doesn't drop the tail of the conversation (best-effort).
             await dispatcher.flush_all()
+
+
+def _start_improve(gaia: Gaia) -> Any:
+    """Start the self-improve scheduler for the daemon (None when disabled)."""
+    if not gaia.config.analysis.enabled:
+        return None
+    from gaia.analysis.loop import run_cycle
+    from gaia.analysis.scheduler import AnalysisScheduler
+
+    scheduler = AnalysisScheduler(
+        lambda: run_cycle(gaia), interval_hours=gaia.config.analysis.interval_hours
+    )
+    scheduler.start()
+    return scheduler
 
 
 def _start_cron(gaia: Gaia) -> Any:

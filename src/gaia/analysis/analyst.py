@@ -36,12 +36,24 @@ class MemoryProposal(BaseModel):
     rationale: str = Field(description="The digest evidence behind this proposal.")
 
 
+class SoulProposal(BaseModel):
+    """A new specialist soul to forge, or an existing one to refine."""
+
+    action: str = Field(description="'create' a new soul, or 'refine' an existing one.")
+    key: str = Field(description="For 'refine': the existing soul key. For 'create': leave blank.")
+    name: str = Field(description="Human name for the soul (its key is slugged from this).")
+    description: str = Field(description="One-line ROLE (a reusable specialist, not a task).")
+    instruction: str = Field(description="The soul's system prompt / how it should work.")
+    rationale: str = Field(description="The digest evidence behind this proposal.")
+
+
 class AnalysisReport(BaseModel):
     """The analyst's verdict over one digest window."""
 
     summary: str = Field(description="2-3 sentences on what the usage shows.")
     skills: list[SkillProposal] = Field(default_factory=list)
     memories: list[MemoryProposal] = Field(default_factory=list)
+    souls: list[SoulProposal] = Field(default_factory=list)
 
 
 _INSTRUCTION = """\
@@ -59,24 +71,54 @@ Propose durable artifacts ONLY where the evidence is strong:
 - A MEMORY when the digest reveals a durable fact about a user (e.g. their dominant
   usage pattern or preference that future conversations should know). Keep facts
   short and self-contained, and set user_id to the user it belongs to.
+- A SOUL when a whole recurring ROLE would help (a reusable specialist, e.g. a
+  "data analyst" or "frontend designer" that keeps coming up) — 'create' a new one,
+  or 'refine' an existing one (set action='refine' and its key) when the digest shows
+  it underperforming or its scope drifting. A soul is a ROLE, not a one-off task.
 
-Be conservative: empty skills/memories lists are a perfectly good answer when the
-window is thin or noisy. Never propose secrets or anything containing credentials.
-Return only the structured report.
+You are given the EXISTING SKILLS and EXISTING SOULS — never propose one that
+duplicates an existing entry; prefer refining a soul over forging a near-duplicate.
+
+Be conservative: empty lists are a perfectly good answer when the window is thin or
+noisy. Never propose secrets or anything containing credentials. Return only the
+structured report.
 """
 
 
-def build_analyst(model: str, provider: str = "gemini", use_oauth: bool = False) -> LlmAgent:
-    """Build the analyst ADK agent (pure decision; structured output)."""
+def _context_block(existing_skills: list[str], existing_souls: list[str]) -> str:
+    """Render the existing skills/souls so the analyst can dedupe + decide refine vs create."""
+    skills = "\n".join(f"- {s}" for s in existing_skills) or "- (none)"
+    souls = "\n".join(f"- {s}" for s in existing_souls) or "- (none)"
+    return f"EXISTING SKILLS:\n{skills}\n\nEXISTING SOULS:\n{souls}"
+
+
+def build_analyst(
+    model: str,
+    provider: str = "gemini",
+    use_oauth: bool = False,
+    *,
+    existing_skills: list[str] | None = None,
+    existing_souls: list[str] | None = None,
+) -> LlmAgent:
+    """Build the analyst ADK agent (pure decision; structured output).
+
+    ``existing_skills`` / ``existing_souls`` are short ``"id — description"`` lines folded
+    into the instruction so the analyst avoids duplicates and can choose refine vs create.
+    """
     from google.adk.agents import LlmAgent
 
     from gaia.models import resolve_model
 
+    instruction = _INSTRUCTION
+    if existing_skills is not None or existing_souls is not None:
+        instruction = (
+            f"{_INSTRUCTION}\n\n{_context_block(existing_skills or [], existing_souls or [])}"
+        )
     return LlmAgent(
         name=NAME,
         model=resolve_model(model, provider=provider, use_oauth=use_oauth),
-        description="Mines the usage digest into skill / memory proposals.",
-        instruction=_INSTRUCTION,
+        description="Mines the usage digest into skill / soul / memory proposals.",
+        instruction=instruction,
         output_schema=AnalysisReport,
         disallow_transfer_to_parent=True,
         disallow_transfer_to_peers=True,

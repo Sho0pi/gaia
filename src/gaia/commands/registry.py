@@ -13,6 +13,7 @@ from gaia.commands.agents import AgentsCommand
 from gaia.commands.base import Command
 from gaia.commands.forget import ForgetCommand
 from gaia.commands.help import HelpCommand
+from gaia.commands.improvements import ImprovementsCommand
 from gaia.commands.memories import MemoriesCommand
 from gaia.commands.permissions import (
     AclCommand,
@@ -58,6 +59,7 @@ _BUILTINS: tuple[Command, ...] = (
     PermsCommand(),
     AclCommand(),
     SkillCommand(),
+    ImprovementsCommand(),
 )
 
 
