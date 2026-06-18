@@ -55,6 +55,12 @@ class GaiaHandler:
         # admin so single-user / cron / test callers that don't resolve a user are trusted.
         self._role = role
         self._runner: Any | None = None
+        # The session service is built once and reused across runner rebuilds, so the
+        # conversation history survives a hot-reload (see _ensure_runner). The config the
+        # runner was built against; when gaia.yaml changes, ConfigSupplier hands back a new
+        # object and we rebuild (None until the first build, so injected-runner tests skip).
+        self._session_service: Any = None
+        self._runner_config: Any | None = None
         # Auto-ingest buffer: turns accumulate here and flush in batches (by count or
         # age) so mem0's per-add extraction LLM call fires once per batch, not per turn.
         self._buffer: list[Any] = []
@@ -63,24 +69,42 @@ class GaiaHandler:
         # critical path so mem0's extraction LLM call never delays the next reply.
         self._flush_task: asyncio.Task[None] | None = None
 
-    async def _ensure_runner(self) -> Any:
+    def _build_runner(self) -> Any:
+        """Build a Runner over the (reused) session service against the live config.
+
+        Re-reads ``build_root_agent`` (model/instruction) and ``memory_service`` each call,
+        so a rebuild picks up every gaia.yaml change. The session service is shared, so the
+        conversation continues across rebuilds.
+        """
         from google.adk.runners import Runner
-        from google.adk.sessions import InMemorySessionService
 
         from gaia.core.plugins import ToolLoggingPlugin, ToolPermissionPlugin
 
+        return Runner(
+            app_name=constants.APP_NAME,
+            agent=self._gaia.build_root_agent(self),
+            session_service=self._session_service,
+            memory_service=self._gaia.memory_service,
+            plugins=[ToolPermissionPlugin(self._gaia), ToolLoggingPlugin()],
+        )
+
+    async def _ensure_runner(self) -> Any:
+        from google.adk.sessions import InMemorySessionService
+
         if self._runner is None:
-            session_service = InMemorySessionService()  # type: ignore[no-untyped-call]
-            await session_service.create_session(
+            self._session_service = InMemorySessionService()  # type: ignore[no-untyped-call]
+            await self._session_service.create_session(
                 app_name=constants.APP_NAME, user_id=self._user_id, session_id=self._session_id
             )
-            self._runner = Runner(
-                app_name=constants.APP_NAME,
-                agent=self._gaia.build_root_agent(self),
-                session_service=session_service,
-                memory_service=self._gaia.memory_service,
-                plugins=[ToolPermissionPlugin(self._gaia), ToolLoggingPlugin()],
-            )
+            self._runner_config = self._gaia.config
+            self._runner = self._build_runner()
+        elif self._runner_config is not None and self._gaia.config is not self._runner_config:
+            # gaia.yaml changed on disk (ConfigSupplier returns a new object): rebuild the
+            # agent so the live conversation picks up the new model/instruction/memory. The
+            # shared session service keeps this session's history intact.
+            log_event("config_reloaded", user=self._user_id, session=self._session_id)
+            self._runner_config = self._gaia.config
+            self._runner = self._build_runner()
         return self._runner
 
     async def __call__(self, text: str, send: Send) -> None:
@@ -151,10 +175,12 @@ class GaiaHandler:
     def reset_session(self) -> None:
         """Drop the live ADK session and pending memory buffer (used by ``/reset``).
 
-        Nulling ``_runner`` makes the next message build a fresh session with no prior
-        turns; long-term memory is untouched.
+        Nulling ``_runner`` (and its session service) makes the next message build a fresh
+        session with no prior turns; long-term memory is untouched.
         """
         self._runner = None
+        self._session_service = None
+        self._runner_config = None
         self._buffer = []
         self._buffer_started = None
 

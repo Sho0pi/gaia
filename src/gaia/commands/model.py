@@ -21,4 +21,6 @@ class ModelCommand(Command):
         from gaia.cli._yamledit import set_config_value
 
         set_config_value(ctx.gaia.settings.config_path, "llm.model", target)
-        return f"Model set to {target!r} (provider: {llm.provider}). New chat sessions use it."
+        return (
+            f"Model set to {target!r} (provider: {llm.provider}). In effect from your next message."
+        )

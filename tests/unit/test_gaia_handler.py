@@ -100,6 +100,54 @@ async def test_plain_text_still_reaches_the_model() -> None:
     assert await _collect(handler, "not a command") == ["answer"]
 
 
+async def test_runner_rebuilds_when_config_changes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A gaia.yaml change (new config object) rebuilds the agent but keeps the session."""
+    from gaia.config import GaiaConfig
+
+    builds: list[object] = []
+    services: list[object] = []
+
+    class _FakeSession:
+        async def create_session(self, **_kwargs: Any) -> None:
+            return None
+
+    def _fake_session_ctor(*_a: Any, **_k: Any) -> _FakeSession:
+        svc = _FakeSession()
+        services.append(svc)
+        return svc
+
+    class _RebuildRunner:
+        def __init__(self, **kwargs: Any) -> None:
+            self.session_service = kwargs["session_service"]
+
+        async def run_async(self, **_kwargs: Any) -> AsyncIterator[SimpleNamespace]:
+            yield _event("ok")
+
+    monkeypatch.setattr("google.adk.sessions.InMemorySessionService", _fake_session_ctor)
+    monkeypatch.setattr("google.adk.runners.Runner", _RebuildRunner)
+    monkeypatch.setattr("gaia.core.plugins.ToolPermissionPlugin", lambda gaia: object())
+    monkeypatch.setattr("gaia.core.plugins.ToolLoggingPlugin", lambda: object())
+
+    def _build(_handler: object) -> object:
+        agent = object()
+        builds.append(agent)
+        return agent
+
+    cfg1, cfg2 = GaiaConfig(), GaiaConfig()
+    gaia = SimpleNamespace(memory_service=None, build_root_agent=_build, config=cfg1)
+    handler = GaiaHandler(gaia)
+
+    await _collect(handler, "one")  # first turn builds
+    await _collect(handler, "two")  # same config object → no rebuild
+    assert len(builds) == 1
+
+    gaia.config = cfg2  # simulate gaia.yaml edit (ConfigSupplier hands back a new object)
+    await _collect(handler, "three")
+
+    assert len(builds) == 2  # rebuilt against the new config
+    assert len(services) == 1  # session service reused → conversation history preserved
+
+
 class _BoomRunner:
     def __init__(self, exc: Exception) -> None:
         self._exc = exc

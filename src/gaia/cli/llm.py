@@ -66,6 +66,7 @@ def set_model(
         if p
     )
     console().print(f"updated: {changed}")
+    console().print("a running daemon picks this up on its next turn (hot-reloaded).")
 
 
 @app.command("list")
