@@ -252,12 +252,23 @@ class MissionsConfig(BaseModel):
 
 
 class VoiceConfig(BaseModel):
-    """Inbound voice notes: local speech-to-text via faster-whisper (the 'voice' group)."""
+    """Local voice I/O: speech-to-text in (faster-whisper) + text-to-speech out (edge-tts)."""
 
     enabled: bool = Field(
         default=True,
         description="Transcribe inbound voice messages and answer them like text "
         "(needs the 'voice' dep group; ignored when faster-whisper isn't installed).",
+    )
+    reply_with_voice: bool = Field(
+        default=True,
+        description="Answer a voice message with a voice message (edge-tts). Needs the "
+        "'voice' group and network access; falls back to text when unavailable.",
+    )
+    tts_voice: str = Field(
+        default="en-US-AriaNeural",
+        description="edge-tts voice for spoken replies (Microsoft Edge online voices). "
+        "Default is a US female voice. Run 'edge-tts --list-voices' for the full list "
+        "(e.g. en-US-GuyNeural, en-GB-SoniaNeural, he-IL-HilaNeural).",
     )
     model: str = Field(
         default="base",

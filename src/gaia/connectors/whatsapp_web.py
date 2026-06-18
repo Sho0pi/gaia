@@ -24,9 +24,21 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from neonize.aioze.client import NewAClient
 
     from gaia.config import GroupTrigger
-    from gaia.voice import Transcriber
+    from gaia.voice import Synthesizer, Transcriber
 
 logger = logging.getLogger(__name__)
+
+
+def _build_jid(chat: str) -> Any:
+    """A neonize JID from a ``user@server`` string (default server ``s.whatsapp.net``).
+
+    The phone-number address media sends must target — sending to a ``…@lid`` identity
+    drops silently. Shared by the inbound media reply path and proactive ``send_to``.
+    """
+    from neonize.utils import build_jid
+
+    user, _, server = chat.partition("@")
+    return build_jid(user, server or "s.whatsapp.net")
 
 
 def _user_part(jid: str) -> str:
@@ -175,6 +187,8 @@ class WhatsAppWebConnector:
 
     ``transcriber`` (a :class:`gaia.voice.Transcriber`) turns inbound voice notes into
     text for the handler; ``None`` means voice messages are ignored (prior behaviour).
+    ``synthesizer`` (a :class:`gaia.voice.Synthesizer`) speaks text replies back as a voice
+    note — but only when the inbound message was itself voice (voice-in → voice-out).
     ``group_trigger`` decides when Gaia answers inside a group chat (mention/reply); *who*
     may trigger it is left to the user/role system (``users.json`` + the dispatcher's
     guest-drop), not a separate allow-list. ``None`` falls back to the default quiet policy.
@@ -196,12 +210,14 @@ class WhatsAppWebConnector:
         dispatch: Dispatch,
         *,
         transcriber: Transcriber | None = None,
+        synthesizer: Synthesizer | None = None,
         group_trigger: GroupTrigger | None = None,
         show_active: bool = True,
     ) -> None:
         self._session_db = session_db
         self._dispatch = dispatch  # channel-bound: (sender_id, name, text, send)
         self._transcriber = transcriber
+        self._synthesizer = synthesizer
         if group_trigger is None:
             from gaia.config import GroupTrigger
 
@@ -268,21 +284,28 @@ class WhatsAppWebConnector:
             if text:
                 if not await self._should_handle(client, message, source):
                     return  # a group message Gaia wasn't addressed in (mention/reply)
-                chat = source.Chat  # JID to send media replies to
+                # Media (image / voice note) must go to the *deliverable* JID, not the raw
+                # ``source.Chat``: in a DM that Chat is a ``…@lid`` identity and a media send
+                # to it vanishes silently (the user gets nothing — not even the text). Build
+                # the phone-number JID the same way proactive ``send_to`` does.
+                chat = _build_jid(_deliverable_chat(source))
                 # Record where this turn came from, so scheduling tools (cron) can
                 # capture the chat for later proactive delivery (phone-number JID, not
                 # the undeliverable @lid identity).
                 current_chat.set((self.NAME, _deliverable_chat(source)))
 
                 async def send(reply: Reply) -> None:
-                    # An image reply goes out as a real WhatsApp image; text replies
-                    # quote the inbound message as before.
+                    # An image reply goes out as a real WhatsApp image. A text reply to a
+                    # *voice* message is spoken back as a voice note (voice-in → voice-out);
+                    # otherwise it quotes the inbound message as before.
                     if isinstance(reply, Media):
                         await client.send_image(
                             chat, str(reply.path), caption=reply.caption or None
                         )
-                    else:
-                        await client.reply_message(reply, message)
+                        return
+                    if was_voice and await self._speak(client, chat, reply):
+                        return
+                    await client.reply_message(reply, message)
 
                 # Acknowledge the moment work starts: blue-tick the message and start the
                 # "typing…" indicator (best-effort; never blocks or breaks the turn).
@@ -297,6 +320,30 @@ class WhatsAppWebConnector:
                     await self._end_typing(client, chat, typing)
 
         return client
+
+    async def _speak(self, client: Any, chat: Any, text: str) -> bool:
+        """Speak ``text`` as a voice note (PTT); True if sent, False to fall back to text.
+
+        Empty/whitespace replies and synthesis failures fall back so the user still gets the
+        answer; a bad TTS must never swallow the reply or take the loop down.
+        """
+        if self._synthesizer is None or not text.strip():
+            return False
+        try:
+            ogg = await self._synthesizer.synthesize(text)
+            if ogg is None:
+                return False
+            # neonize's send_audio stamps the mimetype from a libmagic sniff, which yields a
+            # bare 'audio/ogg'. WhatsApp only renders a PTT voice note when the mimetype is
+            # 'audio/ogg; codecs=opus' — with the bare type it accepts the upload but the
+            # recipient gets nothing. Build the message, then correct that one field.
+            msg = await client.build_audio_message(str(ogg), ptt=True)
+            msg.audioMessage.mimetype = "audio/ogg; codecs=opus"
+            await client.send_message(chat, msg)
+            return True
+        except Exception:  # pragma: no cover - never lose the reply to a bad voice send
+            logger.warning("voice reply failed; falling back to text", exc_info=True)
+            return False
 
     async def _should_handle(self, client: Any, message: Any, source: Any) -> bool:
         """Apply the group policy: drop group messages Gaia isn't addressed in / not allowed.
@@ -431,8 +478,17 @@ class WhatsAppWebConnector:
         if not transcript:
             logger.info("voice note transcribed to empty text — ignored")
             return ""
-        # The prefix tells Gaia the modality, so it answers the spoken content naturally.
-        return f"[voice message] {transcript}"
+        # Hand the spoken words over as a normal request. A *leading* "[voice message]" tag
+        # made the model treat it as casual chat and answer in one shot without ever calling
+        # tools (verified: voice turns skipped web_search etc. that the same typed question
+        # triggered). Put the query first and the modality as a trailing instruction that
+        # explicitly preserves tool use, only asking for a concise (spoken-friendly) answer.
+        return (
+            f"{transcript}\n\n"
+            "(This arrived as a voice message — handle it exactly like a typed request, "
+            "using your tools whenever they help; just keep the reply concise since it will "
+            "be read aloud.)"
+        )
 
     async def pair(self, timeout_s: float = 120.0) -> bool:
         """Foreground QR pairing: connect, wait for scan, then shut the client down.
@@ -479,10 +535,7 @@ class WhatsAppWebConnector:
         """
         if self._client is None:
             raise RuntimeError("whatsapp connector is not running")
-        from neonize.utils import build_jid
-
-        user, _, server = chat.partition("@")
-        jid = build_jid(user, server or "s.whatsapp.net")
+        jid = _build_jid(chat)
         if isinstance(reply, Media):
             await self._client.send_image(jid, str(reply.path), caption=reply.caption or None)
         else:

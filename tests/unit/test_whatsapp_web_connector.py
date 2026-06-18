@@ -51,7 +51,11 @@ def _msg(
         ),
         Info=SimpleNamespace(
             ID="MSGID",
-            MessageSource=SimpleNamespace(Chat="chat-jid", Sender="sender-jid"),
+            MessageSource=SimpleNamespace(
+                Chat=SimpleNamespace(User="chat", Server="s.whatsapp.net"),
+                Sender=SimpleNamespace(User="sender", Server="s.whatsapp.net"),
+                IsGroup=False,
+            ),
         ),
     )
 
@@ -129,8 +133,10 @@ def fake_neonize(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     events_mod.MessageEv = message_ev  # type: ignore[attr-defined]
     events_mod.PairStatusEv = pair_status_ev  # type: ignore[attr-defined]
 
-    # neonize.utils: the presence/receipt enums the connector imports lazily.
+    # neonize.utils: build_jid (so media-send targets are assertable) plus the
+    # presence/receipt enums the connector imports lazily.
     utils_mod = ModuleType("neonize.utils")
+    utils_mod.build_jid = lambda user, server: f"{user}@{server}"  # type: ignore[attr-defined]
     utils_mod.ReceiptType = SimpleNamespace(READ="read")  # type: ignore[attr-defined]
     utils_mod.ChatPresence = SimpleNamespace(  # type: ignore[attr-defined]
         CHAT_PRESENCE_COMPOSING="composing", CHAT_PRESENCE_PAUSED="paused"
@@ -215,7 +221,8 @@ async def test_media_reply_sent_as_image(fake_neonize: dict[str, Any], tmp_path:
     await client.handlers[fake_neonize["MessageEv"]](client, _msg(conversation="shot"))
 
     assert [text for text, _ in client.replies] == ["here:"]  # text reply still sent
-    assert client.images == [("chat-jid", "/tmp/shot.png", "screenshot")]  # image via send_image
+    # image goes to the *deliverable* phone JID (built from the DM Chat), not a raw @lid
+    assert client.images == [("chat@s.whatsapp.net", "/tmp/shot.png", "screenshot")]
 
 
 async def test_empty_message_is_ignored(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
@@ -331,7 +338,11 @@ async def test_voice_note_transcribed_to_handler(
 
     await client.handlers[fake_neonize["MessageEv"]](client, _voice_msg())
 
-    assert seen == ["[voice message] what is the weather"]
+    # The transcript leads (so the model acts on it + uses tools); the voice-modality note
+    # trails as an instruction, not a leading "[voice message]" tag that suppressed tools.
+    assert len(seen) == 1
+    assert seen[0].startswith("what is the weather")
+    assert "voice message" in seen[0] and "using your tools" in seen[0]
     saved = cache_dir / "voice" / "VOICE123.ogg"
     assert saved.read_bytes() == b"OGGDATA"  # audio cached under ~/.gaia/cache/voice/
     assert transcriber.paths == [saved]
@@ -552,12 +563,16 @@ async def test_marks_read_and_shows_typing(fake_neonize: dict[str, Any], tmp_pat
         await send("hi back")
 
     client = WhatsAppWebConnector(tmp_path / "wa.db", dispatch).build_client()
-    await client.handlers[fake_neonize["MessageEv"]](client, _msg(conversation="hello"))
+    msg = _msg(conversation="hello")
+    await client.handlers[fake_neonize["MessageEv"]](client, msg)
 
-    assert client.reads == [("MSGID", "chat-jid", "sender-jid", "read")]  # blue tick
-    # composing first (text media), paused last — the indicator went up then cleared.
-    assert client.presence[0] == ("chat-jid", "composing", "text")
-    assert client.presence[-1] == ("chat-jid", "paused", "text")
+    # mark_read keys off the raw inbound chat/sender JIDs (not the @lid send-rewrite).
+    src = msg.Info.MessageSource
+    assert client.reads == [("MSGID", src.Chat, src.Sender, "read")]  # blue tick
+    # presence targets the deliverable phone JID (built from the DM Chat); composing first
+    # (text media), paused last — the indicator went up then cleared.
+    assert client.presence[0] == ("chat@s.whatsapp.net", "composing", "text")
+    assert client.presence[-1] == ("chat@s.whatsapp.net", "paused", "text")
     assert [text for text, _ in client.replies] == ["hi back"]
 
 

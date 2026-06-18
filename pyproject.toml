@@ -83,12 +83,15 @@ browser = [
 mcp = [
     "mcp>=1.0",
 ]
-# Inbound voice messages: local speech-to-text via faster-whisper (CTranslate2
-# Whisper, CPU int8 — Pi-viable). Decodes WhatsApp's ogg/opus through its bundled
-# PyAV, so no ffmpeg binary is needed. Model weights download from Hugging Face on
-# the first transcription. Lazy-imported; gaia runs without it (voice notes ignored).
+# Local voice I/O. IN: speech-to-text via faster-whisper (CTranslate2 Whisper, CPU
+# int8 — Pi-viable; decodes WhatsApp ogg/opus via its bundled PyAV, no ffmpeg). OUT:
+# text-to-speech via edge-tts (rany2/edge-tts — Microsoft Edge online voices over the
+# network) — yields MP3, transcoded to ogg/opus with the same PyAV for a WhatsApp voice
+# note. No binary/model needed (network call). All lazy-imported; gaia runs without them
+# (voice notes ignored / replies stay text). Whisper weights download on first use.
 voice = [
     "faster-whisper>=1.0",
+    "edge-tts>=6.1",
 ]
 
 [build-system]
@@ -134,6 +137,7 @@ module = [
     "mcp.*",
     "apscheduler.*",
     "faster_whisper.*",
+    "edge_tts.*",
     "dependency_injector.*",
 ]
 ignore_missing_imports = true
