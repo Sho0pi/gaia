@@ -25,6 +25,8 @@ from collections.abc import Callable
 from typing import Any, Protocol
 from urllib.parse import urlparse, urlsplit
 
+from gaia.tools._helpers import err, ok
+
 #: Tool id, used by the registry and as the ADK tool name (matches the closure name).
 NAME = "web_fetch"
 
@@ -190,28 +192,25 @@ def make_web_fetch(fetcher: Fetcher) -> Callable[..., dict[str, Any]]:
         cleaned = url.strip()
 
         if not cleaned:
-            return {"status": "error", "error_message": "url must not be empty"}
+            return err("url must not be empty")
 
         error = validate_url(cleaned)
         if error is not None:
-            return {"status": "error", "error_message": error}
+            return err(error)
 
         capped = max(1, min(max_bytes, MAX_BYTES_CAP))
         try:
             fetched = fetcher(cleaned, capped)
         except BlockedURLError as exc:
-            return {"status": "error", "error_message": f"refused: {exc}"}
+            return err(f"refused: {exc}")
         except Exception as exc:
-            return {"status": "error", "error_message": f"fetch failed: {exc}"}
+            return err(f"fetch failed: {exc}")
 
         import trafilatura
 
         markdown = trafilatura.extract(fetched["html"], output_format="markdown")
         if not markdown:
-            return {
-                "status": "error",
-                "error_message": "no readable content could be extracted from the page",
-            }
-        return {"status": "success", "url": fetched["final_url"], "markdown": markdown}
+            return err("no readable content could be extracted from the page")
+        return ok(url=fetched["final_url"], markdown=markdown)
 
     return web_fetch

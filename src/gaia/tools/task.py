@@ -29,6 +29,7 @@ from google.adk.tools.tool_context import ToolContext
 
 from gaia.connectors.base import current_chat
 from gaia.missions import Task, TaskStatus, TaskStore
+from gaia.tools._helpers import err, ok
 
 #: Tool ids / ADK tool names (match the closure names).
 TASK_CREATE = "task_create"
@@ -37,10 +38,6 @@ TASK_GET = "task_get"
 TASK_UPDATE = "task_update"
 TASK_COMPLETE = "task_complete"
 TASK_PLAN = "task_plan"
-
-
-def _err(message: str) -> dict[str, Any]:
-    return {"status": "error", "error_message": message}
 
 
 def _owner(tool_context: ToolContext) -> str:
@@ -124,7 +121,7 @@ def make_task_create(
             approval_class: spend | book | send_as_me | destructive — if it needs a human ok.
         """
         if not title.strip():
-            return _err("title must not be empty")
+            return err("title must not be empty")
         state = _state(tool_context)
         # A soul filing a subtask links it to its own task by default; created_by is the
         # soul's key (Gaia turns have no state → parent stays unset, created_by "gaia").
@@ -133,7 +130,7 @@ def make_task_create(
         deps = _split(blocked_by)
         missing = [d for d in deps if store.get(d) is None]
         if missing:
-            return _err(
+            return err(
                 f"blocked_by references unknown task id(s): {', '.join(missing)}. Create the "
                 "upstream task first and use its returned id — or use task_plan to file the "
                 "whole mission at once."
@@ -143,15 +140,15 @@ def make_task_create(
         if parent_id:
             parent = store.get(parent_id)
             if parent is None:
-                return _err(f"no parent task {parent_id!r}")
+                return err(f"no parent task {parent_id!r}")
             depth = parent.depth + 1
             if depth > max_depth:
-                return _err(f"subtask depth limit reached (max_depth={max_depth})")
+                return err(f"subtask depth limit reached (max_depth={max_depth})")
             # Cycle guard: a subtask must not wait on one of its own ancestors (deadlock).
             ancestors = _ancestor_ids(store, parent_id) | {parent_id}
             cyclic = [d for d in deps if d in ancestors]
             if cyclic:
-                return _err(f"blocked_by would create an ancestry cycle: {', '.join(cyclic)}")
+                return err(f"blocked_by would create an ancestry cycle: {', '.join(cyclic)}")
             mission_id = mission_id or parent.mission_id
             # A subtask inherits the parent's reply target when filed outside a live chat.
             notify_channel = notify_channel or parent.notify_channel
@@ -159,7 +156,7 @@ def make_task_create(
         # Per-mission task cap (total ever filed) — breach pauses the mission, asks the user.
         if mission_id and len(store.list(mission=mission_id)) >= max_tasks:
             _pause_mission(store, mission_id, f"task cap reached (max_tasks={max_tasks})")
-            return _err(f"mission task limit reached (max_tasks={max_tasks}) — mission paused")
+            return err(f"mission task limit reached (max_tasks={max_tasks}) — mission paused")
         task = store.create(
             Task(
                 title=title.strip(),
@@ -175,7 +172,7 @@ def make_task_create(
                 notify_chat=notify_chat,
             )
         )
-        return {"status": "success", "task": task.model_dump(mode="json")}
+        return ok(task=task.model_dump(mode="json"))
 
     return task_create
 
@@ -257,17 +254,17 @@ def make_task_plan(store: TaskStore, *, max_tasks: int = 20) -> Callable[..., di
         """
         items = _parse_plan(plan)
         if items is None:
-            return _err("plan must be a JSON (or Python-literal) array of task objects")
+            return err("plan must be a JSON (or Python-literal) array of task objects")
         if not isinstance(items, list) or not items:
-            return _err("plan must be a non-empty array")
+            return err("plan must be a non-empty array")
         if not all(isinstance(i, dict) and str(i.get("title", "")).strip() for i in items):
-            return _err("each task needs at least a 'title'")
+            return err("each task needs at least a 'title'")
         if len(items) > max_tasks:
-            return _err(f"plan exceeds the per-mission task cap (max_tasks={max_tasks})")
+            return err(f"plan exceeds the per-mission task cap (max_tasks={max_tasks})")
 
         order = _order_refs(items)
         if isinstance(order, str):
-            return _err(order)
+            return err(order)
 
         by_ref = {str(i["ref"]).strip(): i for i in items}
         mission_id = uuid.uuid4().hex[:8]
@@ -294,7 +291,7 @@ def make_task_plan(store: TaskStore, *, max_tasks: int = 20) -> Callable[..., di
             )
             ref_to_id[ref] = task.id
             created.append({"ref": ref, **task.model_dump(mode="json")})
-        return {"status": "success", "mission_id": mission_id, "tasks": created}
+        return ok(mission_id=mission_id, tasks=created)
 
     return task_plan
 
@@ -317,9 +314,9 @@ def make_task_list(store: TaskStore) -> Callable[..., dict[str, Any]]:
             try:
                 parsed = TaskStatus(status)
             except ValueError:
-                return _err(f"unknown status {status!r}")
+                return err(f"unknown status {status!r}")
         tasks = store.list(mission=mission_id or None, status=parsed, owner=_owner(tool_context))
-        return {"status": "success", "tasks": [t.model_dump(mode="json") for t in tasks]}
+        return ok(tasks=[t.model_dump(mode="json") for t in tasks])
 
     return task_list
 
@@ -336,8 +333,8 @@ def make_task_get(store: TaskStore) -> Callable[..., dict[str, Any]]:
         task_id = task_id or _state(tool_context).get("task_id", "")
         task = _owned(store, task_id, _owner(tool_context))
         if task is None:
-            return _err(f"no task {task_id!r}")
-        return {"status": "success", "task": task.model_dump(mode="json")}
+            return err(f"no task {task_id!r}")
+        return ok(task=task.model_dump(mode="json"))
 
     return task_get
 
@@ -366,18 +363,18 @@ def make_task_update(store: TaskStore) -> Callable[..., dict[str, Any]]:
         task_id = task_id or _state(tool_context).get("task_id", "")
         task = _owned(store, task_id, _owner(tool_context))
         if task is None:
-            return _err(f"no task {task_id!r}")
+            return err(f"no task {task_id!r}")
         if status:
             try:
                 task.status = TaskStatus(status)
             except ValueError:
-                return _err(f"unknown status {status!r}")
+                return err(f"unknown status {status!r}")
         if notes:
             task.notes = notes
         if assignee:
             task.assignee = assignee
         store.update(task)
-        return {"status": "success", "task": task.model_dump(mode="json")}
+        return ok(task=task.model_dump(mode="json"))
 
     return task_update
 
@@ -397,14 +394,14 @@ def make_task_complete(store: TaskStore) -> Callable[..., dict[str, Any]]:
         """
         task_id = task_id or _state(tool_context).get("task_id", "")
         if _owned(store, task_id, _owner(tool_context)) is None:
-            return _err(f"no task {task_id!r}")
+            return err(f"no task {task_id!r}")
         if store.children(task_id, open_only=True):
-            return _err(
+            return err(
                 "task has open subtasks — leave it; it is re-run with their results once "
                 "they finish (don't complete it now)"
             )
         task = store.post_result(task_id, result, _split(artifacts))
         assert task is not None  # ownership check above proved it exists
-        return {"status": "success", "task": task.model_dump(mode="json")}
+        return ok(task=task.model_dump(mode="json"))
 
     return task_complete

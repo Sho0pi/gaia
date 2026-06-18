@@ -19,6 +19,8 @@ from google.adk.memory.memory_entry import MemoryEntry
 from google.adk.tools.tool_context import ToolContext
 from google.genai import types
 
+from gaia.tools._helpers import err, ok
+
 #: Tool id, used by the registry and as the ADK tool name (matches the closure name).
 NAME = "remember"
 
@@ -40,13 +42,13 @@ def make_remember() -> Callable[..., Any]:
         cleaned = fact.strip()
 
         if not cleaned:
-            return {"status": "error", "error_message": "fact must not be empty"}
+            return err("fact must not be empty")
 
         entry = MemoryEntry(content=types.Content(parts=[types.Part(text=cleaned)]), author="user")
         try:
             await tool_context.add_memory(memories=[entry])
         except ValueError:  # ADK raises when no memory service is configured
-            return {"status": "error", "error_message": "long-term memory is disabled"}
-        return {"status": "success", "fact": cleaned}
+            return err("long-term memory is disabled")
+        return ok(fact=cleaned)
 
     return remember

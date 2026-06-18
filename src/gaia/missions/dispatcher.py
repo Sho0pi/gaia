@@ -140,10 +140,10 @@ class MissionDispatcher:
 
         root = self._store.get(task.mission_id) or task
         try:
-            age_hours = (datetime.now() - datetime.fromisoformat(root.created_at)).total_seconds()
+            age_seconds = (datetime.now() - datetime.fromisoformat(root.created_at)).total_seconds()
         except ValueError:  # pragma: no cover - corrupt timestamp
             return False
-        if age_hours / 3600 <= max_hours:
+        if age_seconds / 3600 <= max_hours:
             return False
         already = {TaskStatus.AWAITING_APPROVAL, TaskStatus.DONE, TaskStatus.FAILED}
         if root.status not in already:

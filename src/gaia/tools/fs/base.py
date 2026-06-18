@@ -15,9 +15,9 @@ import os
 import re
 import subprocess
 from pathlib import Path
-from typing import Any
 
 from gaia import constants
+from gaia.tools._helpers import err as err  # re-export for gaia.tools.fs.* importers
 
 #: Per-read byte cap and result caps for the search tools.
 MAX_READ_BYTES = 10_000_000
@@ -104,11 +104,6 @@ def is_binary(sample: bytes) -> bool:
     from binaryornot.helpers import is_binary_string
 
     return b"\x00" in sample or bool(is_binary_string(sample))
-
-
-def err(message: str) -> dict[str, Any]:
-    """A standard error result dict."""
-    return {"status": "error", "error_message": message}
 
 
 def run_search(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:

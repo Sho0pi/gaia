@@ -22,7 +22,7 @@ class SoulRegistry:
 
     @property
     def directory(self) -> Path:
-        """The folder holding the soul ``.md`` files (and their ``.bak`` backups)."""
+        """The folder holding the soul ``.md`` files."""
         return self._dir
 
     def _path(self, key: str) -> Path:
