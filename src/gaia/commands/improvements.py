@@ -1,25 +1,20 @@
-"""``/improvements`` — show what the self-improve loop has changed (read-only)."""
+"""``/improvements`` — show the skill/soul changes gaia has made (from git history)."""
 
 from __future__ import annotations
-
-import time
 
 from gaia.commands.base import Command, CommandContext
 
 
 class ImprovementsCommand(Command):
     name = "improvements"
-    summary = "List the skills/souls/memories gaia improved on its own."
+    summary = "List the skills/souls gaia changed (its own learning history)."
     aliases = ("improved",)
 
     async def run(self, ctx: CommandContext) -> str:
-        from gaia.analysis.journal import ImprovementJournal
+        from gaia.state import StateRepo
 
-        entries = [e for e in ImprovementJournal().entries() if not e.reverted]
+        entries = [e for e in StateRepo().entries() if not e.reverted]
         if not entries:
-            return "I haven't made any self-improvements yet."
-        lines = []
-        for e in entries[-15:]:
-            when = time.strftime("%Y-%m-%d", time.localtime(e.ts))
-            lines.append(f"- [{when}] {e.action} {e.type}: {e.target} ({e.id})")
-        return "What I've improved on my own:\n" + "\n".join(lines)
+            return "I haven't changed any skills or souls yet."
+        lines = [f"- {e.subject} ({e.sha})" for e in entries[:15]]
+        return "What I've changed (skills/souls):\n" + "\n".join(lines)

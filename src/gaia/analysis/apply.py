@@ -1,20 +1,20 @@
-"""Apply an :class:`AnalysisReport` autonomously, with audit + reversibility rails.
+"""Apply an :class:`AnalysisReport` autonomously, versioning each change with git.
 
 The self-improve loop's write side. For each proposal it writes a real artifact — a skill
 (researched + written by the :mod:`gaia.agents.skill_author`), a soul (forged or refined via
-the :class:`~gaia.agents.registry.SoulRegistry`), or a long-term memory — and records it in
-the :class:`~gaia.analysis.journal.ImprovementJournal`. **Additive only**: it never deletes,
-de-dupes against the journal (and existing skills/souls), and a refined soul keeps a ``.bak``
-so any change is one ``gaia improvements revert`` away. Best-effort: one failing proposal is
-logged and skipped, never aborting the rest.
+the :class:`~gaia.agents.registry.SoulRegistry`), or a long-term memory — and, for the file
+artifacts (skills/souls), records it as a git commit in the ``~/.gaia`` state repo
+(:mod:`gaia.state`). One commit per change = a per-change history that's auditable and
+revertable (``gaia improvements revert <sha>``), one change among many included. **Additive
+only**: never deletes; de-dupes against what's already on disk. Memory writes go to mem0 (not
+files), so they're applied + announced but not in the git history (see ``/memories``).
+Best-effort: a failing proposal is logged and skipped, never aborting the rest.
 """
 
 from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING
-
-from gaia.analysis.journal import Improvement, ImprovementJournal
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from gaia.analysis.analyst import AnalysisReport
@@ -24,39 +24,33 @@ logger = logging.getLogger(__name__)
 
 
 async def apply_report(
-    gaia: Gaia,
-    report: AnalysisReport,
-    *,
-    user_id: str | None = None,
-    journal: ImprovementJournal | None = None,
-) -> list[Improvement]:
-    """Apply every proposal in ``report``; return the improvements recorded (in order)."""
-    journal = journal or ImprovementJournal()
-    applied: list[Improvement] = []
+    gaia: Gaia, report: AnalysisReport, *, user_id: str | None = None
+) -> list[str]:
+    """Apply every proposal; return a human line per applied change (committed where a file)."""
+    applied: list[str] = []
 
     for memory in report.memories:
         target = memory.user_id or user_id or "gaia"
-        imp = await _apply_memory(gaia, target, memory.fact)
-        if imp is not None:
-            applied.append(journal.record(imp))
+        if await _apply_memory(gaia, target, memory.fact):
+            applied.append(f"added memory for {target}")
 
     for skill in report.skills:
-        imp = await _apply_skill(gaia, skill, journal)
-        if imp is not None:
-            applied.append(journal.record(imp))
+        line = await _apply_skill(gaia, skill)
+        if line is not None:
+            applied.append(line)
 
     for soul in report.souls:
-        imp = _apply_soul(gaia, soul, journal)
-        if imp is not None:
-            applied.append(journal.record(imp))
+        line = _apply_soul(gaia, soul)
+        if line is not None:
+            applied.append(line)
 
     return applied
 
 
-async def _apply_memory(gaia: Gaia, user_id: str, fact: str) -> Improvement | None:
+async def _apply_memory(gaia: Gaia, user_id: str, fact: str) -> bool:
     service = gaia.memory_service
     if service is None or not fact.strip():
-        return None
+        return False
     from google.adk.memory.memory_entry import MemoryEntry
     from google.genai import types
 
@@ -67,20 +61,19 @@ async def _apply_memory(gaia: Gaia, user_id: str, fact: str) -> Improvement | No
         await service.add_memory(app_name=constants.APP_NAME, user_id=user_id, memories=[entry])
     except Exception as exc:
         logger.warning("improve: memory write failed: %s", exc)
-        return None
-    return Improvement(type="memory", target=user_id, action="added", summary=fact[:120])
+        return False
+    return True
 
 
-async def _apply_skill(
-    gaia: Gaia, skill: object, journal: ImprovementJournal
-) -> Improvement | None:
+async def _apply_skill(gaia: Gaia, skill: object) -> str | None:
     from gaia.skills import list_skill_ids, resolve_skills_dir, skill_id_for, write_skill
+    from gaia.state import commit_change
 
     name = getattr(skill, "name", "")
     skill_id = skill_id_for(name)
     skills_dir = resolve_skills_dir(gaia.config)
-    if skill_id in list_skill_ids(skills_dir) or skill_id in journal.applied_targets("skill"):
-        return None  # additive + de-duped: never overwrite an existing/already-added skill
+    if skill_id in list_skill_ids(skills_dir):
+        return None  # additive: never overwrite an existing skill
 
     description = getattr(skill, "description", name)
     rationale = getattr(skill, "rationale", "")
@@ -103,73 +96,37 @@ async def _apply_skill(
     except Exception as exc:
         logger.warning("improve: skill write failed: %s", exc)
         return None
-    return Improvement(type="skill", target=skill_id, action="created", summary=description[:120])
+    commit_change(f"improve: created skill '{skill_id}' — {description}", rationale)
+    return f"created skill {skill_id}"
 
 
-def _apply_soul(gaia: Gaia, soul: object, journal: ImprovementJournal) -> Improvement | None:
+def _apply_soul(gaia: Gaia, soul: object) -> str | None:
     from gaia.agents.spec import AgentSpec, slugify
+    from gaia.state import commit_change
 
     action = str(getattr(soul, "action", "create")).lower()
     name = getattr(soul, "name", "")
     description = getattr(soul, "description", "")
     instruction = getattr(soul, "instruction", "")
+    rationale = getattr(soul, "rationale", "")
     registry = gaia.souls
 
     if action == "refine":
         key = getattr(soul, "key", "") or slugify(name)
         if registry.get(key) is None:
             return None
-        updated = registry.update(key, description=description, instruction=instruction)
-        if updated is None:
+        if registry.update(key, description=description, instruction=instruction) is None:
             return None
-        return Improvement(type="soul", target=key, action="refined", summary=description[:120])
+        commit_change(f"improve: refined soul '{key}' — {description}", rationale)
+        return f"refined soul {key}"
 
-    # create — additive + de-duped: don't forge over an existing/already-added soul
+    # create — additive: don't forge over an existing soul
     key = slugify(name)
-    if registry.get(key) is not None or key in journal.applied_targets("soul"):
+    if registry.get(key) is not None:
         return None
     spec = AgentSpec(
         name=name, description=description, instruction=instruction, model=gaia.config.llm.model
     )
     registry.save(spec)
-    return Improvement(type="soul", target=spec.key, action="created", summary=description[:120])
-
-
-def revert_improvement(
-    improvement_id: str,
-    *,
-    skills_dir: object,
-    registry: object,
-    journal: ImprovementJournal | None = None,
-) -> str:
-    """Undo one applied improvement; return a human status line. Marks the journal entry.
-
-    skill (created) -> remove the folder; soul (created) -> delete it; soul (refined) ->
-    restore from its ``.bak``. A memory write can't be cleanly un-extracted from mem0, so it
-    is only marked reverted. ``skills_dir``/``registry`` are passed so the CLI need not build
-    a full Gaia.
-    """
-    import shutil
-    from pathlib import Path
-
-    journal = journal or ImprovementJournal()
-    imp = journal.get(improvement_id)
-    if imp is None:
-        return f"no improvement {improvement_id!r}"
-    if imp.reverted:
-        return f"{improvement_id} already reverted"
-
-    if imp.type == "skill" and imp.action == "created":
-        shutil.rmtree(Path(str(skills_dir)) / imp.target, ignore_errors=True)
-    elif imp.type == "soul" and imp.action == "created":
-        registry.delete(imp.target)  # type: ignore[attr-defined]
-    elif imp.type == "soul" and imp.action == "refined":
-        bak = Path(str(registry.directory)) / f"{imp.target}.md.bak"  # type: ignore[attr-defined]
-        if bak.exists():
-            bak.with_suffix("").write_text(bak.read_text())  # restore <key>.md from .bak
-    elif imp.type == "memory":
-        journal.mark_reverted(improvement_id)
-        return f"marked {imp.type} {imp.target} reverted (memory writes can't be un-done in mem0)"
-
-    journal.mark_reverted(improvement_id)
-    return f"reverted {imp.action} {imp.type}: {imp.target}"
+    commit_change(f"improve: created soul '{spec.key}' — {description}", rationale)
+    return f"created soul {spec.key}"

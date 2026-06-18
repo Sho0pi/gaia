@@ -1,7 +1,9 @@
-"""Self-improve loop: journal, apply (skill/soul/memory), dedupe/additive, revert."""
+"""Self-improve loop: git state repo, apply (skill/soul/memory), revert one-of-many."""
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -10,112 +12,136 @@ import pytest
 
 from gaia.agents import AgentSpec, SoulRegistry
 from gaia.analysis.analyst import SkillProposal, SoulProposal
-from gaia.analysis.apply import apply_report, revert_improvement
-from gaia.analysis.journal import Improvement, ImprovementJournal
+from gaia.analysis.apply import apply_report
+from gaia.state import StateRepo
 
-# --- schema leniency (real models omit optional fields) ----------------------------------
+pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
+
+
+def _git_out(repo: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", "-C", str(repo), *args], capture_output=True, text=True, check=True
+    ).stdout
+
+
+# --- schema leniency ---------------------------------------------------------------------
 
 
 def test_report_parses_proposal_missing_rationale() -> None:
     from gaia.analysis.analyst import AnalysisReport
 
-    # gpt-5.4-mini omitted memory.rationale — one missing optional field must not abort.
     raw = '{"summary":"x","memories":[{"user_id":"itay","fact":"likes acl"}]}'
     report = AnalysisReport.model_validate_json(raw)
     assert report.memories[0].fact == "likes acl" and report.memories[0].rationale == ""
 
 
-# --- journal -----------------------------------------------------------------------------
+# --- state repo --------------------------------------------------------------------------
 
 
-def test_journal_record_list_dedupe_revert(tmp_path: Path) -> None:
-    j = ImprovementJournal(tmp_path / "imp.jsonl")
-    a = j.record(Improvement(type="skill", target="alpha", action="created"))
-    j.record(Improvement(type="soul", target="bob", action="refined"))
-    assert {e.target for e in j.entries()} == {"alpha", "bob"}
-    assert j.applied_targets("skill") == {"alpha"}
-    assert j.mark_reverted(a.id) is True
-    assert j.applied_targets("skill") == set()  # reverted no longer counts
+def test_repo_tracks_artifacts_not_secrets(tmp_path: Path) -> None:
+    (tmp_path / "agent_registry").mkdir()
+    (tmp_path / "agent_registry" / "x.md").write_text("soul")
+    (tmp_path / "skills").mkdir()
+    (tmp_path / ".env").write_text("SECRET=1")  # must NOT be tracked
+    (tmp_path / "users.json").write_text("[]")
+
+    repo = StateRepo(tmp_path)
+    sha = repo.commit("soul: created 'x'", "body")
+    assert sha
+    tracked = _git_out(tmp_path, "ls-files")
+    assert "agent_registry/x.md" in tracked
+    assert ".env" not in tracked and "users.json" not in tracked  # allowlist gitignore works
 
 
-# --- registry.update ---------------------------------------------------------------------
+def test_commit_noop_when_clean(tmp_path: Path) -> None:
+    (tmp_path / "skills").mkdir()
+    repo = StateRepo(tmp_path)
+    repo.commit("init artifact", "")  # nothing in skills yet -> no-op
+    (tmp_path / "skills" / "a").mkdir()
+    (tmp_path / "skills" / "a" / "SKILL.md").write_text("x")
+    assert repo.commit("skill: created 'a'") is not None
+    assert repo.commit("skill: created 'a'") is None  # nothing changed since
 
 
-def test_registry_update_backs_up_and_persists(tmp_path: Path) -> None:
-    reg = SoulRegistry(tmp_path / "reg")
-    reg.save(AgentSpec(name="Data Pro", description="old", instruction="old i", model="m"))
-    updated = reg.update("data_pro", description="new", instruction="new i")
-    assert updated is not None and reg.get("data_pro").description == "new"  # type: ignore[union-attr]
-    assert (tmp_path / "reg" / "data_pro.md.bak").is_file()  # prior version backed up
+def test_entries_and_revert_one_of_many(tmp_path: Path) -> None:
+    reg = SoulRegistry(tmp_path / "agent_registry")
+    repo = StateRepo(tmp_path)
+    reg.save(AgentSpec(name="Alpha", description="a", instruction="ia", model="m"))
+    sha_a = repo.commit("improve: created soul 'alpha'")
+    reg.save(AgentSpec(name="Beta", description="b", instruction="ib", model="m"))
+    repo.commit("improve: created soul 'beta'")
+
+    assert {e.sha for e in repo.entries()} >= {sha_a}
+    # Revert only alpha — beta untouched (different file => clean).
+    msg = repo.revert(sha_a)
+    assert "reverted" in msg
+    assert not (tmp_path / "agent_registry" / "alpha.md").exists()
+    assert (tmp_path / "agent_registry" / "beta.md").exists()
+    assert any(e.reverted for e in repo.entries())
+
+
+def test_revert_conflict_when_same_soul_changed_twice(tmp_path: Path) -> None:
+    reg = SoulRegistry(tmp_path / "agent_registry")
+    repo = StateRepo(tmp_path)
+    reg.save(AgentSpec(name="Alpha", description="v1", instruction="i", model="m"))
+    sha1 = repo.commit("improve: created soul 'alpha'")
+    reg.update("alpha", description="v2")
+    repo.commit("improve: refined soul 'alpha'")
+    msg = repo.revert(sha1)  # later commit touched the same file
+    assert "could not revert" in msg
 
 
 # --- apply -------------------------------------------------------------------------------
 
 
-def _gaia(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
-    skills = tmp_path / "skills"
-    skills.mkdir()
-    cfg = SimpleNamespace(skills_dir=skills, llm=SimpleNamespace(model="m"))
-    reg = SoulRegistry(tmp_path / "reg")
-    return SimpleNamespace(config=cfg, souls=reg, memory_service=None)
+def _gaia(tmp_path: Path) -> Any:
+    cfg = SimpleNamespace(skills_dir=tmp_path / "skills", llm=SimpleNamespace(model="m"))
+    return SimpleNamespace(
+        config=cfg, souls=SoulRegistry(tmp_path / "agent_registry"), memory_service=None
+    )
 
 
-async def test_apply_creates_skill_and_soul(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    gaia = _gaia(tmp_path, monkeypatch)
+async def test_apply_creates_and_commits(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("gaia.constants.HOME_DIR", tmp_path)
+    gaia = _gaia(tmp_path)
 
-    # Skip the model: the skill author "researches" -> just return text.
-    async def _draft(g, n, b):
+    async def _draft(g: Any, n: str, b: str) -> tuple[str, str]:
         return "a skill", "do the thing"
 
     monkeypatch.setattr("gaia.agents.skill_author.draft_skill_async", _draft)
-    journal = ImprovementJournal(tmp_path / "imp.jsonl")
     report = SimpleNamespace(
         summary="x",
         memories=[],
-        skills=[
-            SkillProposal(name="Tweeter", description="tweets", instructions="", rationale="r")
-        ],
-        souls=[
-            SoulProposal(
-                action="create",
-                key="",
-                name="Data Pro",
-                description="d",
-                instruction="i",
-                rationale="r",
-            )
-        ],
+        skills=[SkillProposal(name="Tweeter", description="tweets", rationale="r")],
+        souls=[SoulProposal(action="create", name="Data Pro", description="d", instruction="i")],
     )
-    applied = await apply_report(gaia, report, journal=journal)  # type: ignore[arg-type]
-    kinds = {(i.type, i.action) for i in applied}
-    assert ("skill", "created") in kinds and ("soul", "created") in kinds
-    assert (tmp_path / "skills" / "tweeter" / "SKILL.md").is_file()
-    assert gaia.souls.get("data_pro") is not None
+    applied = await apply_report(gaia, report)  # type: ignore[arg-type]
+    assert any("skill" in a for a in applied) and any("soul" in a for a in applied)
+    # both were committed to the state repo
+    assert len(StateRepo(tmp_path).entries()) >= 2
 
 
-async def test_apply_is_additive_and_deduped(
+async def test_apply_additive_skips_existing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    gaia = _gaia(tmp_path, monkeypatch)
+    monkeypatch.setattr("gaia.constants.HOME_DIR", tmp_path)
+    gaia = _gaia(tmp_path)
 
-    async def _draft2(g, n, b):
+    async def _draft(g: Any, n: str, b: str) -> tuple[str, str]:
         return "d", "body"
 
-    monkeypatch.setattr("gaia.agents.skill_author.draft_skill_async", _draft2)
-    journal = ImprovementJournal(tmp_path / "imp.jsonl")
-    prop = SkillProposal(name="Tweeter", description="d", instructions="", rationale="r")
-    report = SimpleNamespace(summary="x", memories=[], skills=[prop], souls=[])
-    first = await apply_report(gaia, report, journal=journal)  # type: ignore[arg-type]
-    second = await apply_report(gaia, report, journal=journal)  # type: ignore[arg-type]
-    assert len(first) == 1 and second == []  # second run skips the already-created skill
+    monkeypatch.setattr("gaia.agents.skill_author.draft_skill_async", _draft)
+    report = SimpleNamespace(
+        summary="x", memories=[], skills=[SkillProposal(name="Tweeter", description="d")], souls=[]
+    )
+    assert len(await apply_report(gaia, report)) == 1  # type: ignore[arg-type]
+    assert await apply_report(gaia, report) == []  # type: ignore[arg-type]  # already on disk
 
 
 async def test_apply_refines_existing_soul(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    gaia = _gaia(tmp_path, monkeypatch)
+    monkeypatch.setattr("gaia.constants.HOME_DIR", tmp_path)
+    gaia = _gaia(tmp_path)
     gaia.souls.save(AgentSpec(name="Data Pro", description="old", instruction="old", model="m"))
-    journal = ImprovementJournal(tmp_path / "imp.jsonl")
     report = SimpleNamespace(
         summary="x",
         memories=[],
@@ -126,36 +152,10 @@ async def test_apply_refines_existing_soul(tmp_path: Path, monkeypatch: pytest.M
                 key="data_pro",
                 name="Data Pro",
                 description="better",
-                instruction="better i",
-                rationale="r",
+                instruction="bi",
             )
         ],
     )
-    applied = await apply_report(gaia, report, journal=journal)  # type: ignore[arg-type]
-    assert applied and applied[0].action == "refined"
+    applied = await apply_report(gaia, report)  # type: ignore[arg-type]
+    assert applied == ["refined soul data_pro"]
     assert gaia.souls.get("data_pro").description == "better"  # type: ignore[union-attr]
-
-
-# --- revert ------------------------------------------------------------------------------
-
-
-def test_revert_removes_created_skill(tmp_path: Path) -> None:
-    skills = tmp_path / "skills"
-    (skills / "tweeter").mkdir(parents=True)
-    (skills / "tweeter" / "SKILL.md").write_text("---\nname: tweeter\ndescription: d\n---\n\nb\n")
-    reg = SoulRegistry(tmp_path / "reg")
-    journal = ImprovementJournal(tmp_path / "imp.jsonl")
-    imp = journal.record(Improvement(type="skill", target="tweeter", action="created"))
-    msg = revert_improvement(imp.id, skills_dir=skills, registry=reg, journal=journal)
-    assert "reverted" in msg and not (skills / "tweeter").exists()
-    assert journal.get(imp.id).reverted is True  # type: ignore[union-attr]
-
-
-def test_revert_restores_refined_soul(tmp_path: Path) -> None:
-    reg = SoulRegistry(tmp_path / "reg")
-    reg.save(AgentSpec(name="Data Pro", description="old", instruction="old", model="m"))
-    reg.update("data_pro", description="new")  # leaves a .bak
-    journal = ImprovementJournal(tmp_path / "imp.jsonl")
-    imp = journal.record(Improvement(type="soul", target="data_pro", action="refined"))
-    revert_improvement(imp.id, skills_dir=tmp_path / "skills", registry=reg, journal=journal)
-    assert reg.get("data_pro").description == "old"  # type: ignore[union-attr]

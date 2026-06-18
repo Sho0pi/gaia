@@ -42,13 +42,12 @@ class SoulRegistry:
     def update(self, key: str, **fields: object) -> AgentSpec | None:
         """Refine an existing soul: apply ``fields`` (e.g. description/instruction) and save.
 
-        Backs up the prior markdown to ``<key>.md.bak`` first (so a bad self-edit by the
-        improve loop is one revert away). Returns the updated spec, or ``None`` if unknown.
+        Returns the updated spec, or ``None`` if unknown. History/rollback is handled by the
+        ``~/.gaia`` git state repo (:mod:`gaia.state`), which the caller commits to.
         """
         spec = self.get(key)
         if spec is None:
             return None
-        self._path(key).with_suffix(".md.bak").write_text(spec.to_markdown())
         updated = spec.model_copy(update=fields)
         self.save(updated)
         return updated

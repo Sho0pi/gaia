@@ -1,7 +1,7 @@
 """``gaia improvements`` — inspect and revert what the self-improve loop changed.
 
-Reads the journal (``~/.gaia/improvements.jsonl``) and can undo one change (remove an added
-skill/soul, restore a refined soul from its ``.bak``). Offline — no model key.
+Reads the ``~/.gaia`` git history of skill/soul changes (:mod:`gaia.state`) and can
+``git revert`` one change. Offline — no model key (only ``run`` needs one).
 """
 
 from __future__ import annotations
@@ -20,59 +20,38 @@ app = typer.Typer(
 
 @app.command("list")
 def list_improvements(ctx: typer.Context) -> None:
-    """List every change the self-improve loop applied (newest last)."""
-    from gaia.analysis.journal import ImprovementJournal
+    """List the skill/soul changes in git history (newest first)."""
+    from gaia.state import StateRepo
 
-    entries = ImprovementJournal().entries()
+    entries = StateRepo().entries()
     if state(ctx).json:
-        emit_json({"improvements": [vars(e) for e in entries]})
+        emit_json({"history": [vars(e) for e in entries]})
         return
     out = console()
     if not entries:
-        out.print("no self-improvements recorded yet")
+        out.print("no changes recorded yet")
         return
     from rich.table import Table
 
     table = Table(show_edge=False, pad_edge=False)
-    for col in ("id", "type", "action", "target", "summary", "reverted"):
-        table.add_column(col)
+    table.add_column("commit")
+    table.add_column("change")
+    table.add_column("reverted")
     for e in entries:
-        table.add_row(e.id, e.type, e.action, e.target, e.summary, "yes" if e.reverted else "")
+        table.add_row(e.sha, e.subject, "yes" if e.reverted else "")
     out.print(table)
-    out.print("\nsee the full content of one with 'gaia improvements show <id>'")
+    out.print("\nfull detail + diff: 'gaia improvements show <commit>'")
 
 
 @app.command()
 def show(
     ctx: typer.Context,
-    improvement_id: Annotated[str, typer.Argument(help="The improvement id (from 'list').")],
+    commit: Annotated[str, typer.Argument(help="The commit sha (from 'list').")],
 ) -> None:
-    """Show the full content of one applied change (the skill body / soul / memory)."""
-    from gaia.agents import SoulRegistry
-    from gaia.analysis.journal import ImprovementJournal
-    from gaia.config import ConfigSupplier, get_settings
-    from gaia.skills import load_skill, resolve_skills_dir
+    """Show a change's full commit message + diff."""
+    from gaia.state import StateRepo
 
-    out = console()
-    imp = ImprovementJournal().get(improvement_id)
-    if imp is None:
-        out.print(f"no improvement {improvement_id!r} (try 'gaia improvements list')")
-        raise typer.Exit(1)
-    out.print(f"[bold]{imp.action} {imp.type}: {imp.target}[/]  ({imp.id})\n")
-
-    settings = get_settings(state(ctx).env_file)
-    cfg = ConfigSupplier(settings.config_path).current
-    if imp.type == "skill":
-        skill = load_skill(resolve_skills_dir(cfg), imp.target)
-        out.print(skill.instructions if skill else "(skill no longer present)")
-    elif imp.type == "soul":
-        spec = SoulRegistry(settings.agent_registry_dir).get(imp.target)
-        if spec is None:
-            out.print("(soul no longer present)")
-        else:
-            out.print(f"description: {spec.description}\n\ninstruction:\n{spec.instruction}")
-    else:  # memory — the fact isn't individually addressable in mem0; show what was recorded
-        out.print(imp.summary or "(no recorded text)")
+    console().print(StateRepo().show(commit))
 
 
 @app.command()
@@ -114,9 +93,9 @@ def run(
             if not applied:
                 out.print("no improvements this cycle (nothing worth changing — that's fine)")
                 return
-            for imp in applied:
-                out.print(f"- {imp.action} {imp.type}: {imp.target}  ({imp.id})")
-            out.print(f"\napplied {len(applied)} improvement(s); see 'gaia improvements list'")
+            for line in applied:
+                out.print(f"- {line}")
+            out.print(f"\napplied {len(applied)} change(s); see 'gaia improvements list'")
         finally:
             await gaia.close()
 
@@ -126,19 +105,9 @@ def run(
 @app.command()
 def revert(
     ctx: typer.Context,
-    improvement_id: Annotated[str, typer.Argument(help="The improvement id (from 'list').")],
+    commit: Annotated[str, typer.Argument(help="The commit sha to revert (from 'list').")],
 ) -> None:
-    """Undo one improvement by id (removes an added skill/soul, restores a refined soul)."""
-    from gaia.agents import SoulRegistry
-    from gaia.analysis.apply import revert_improvement
-    from gaia.config import ConfigSupplier, get_settings
-    from gaia.skills import resolve_skills_dir
+    """Revert one change by commit sha (a new commit undoing it)."""
+    from gaia.state import StateRepo
 
-    settings = get_settings(state(ctx).env_file)
-    cfg = ConfigSupplier(settings.config_path).current
-    msg = revert_improvement(
-        improvement_id,
-        skills_dir=resolve_skills_dir(cfg),
-        registry=SoulRegistry(settings.agent_registry_dir),
-    )
-    console().print(msg)
+    console().print(StateRepo().revert(commit))

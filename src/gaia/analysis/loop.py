@@ -17,7 +17,6 @@ from gaia.logs import log_event
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from gaia.analysis.analyst import AnalysisReport
-    from gaia.analysis.journal import Improvement
     from gaia.config import GaiaConfig
     from gaia.core.agent import Gaia
 
@@ -41,8 +40,8 @@ async def analyze(gaia: Gaia) -> tuple[AnalysisReport | None, str | None]:
     return report, _single_user(digest)
 
 
-async def run_cycle(gaia: Gaia) -> list[Improvement]:
-    """Run one improve cycle; return the improvements applied (empty when nothing changed)."""
+async def run_cycle(gaia: Gaia) -> list[str]:
+    """Run one improve cycle; return a line per applied change (empty when nothing changed)."""
     from gaia.analysis.apply import apply_report
 
     report, single_user = await analyze(gaia)
@@ -51,7 +50,7 @@ async def run_cycle(gaia: Gaia) -> list[Improvement]:
     applied = await apply_report(gaia, report, user_id=single_user)
     if applied:
         log_event("improved", count=len(applied), summary=report.summary[:200])
-        await _notify_owner(gaia, report, applied)
+        await _notify_owner(gaia, applied)
     return applied
 
 
@@ -114,15 +113,14 @@ def _existing_souls(gaia: Gaia) -> list[str]:
     return out
 
 
-async def _notify_owner(gaia: Gaia, report: AnalysisReport, applied: list[Improvement]) -> None:
+async def _notify_owner(gaia: Gaia, applied: list[str]) -> None:
     """Best-effort: tell the first reachable admin what gaia changed this cycle."""
     from gaia.tools.message import user_address
 
     admins = [u for u in gaia.users.list() if u.role == "admin" and u.identities]
     if not admins:
         return
-    lines = [f"- {i.action} {i.type}: {i.target}" for i in applied]
-    text = "I improved myself based on recent usage:\n" + "\n".join(lines)
+    text = "I improved myself based on recent usage:\n" + "\n".join(f"- {line}" for line in applied)
     for admin in admins:
         addr = user_address(gaia.users, admin.id)
         if addr is None:

@@ -42,9 +42,6 @@ CRON_FILE = HOME_DIR / "cron.json"
 USERS_FILE = HOME_DIR / "users.json"
 # Missions task board (SQLite, WAL); managed by the task_* tools / `gaia tasks`.
 TASKS_DB = HOME_DIR / "tasks.db"
-# Self-improve audit log: one JSON line per change the autonomous loop applied
-# (skill/soul/memory), readable via `/improvements` / `gaia improvements`.
-IMPROVEMENTS_FILE = HOME_DIR / "improvements.jsonl"
 # Per-agent state. Each agent's sandboxed filesystem workspace lives at
 # AGENTS_DIR / <agent_name> / "workspace" (see tools/filesystem.py).
 AGENTS_DIR = HOME_DIR / "agents"
