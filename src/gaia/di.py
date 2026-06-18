@@ -81,9 +81,9 @@ class LifecycleManager:
                 logger.debug("lifecycle close failed", exc_info=True)
 
 
-def _build_user_store(config: GaiaConfig) -> UserStore:
-    """Build the user store and seed admins from ``config.admin`` (a build-time side effect)."""
-    store = UserStore()
+def _build_user_store(users_file: Path, config: GaiaConfig) -> UserStore:
+    """Build the user store (settings-driven path) and seed admins from ``config.admin``."""
+    store = UserStore(users_file)
     store.seed_admins(config.admin)
     return store
 
@@ -193,7 +193,9 @@ class Container(containers.DeclarativeContainer):
     souls: providers.Singleton[SoulRegistry] = providers.Singleton(
         SoulRegistry, settings.provided.agent_registry_dir
     )
-    users: providers.Singleton[UserStore] = providers.Singleton(_build_user_store, config)
+    users: providers.Singleton[UserStore] = providers.Singleton(
+        _build_user_store, settings.provided.users_file, config
+    )
     # The missions task board — one shared store (opens ~/.gaia/tasks.db) reused by the
     # task_* tools, the root agent's task_plan, and the dispatcher.
     tasks: providers.Singleton[TaskStore] = providers.Singleton(TaskStore)
