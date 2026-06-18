@@ -2,16 +2,13 @@
 
 Slash commands are normally human-only (handled out-of-band, never seen by the model). This
 tool bridges the model to that surface so Gaia can, e.g., install a skill the user asked for
-(``run_command("skill", "install <url>")``). Two gates apply, both must pass:
-
-1. the command's :attr:`~gaia.commands.base.Command.agent_access` tier — ``"none"`` is
-   refused, ``"admin"`` only when the caller is an admin, ``"user"`` always; and
-2. the command's own ACL check inside ``run`` (e.g. ``require_manage_users``),
-
-so a prompt-injected message can't make Gaia run anything the *person* couldn't, and the
-dangerous commands stay off unless an admin is driving. Root-only (like ``message_user``);
-needs the live handler for handler-dependent commands (``/reset``). Never raises — returns
-the standard tool dict.
+(``run_command("skill install <url>")``). It applies the **same ACL gate** as the human
+``/cmd`` path — :func:`gaia.commands.base.authorize`: the agent may run a command iff the
+caller holds its ``capability`` (a command with no capability is open). No separate "agent"
+tier — the agent acts as the user, exactly like the tool ACL. So a prompt-injected message
+can't make Gaia run anything the *person* couldn't (a user's agent can't ``/grant``; an
+admin's can). Root-only (like ``message_user``); needs the live handler for
+handler-dependent commands (``/reset``). Never raises — returns the standard tool dict.
 """
 
 from __future__ import annotations
@@ -49,7 +46,7 @@ def make_run_command(
                 leading slash, e.g. "skill install <git-url>".
             args: optional extra arguments, appended to ``command``.
         """
-        from gaia.commands import CommandContext, default_registry
+        from gaia.commands import CommandContext, authorize, default_registry
 
         # The model usually passes the whole line in `command`; split off the first token
         # as the command name and treat the rest (+ any `args`) as the arguments.
@@ -65,17 +62,6 @@ def make_run_command(
         user = gaia.users.get(user_id)
         role = user.role if user is not None else "admin"  # unresolved caller is trusted
 
-        access = cmd.agent_access
-        if access == "none":
-            return {
-                "status": "error",
-                "error_message": f"the {name!r} command isn't available to me",
-            }
-        if access == "admin" and role != "admin":
-            return {
-                "status": "error",
-                "error_message": f"{name!r} needs an admin — I can't run it for this user",
-            }
         if handler is None and name in ("reset", "forget"):
             return {"status": "error", "error_message": f"{name!r} isn't available here"}
 
@@ -88,6 +74,10 @@ def make_run_command(
             session_id=getattr(tool_context, "session_id", None) or "gaia",
             role=role,
         )
+        # Same ACL gate as the human /cmd path: the agent may run a command iff the user
+        # holds its capability (no capability = open). No separate agent tier.
+        if refusal := authorize(cmd, ctx):
+            return {"status": "error", "error_message": refusal}
         try:
             reply = await cmd.run(ctx)
         except Exception as exc:  # tools never raise to the model

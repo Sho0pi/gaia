@@ -7,7 +7,6 @@ from gaia.commands.base import Command, CommandContext
 
 class AgentsCommand(Command):
     name = "agents"
-    agent_access = "user"
     summary = "List the specialist subagents Gaia has learned."
 
     async def run(self, ctx: CommandContext) -> str:

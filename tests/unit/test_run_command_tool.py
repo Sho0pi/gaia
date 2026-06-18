@@ -1,4 +1,4 @@
-"""run_command tool: agent_access tiers + dispatch to a command as the calling user."""
+"""run_command tool: ACL-authorize, then dispatch a command as the calling user."""
 
 from __future__ import annotations
 
@@ -36,13 +36,13 @@ async def test_unknown_command(tmp_path: Path) -> None:
 
 
 async def test_user_tier_runs(tmp_path: Path) -> None:
-    # help is agent_access="user" — any caller's agent may run it (needs only ctx.registry).
+    # help has no capability — open to anyone (needs only ctx.registry).
     out = await _run(_store(tmp_path), "help", "", "bob")
     assert out["status"] == "success" and "reply" in out
 
 
 async def test_admin_tier_refused_for_non_admin(tmp_path: Path) -> None:
-    # grant is agent_access="admin"; Bob (user) -> refused before the command even runs.
+    # grant needs manage_users; Bob (user) lacks it -> refused before the command runs.
     out = await _run(_store(tmp_path), "grant", "bob shell", "bob")
     assert out["status"] == "error" and "admin" in out["error_message"]
 

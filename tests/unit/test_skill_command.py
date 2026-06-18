@@ -53,8 +53,8 @@ async def test_unknown_subcommand(tmp_path: Path) -> None:
     assert "Usage:" in out
 
 
-async def test_agent_access_is_user() -> None:
-    assert SkillCommand.agent_access == "user"
+def test_skill_requires_skills_capability() -> None:
+    assert SkillCommand.capability == "skills"
 
 
 # --- skill_search ------------------------------------------------------------------------

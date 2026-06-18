@@ -45,12 +45,10 @@ def _find(ctx: CommandContext, ref: str) -> str | None:
 
 class UsersCommand(Command):
     name = "users"
-    agent_access = "admin"
+    capability = "manage_users"
     summary = "List known users, their roles, and the channels that reach them (admin)."
 
     async def run(self, ctx: CommandContext) -> str:
-        if refusal := require_manage_users(ctx):
-            return refusal
         users = ctx.gaia.users.list()
         if not users:
             return "No users yet."
@@ -64,14 +62,12 @@ class UsersCommand(Command):
 
 class ApproveCommand(Command):
     name = "approve"
-    agent_access = "admin"
+    capability = "manage_users"
     summary = "Set a user's role (approve a guest). Usage: /approve <id|channel:sender> <role>."
     usage = "<id|channel:sender> <role>"
     aliases = ("role",)
 
     async def run(self, ctx: CommandContext) -> str:
-        if refusal := require_manage_users(ctx):
-            return refusal
         ref, _, role = ctx.args.partition(" ")
         role = role.strip().lower()
         if not ref or role not in _ROLES:
@@ -86,14 +82,12 @@ class ApproveCommand(Command):
 
 class RemoveCommand(Command):
     name = "remove"
-    agent_access = "admin"
+    capability = "manage_users"
     summary = "Delete a user from the store. Usage: /remove <id|channel:sender> (admin)."
     usage = "<id|channel:sender>"
     aliases = ("deluser",)
 
     async def run(self, ctx: CommandContext) -> str:
-        if refusal := require_manage_users(ctx):
-            return refusal
         ref = ctx.args.strip()
         if not ref:
             return "Usage: /remove <id|channel:sender>"
@@ -109,13 +103,11 @@ class RemoveCommand(Command):
 
 class NameCommand(Command):
     name = "name"
-    agent_access = "admin"
+    capability = "manage_users"
     summary = "Set a user's display name. Usage: /name <id|channel:sender> <name>."
     usage = "<id|channel:sender> <name>"
 
     async def run(self, ctx: CommandContext) -> str:
-        if refusal := require_manage_users(ctx):
-            return refusal
         ref, _, name = ctx.args.partition(" ")
         if not ref or not name.strip():
             return "Usage: /name <id|channel:sender> <name>"
@@ -129,13 +121,11 @@ class NameCommand(Command):
 
 class LinkCommand(Command):
     name = "link"
-    agent_access = "admin"
+    capability = "manage_users"
     summary = "Attach another channel id to a user. Usage: /link <id> <channel:sender>."
     usage = "<id> <channel:sender>"
 
     async def run(self, ctx: CommandContext) -> str:
-        if refusal := require_manage_users(ctx):
-            return refusal
         user_id, _, ident = ctx.args.partition(" ")
         channel, _, sender = ident.strip().partition(":")
         if not user_id or not channel or not sender:

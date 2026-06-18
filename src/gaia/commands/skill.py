@@ -1,9 +1,9 @@
 """``/skill`` — manage skills from chat (and the surface Gaia drives via run_command).
 
 One command with sub-actions (``list`` / ``show`` / ``search`` / ``install`` / ``remove``)
-so the model can install a skill by name or url mid-conversation. Marked ``agent_access =
-"user"`` so the ``run_command`` tool may run it for the person Gaia is talking to. Reuses
-the same ``skills.py`` primitives as the ``gaia skill`` CLI.
+so the model can install a skill by name or url mid-conversation. Requires the ``skills``
+ACL capability (held by ``user``/``admin``), so the ``run_command`` tool may run it for a
+caller who holds it. Reuses the same ``skills.py`` primitives as the ``gaia skill`` CLI.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ class SkillCommand(Command):
     name = "skill"
     summary = "Manage skills: list, show, search, install, remove (id/glob/all)."
     usage = "<list|show|search|install|remove> [args]"
-    agent_access = "user"
+    capability = "skills"
 
     async def run(self, ctx: CommandContext) -> str:
         from gaia.skills import resolve_skills_dir

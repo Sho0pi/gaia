@@ -160,7 +160,7 @@ class GaiaHandler:
 
     async def _maybe_run_command(self, text: str, send: Send) -> bool:
         """If ``text`` is a slash command, run it and reply; return whether it was one."""
-        from gaia.commands import CommandContext, default_registry, parse
+        from gaia.commands import CommandContext, authorize, default_registry, parse
 
         parsed = parse(text)
         if parsed is None:
@@ -183,6 +183,10 @@ class GaiaHandler:
             session_id=self._session_id,
             role=self._role,
         )
+        if refusal := authorize(command, ctx):  # one ACL gate for the human path
+            log_event("command_used", command=command.name, status="denied")
+            await send(refusal)
+            return True
         reply = await command.run(ctx)
         log_event("command_used", command=command.name, status="ok")
         await send(reply)
