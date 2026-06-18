@@ -12,15 +12,12 @@ ADK / the model are imported inside the commands that need them.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
 
 import typer
 
 from gaia.cli._console import console, emit_json
 from gaia.cli._options import state
-
-if TYPE_CHECKING:  # pragma: no cover - typing only
-    from gaia.config import GaiaConfig
 
 app = typer.Typer(
     name="skill", help="List, author, install, and manage skills.", no_args_is_help=True
@@ -35,12 +32,6 @@ def _skills_dir(ctx: typer.Context) -> Path:
 
     settings = get_settings(state(ctx).env_file)
     return resolve_skills_dir(ConfigSupplier(settings.config_path).current)
-
-
-def _config(ctx: typer.Context) -> GaiaConfig:
-    from gaia.config import ConfigSupplier, get_settings
-
-    return ConfigSupplier(get_settings(state(ctx).env_file).config_path).current
 
 
 def _truncate(text: str, width: int = _DESC_WIDTH) -> str:
@@ -126,7 +117,7 @@ def new(
     out = console()
 
     if from_ is not None:
-        description, instructions = _draft_skill(_config(ctx), name, from_)
+        description, instructions = _draft(ctx, name, from_)
     elif instruction_file is not None:
         instructions = instruction_file.read_text()
         description = description or name
@@ -200,59 +191,16 @@ def remove(
     out.print(f"removed {len(removed)} skill(s): {', '.join(removed)}")
 
 
-def _draft_skill(cfg: GaiaConfig, name: str, brief: str) -> tuple[str, str]:
-    """Have a model draft (description, instructions) for a skill from a one-line brief."""
+def _draft(ctx: typer.Context, name: str, brief: str) -> tuple[str, str]:
+    """Build a Gaia so the skill author can research (tools + memory), then draft + close it."""
     import asyncio
 
-    return asyncio.run(_draft_skill_async(cfg, name, brief))
+    from gaia.agents.skill_author import draft_skill
+    from gaia.config import get_settings
+    from gaia.core import Gaia
 
-
-async def _draft_skill_async(cfg: GaiaConfig, name: str, brief: str) -> tuple[str, str]:
-    from google.adk.agents import LlmAgent
-    from google.adk.runners import Runner
-    from google.adk.sessions import InMemorySessionService
-    from google.genai import types
-    from pydantic import BaseModel
-
-    from gaia import constants
-    from gaia.models import resolve_model
-
-    class SkillDraft(BaseModel):
-        description: str
-        instructions: str
-
-    drafter = LlmAgent(
-        name="skill_drafter",
-        model=resolve_model(
-            cfg.llm.model, provider=cfg.llm.provider, use_oauth=cfg.llm.openai.use_oauth
-        ),
-        description="Authors a reusable skill (prompt knowledge) from a brief.",
-        instruction=(
-            "You write a SKILL for an AI agent — concise, reusable prompt knowledge (NOT code). "
-            "Given a skill name and a one-line brief, return a one-sentence description and a "
-            "markdown instructions body the agent should follow when the skill applies. Be "
-            "specific and actionable; no preamble."
-        ),
-        output_schema=SkillDraft,
-        disallow_transfer_to_parent=True,
-        disallow_transfer_to_peers=True,
-    )
-    session_service = InMemorySessionService()  # type: ignore[no-untyped-call]
-    await session_service.create_session(
-        app_name=constants.APP_NAME, user_id="cli", session_id="skill-draft"
-    )
-    runner = Runner(app_name=constants.APP_NAME, agent=drafter, session_service=session_service)
-    content = types.Content(
-        role="user", parts=[types.Part(text=f"Skill name: {name}\nBrief: {brief}")]
-    )
-    parts: list[str] = []
+    gaia = Gaia(get_settings(state(ctx).env_file))
     try:
-        async for event in runner.run_async(
-            user_id="cli", session_id="skill-draft", new_message=content
-        ):
-            if event.is_final_response() and event.content and event.content.parts:
-                parts.extend(p.text for p in event.content.parts if p.text)
+        return draft_skill(gaia, name, brief)
     finally:
-        await runner.close()  # type: ignore[no-untyped-call]
-    draft = SkillDraft.model_validate_json("".join(parts))
-    return draft.description, draft.instructions
+        asyncio.run(gaia.close())
