@@ -64,10 +64,12 @@ async def test_apply_creates_skill_and_soul(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     gaia = _gaia(tmp_path, monkeypatch)
+
     # Skip the model: the skill author "researches" -> just return text.
-    monkeypatch.setattr(
-        "gaia.agents.skill_author.draft_skill", lambda g, n, b: ("a skill", "do the thing")
-    )
+    async def _draft(g, n, b):
+        return "a skill", "do the thing"
+
+    monkeypatch.setattr("gaia.agents.skill_author.draft_skill_async", _draft)
     journal = ImprovementJournal(tmp_path / "imp.jsonl")
     report = SimpleNamespace(
         summary="x",
@@ -97,7 +99,11 @@ async def test_apply_is_additive_and_deduped(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     gaia = _gaia(tmp_path, monkeypatch)
-    monkeypatch.setattr("gaia.agents.skill_author.draft_skill", lambda g, n, b: ("d", "body"))
+
+    async def _draft2(g, n, b):
+        return "d", "body"
+
+    monkeypatch.setattr("gaia.agents.skill_author.draft_skill_async", _draft2)
     journal = ImprovementJournal(tmp_path / "imp.jsonl")
     prop = SkillProposal(name="Tweeter", description="d", instructions="", rationale="r")
     report = SimpleNamespace(summary="x", memories=[], skills=[prop], souls=[])

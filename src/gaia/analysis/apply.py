@@ -86,10 +86,14 @@ async def _apply_skill(
     rationale = getattr(skill, "rationale", "")
     instructions = getattr(skill, "instructions", "")
     # Prefer a researched body from the skill author; fall back to the proposal's text.
+    # Await the async author directly — apply runs on the daemon loop, where the sync
+    # draft_skill (asyncio.run) would raise.
     try:
-        from gaia.agents.skill_author import draft_skill
+        from gaia.agents.skill_author import draft_skill_async
 
-        description, instructions = draft_skill(gaia, name, f"{description}. {rationale}")
+        description, instructions = await draft_skill_async(
+            gaia, name, f"{description}. {rationale}"
+        )
     except Exception as exc:
         logger.warning("improve: skill author failed, using proposal text: %s", exc)
     if not instructions.strip():
