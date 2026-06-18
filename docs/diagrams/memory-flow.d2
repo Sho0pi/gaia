@@ -1,0 +1,47 @@
+# Gaia memory: short-term (session), long-term (mem0), and the session-start profile.
+direction: right
+
+user: "user turn\n(whatsapp / telegram / cli)" { shape: person }
+
+conversation: "conversation  —  one GaiaHandler per (user, channel)" {
+  style.fill: "#eef6ff"
+  handler: "GaiaHandler\ncore/handler.py"
+  session: "SHORT-TERM: session\nADK InMemorySessionService\nrecent turns; lost on restart / reset" {
+    shape: cylinder
+  }
+  agent: "root agent (LLM)\nprompt = base + <USER_PROFILE>"
+  buffer: "ingest buffer\nbatch by size / age"
+}
+
+profiler: "INITIAL MEMORY: distill_profile  (1 LLM call at session start / config reload)\nfacts + recent projects  ->  <USER_PROFILE> block" {
+  style.fill: "#eafbea"
+}
+
+longterm: "LONG-TERM: mem0  —  scoped by user_id" {
+  style.fill: "#fff7e6"
+  extractor: "fact extractor (LLM)\ninfer=True + custom_instructions\n(durable user facts only)"
+  store: "Chroma vector store\n~/.gaia/memory/chroma\n(+ mem0 sqlite history)" { shape: cylinder }
+}
+
+board: "task board\nTaskStore (recent projects)" { shape: cylinder }
+
+# --- turn flow (short-term) ---
+user -> conversation.handler: "inbound text"
+conversation.handler -> conversation.session: "append turn\n(user + assistant)"
+conversation.session -> conversation.agent: "recent-turns context"
+conversation.agent -> user: "reply"
+
+# --- session-start profile (always-on recall) ---
+conversation.handler -> profiler: "build agent\n(session start / reload)" { style.stroke-dash: 3 }
+longterm.store -> profiler: "list_memories(user_id)" { style.stroke-dash: 3 }
+board -> profiler: "recent projects" { style.stroke-dash: 3 }
+profiler -> conversation.agent: "inject <USER_PROFILE>" { style.stroke-dash: 3 }
+
+# --- recall + write via tools ---
+conversation.agent -> longterm.store: "load_memory(query)\nsemantic top-k (recall_limit)"
+conversation.agent -> longterm.store: "remember(fact)\ninfer=False (verbatim)"
+
+# --- auto-ingest (passive write) ---
+conversation.handler -> conversation.buffer: "buffer each turn"
+conversation.buffer -> longterm.extractor: "flush batch (background)\nadd_events_to_memory"
+longterm.extractor -> longterm.store: "store durable facts"
