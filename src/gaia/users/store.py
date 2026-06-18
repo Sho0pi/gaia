@@ -75,7 +75,6 @@ class UserStore:
         return [User.model_validate(item) for item in raw]
 
     def get(self, user_id: str) -> User | None:
-        """The user with ``user_id``, or ``None``."""
         return next((u for u in self.list() if u.id == user_id), None)
 
     def resolve(self, channel: str, sender_id: str) -> User | None:

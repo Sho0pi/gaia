@@ -19,6 +19,7 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 from gaia.connectors.base import current_chat
+from gaia.tools._helpers import err, ok
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from gaia.users import User, UserStore
@@ -137,26 +138,22 @@ def make_message_user(
         """
         # No self-logging: ToolLoggingPlugin records one tool_used event per call.
         if not text.strip():
-            return {"status": "error", "error_message": "text must not be empty"}
+            return err("text must not be empty")
 
         resolved = _resolve_target(users, connectors, recipient.strip(), channel.strip())
         if isinstance(resolved, str):
-            return {"status": "error", "error_message": resolved}
+            return err(resolved)
         ch, chat = resolved
 
         sender = connectors.get(ch)
         if sender is None:
-            return {
-                "status": "error",
-                "error_message": f"channel {ch!r} is not running — can't deliver "
-                "(start the daemon)",
-            }
+            return err(f"channel {ch!r} is not running — can't deliver (start the daemon)")
 
         try:
             await sender.send_to(chat, text)
         except Exception as exc:  # tools never raise to the model
-            return {"status": "error", "error_message": f"delivery failed: {exc}"}
+            return err(f"delivery failed: {exc}")
 
-        return {"status": "success", "channel": ch, "chat": chat}
+        return ok(channel=ch, chat=chat)
 
     return message_user

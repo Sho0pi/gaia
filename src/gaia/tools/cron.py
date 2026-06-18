@@ -15,6 +15,7 @@ from typing import Any
 
 from gaia.connectors.base import current_chat
 from gaia.cron.store import CronJob, CronStore, validate_schedule
+from gaia.tools._helpers import err, ok
 
 #: Tool id, used by the registry and as the ADK tool name (matches the closure name).
 NAME = "cron"
@@ -56,11 +57,11 @@ def make_cron(store: CronStore | None = None) -> Callable[..., dict[str, Any]]:
         try:
             if action == "add":
                 if not schedule or not message:
-                    return _err("add needs both schedule and message")
+                    return err("add needs both schedule and message")
                 kind, expr = _parse_schedule(schedule)
                 error = validate_schedule(kind, expr)
                 if error:
-                    return _err(error)
+                    return err(error)
                 channel, chat = current_chat.get()
                 job = store.add(
                     CronJob(
@@ -72,46 +73,42 @@ def make_cron(store: CronStore | None = None) -> Callable[..., dict[str, Any]]:
                         chat=chat,
                     )
                 )
-                return {"status": "success", "job": job.model_dump()}
+                return ok(job=job.model_dump())
 
             if action == "list":
-                return {"status": "success", "jobs": [j.model_dump() for j in store.list()]}
+                return ok(jobs=[j.model_dump() for j in store.list()])
 
             if action in ("get", "update", "remove", "enable", "disable"):
                 if not job_id:
-                    return _err(f"{action} needs job_id")
+                    return err(f"{action} needs job_id")
                 job = store.get(job_id)  # type: ignore[assignment]
                 if job is None:
-                    return _err(f"no job {job_id!r}")
+                    return err(f"no job {job_id!r}")
                 if action == "get":
-                    return {"status": "success", "job": job.model_dump()}
+                    return ok(job=job.model_dump())
                 if action == "remove":
                     store.remove(job_id)
-                    return {"status": "success", "removed": job_id}
+                    return ok(removed=job_id)
                 if action in ("enable", "disable"):
                     job.enabled = action == "enable"
                     store.update(job)
-                    return {"status": "success", "job": job.model_dump()}
+                    return ok(job=job.model_dump())
                 # update: replace the provided fields, keep the rest.
                 if schedule:
                     kind, expr = _parse_schedule(schedule)
                     error = validate_schedule(kind, expr)
                     if error:
-                        return _err(error)
+                        return err(error)
                     job.kind, job.expr = kind, expr
                 if message:
                     job.message = message
                 if name:
                     job.name = name
                 store.update(job)
-                return {"status": "success", "job": job.model_dump()}
+                return ok(job=job.model_dump())
 
-            return _err(f"unknown action {action!r} (use {', '.join(_ACTIONS)})")
+            return err(f"unknown action {action!r} (use {', '.join(_ACTIONS)})")
         except Exception as exc:  # tools never raise to the model
-            return _err(str(exc))
+            return err(str(exc))
 
     return cron
-
-
-def _err(message: str) -> dict[str, Any]:
-    return {"status": "error", "error_message": message}

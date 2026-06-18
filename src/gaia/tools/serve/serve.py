@@ -13,6 +13,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from gaia.connectors.base import current_chat
+from gaia.tools._helpers import err, ok
 from gaia.tools.serve.base import ServeError, StaticServerManager
 from gaia.tools.serve.tunnel import TunnelError, TunnelManager
 
@@ -59,9 +60,9 @@ def make_serve(
         try:
             site, url = await manager.serve(path.strip())
         except ServeError as exc:
-            return {"status": "error", "error_message": str(exc)}
+            return err(str(exc))
         except Exception as exc:  # tools never raise to the model
-            return {"status": "error", "error_message": f"could not serve: {exc}"}
+            return err(f"could not serve: {exc}")
 
         result: dict[str, Any] = {
             "status": "success",
@@ -101,12 +102,12 @@ def make_serve_stop(
         try:
             site = await manager.stop(target.strip())
         except Exception as exc:  # tools never raise to the model
-            return {"status": "error", "error_message": f"could not stop: {exc}"}
+            return err(f"could not stop: {exc}")
         if site is None:
-            return {"status": "error", "error_message": f"no server matching {target.strip()!r}"}
+            return err(f"no server matching {target.strip()!r}")
         if tunnel is not None:
             await tunnel.close(site.port)
-        return {"status": "success", "stopped": str(site.root), "port": site.port}
+        return ok(stopped=str(site.root), port=site.port)
 
     return serve_stop
 
@@ -125,6 +126,6 @@ def make_serve_list(
             if live is not None:
                 entry["public_url"] = live.url
             sites.append(entry)
-        return {"status": "success", "servers": sites}
+        return ok(servers=sites)
 
     return serve_list

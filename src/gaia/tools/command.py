@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING, Any
 
 from google.adk.tools.tool_context import ToolContext
 
+from gaia.tools._helpers import err, ok
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from gaia.core.agent import Gaia
     from gaia.core.handler import GaiaHandler
@@ -56,14 +58,14 @@ def make_run_command(
         registry = default_registry(gaia.config)
         cmd = registry.get(name)
         if cmd is None:
-            return {"status": "error", "error_message": f"unknown command {name!r}"}
+            return err(f"unknown command {name!r}")
 
         user_id = getattr(tool_context, "user_id", None) or "gaia"
         user = gaia.users.get(user_id)
         role = user.role if user is not None else "admin"  # unresolved caller is trusted
 
         if handler is None and name in ("reset", "forget"):
-            return {"status": "error", "error_message": f"{name!r} isn't available here"}
+            return err(f"{name!r} isn't available here")
 
         ctx = CommandContext(
             args=full_args,
@@ -77,11 +79,11 @@ def make_run_command(
         # Same ACL gate as the human /cmd path: the agent may run a command iff the user
         # holds its capability (no capability = open). No separate agent tier.
         if refusal := authorize(cmd, ctx):
-            return {"status": "error", "error_message": refusal}
+            return err(refusal)
         try:
             reply = await cmd.run(ctx)
         except Exception as exc:  # tools never raise to the model
-            return {"status": "error", "error_message": f"command failed: {exc}"}
-        return {"status": "success", "command": name, "reply": reply}
+            return err(f"command failed: {exc}")
+        return ok(command=name, reply=reply)
 
     return run_command

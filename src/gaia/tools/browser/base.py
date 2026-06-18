@@ -23,6 +23,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from gaia.tools._helpers import err as err  # re-export for gaia.tools.browser.* importers
+
 #: Snapshot text is capped before it goes to the model (deterministic token budget).
 SNAPSHOT_CHAR_CAP = 8000
 
@@ -176,8 +178,3 @@ def truncate(text: str, cap: int = SNAPSHOT_CHAR_CAP) -> tuple[str, bool]:
     if len(text) <= cap:
         return text, False
     return text[:cap], True
-
-
-def err(message: str) -> dict[str, Any]:
-    """A standard error result dict (matches the fs tools)."""
-    return {"status": "error", "error_message": message}

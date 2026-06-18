@@ -250,7 +250,6 @@ class TaskStore:
     # -- reads -----------------------------------------------------------------------
 
     def get(self, task_id: str) -> Task | None:
-        """The task with ``task_id``, or ``None``."""
         with self._connect() as conn:
             row = conn.execute(f"SELECT {_COLUMNS} FROM tasks WHERE id = ?", (task_id,)).fetchone()
         return _to_task(row) if row is not None else None

@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING, Any
 
 from google.adk.tools.tool_context import ToolContext
 
+from gaia.tools._helpers import err, ok
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from gaia.core.agent import Gaia
     from gaia.users import User, UserStore
@@ -59,18 +61,18 @@ def make_manage_permission(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any]
         caller = gaia.users.get(caller_id) if caller_id else None
         # caller is None only off the dispatch path (cron/cli/tests) — trusted there.
         if caller is not None and not can(caller, MANAGE_USERS, gaia.config):
-            return {"status": "error", "error_message": "only an admin can manage permissions"}
+            return err("only an admin can manage permissions")
 
         act = action.strip().lower()
         if act not in ("grant", "revoke"):
-            return {"status": "error", "error_message": "action must be 'grant' or 'revoke'"}
+            return err("action must be 'grant' or 'revoke'")
         cap = capability.strip()
         if not cap:
-            return {"status": "error", "error_message": "capability must not be empty"}
+            return err("capability must not be empty")
 
         target = _resolve_user(gaia.users, user.strip())
         if target is None:
-            return {"status": "error", "error_message": f"no user matching {user.strip()!r}"}
+            return err(f"no user matching {user.strip()!r}")
 
         updated = (
             gaia.users.grant(target.id, cap)
@@ -78,13 +80,12 @@ def make_manage_permission(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any]
             else gaia.users.revoke(target.id, cap)
         )
         assert updated is not None
-        return {
-            "status": "success",
-            "user": updated.id,
-            "action": act,
-            "capability": cap,
-            "grants": updated.grants,
-            "denies": updated.denies,
-        }
+        return ok(
+            user=updated.id,
+            action=act,
+            capability=cap,
+            grants=updated.grants,
+            denies=updated.denies,
+        )
 
     return manage_permission
