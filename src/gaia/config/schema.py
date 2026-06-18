@@ -428,6 +428,15 @@ class MemoryConfig(BaseModel):
     recall_limit: int = Field(
         default=5, description="How many memories load_memory returns per search."
     )
+    preload: bool = Field(
+        default=True,
+        description="Inject the user's known facts into every turn (always-on recall); "
+        "off = the agent must call load_memory to recall anything.",
+    )
+    preload_limit: int = Field(
+        default=20,
+        description="How many of the user's most recent facts to preload each turn.",
+    )
     # Provider-agnostic components. Defaults wire Gemini (reusing the agent's model; keys
     # come from env like the agent) + a local chroma store; override provider/model per
     # component. Only gemini + chroma are verified — see the provider field. Changing the

@@ -128,7 +128,7 @@ async def test_runner_rebuilds_when_config_changes(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr("gaia.core.plugins.ToolPermissionPlugin", lambda gaia: object())
     monkeypatch.setattr("gaia.core.plugins.ToolLoggingPlugin", lambda: object())
 
-    def _build(_handler: object) -> object:
+    def _build(_handler: object, *, profile_facts: object = None) -> object:
         agent = object()
         builds.append(agent)
         return agent
@@ -146,6 +146,45 @@ async def test_runner_rebuilds_when_config_changes(monkeypatch: pytest.MonkeyPat
 
     assert len(builds) == 2  # rebuilt against the new config
     assert len(services) == 1  # session service reused → conversation history preserved
+
+
+async def test_user_message_is_included_in_the_event_stream() -> None:
+    """The user's own turn must be yielded so auto-ingest sees both sides (not just Gaia)."""
+    captured: dict[str, Any] = {}
+
+    class _CapturingRunner:
+        async def run_async(self, **kwargs: Any) -> AsyncIterator[SimpleNamespace]:
+            captured.update(kwargs)
+            yield _event("ok")
+
+    handler = GaiaHandler(SimpleNamespace(memory_service=None))
+    handler._runner = _CapturingRunner()
+
+    await _collect(handler, "hi")
+
+    assert captured.get("yield_user_message") is True
+
+
+async def test_profile_facts_caps_and_respects_flags() -> None:
+    facts = [f"fact {i}" for i in range(30)]
+
+    async def list_memories(*, user_id: str) -> list[str]:
+        return facts
+
+    memory = SimpleNamespace(preload=True, preload_limit=5)
+    gaia = SimpleNamespace(
+        memory_service=SimpleNamespace(list_memories=list_memories),
+        config=SimpleNamespace(memory=memory),
+    )
+    handler = GaiaHandler(gaia, user_id="u1")
+
+    assert await handler._profile_facts() == facts[:5]  # newest-N profile
+
+    memory.preload = False
+    assert await handler._profile_facts() is None  # preload off
+
+    off = SimpleNamespace(memory_service=None, config=SimpleNamespace(memory=memory))
+    assert await GaiaHandler(off)._profile_facts() is None  # memory disabled
 
 
 class _BoomRunner:
