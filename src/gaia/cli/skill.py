@@ -137,6 +137,9 @@ def new(
     except (FileExistsError, ValueError) as exc:
         out.print(f"could not create skill: {exc}")
         raise typer.Exit(1) from exc
+    from gaia.state import commit_change
+
+    commit_change(f"skill: created '{folder.name}'", description or "")
     out.print(f"created skill {folder.name!r} at {folder}")
 
 
@@ -157,6 +160,9 @@ def install(
     except (FileNotFoundError, FileExistsError, ValueError, RuntimeError) as exc:
         console().print(f"install failed: {exc}")
         raise typer.Exit(1) from exc
+    from gaia.state import commit_change
+
+    commit_change(f"skill: installed {', '.join(ids)}", f"source: {source}")
     console().print(f"installed: {', '.join(ids)}")
 
 
@@ -188,6 +194,9 @@ def remove(
     if not yes:
         typer.confirm(f"delete {len(matched)} skill(s): {', '.join(matched)}?", abort=True)
     removed = remove_skills(skills_dir, patterns)
+    from gaia.state import commit_change
+
+    commit_change(f"skill: removed {', '.join(removed)}")
     out.print(f"removed {len(removed)} skill(s): {', '.join(removed)}")
 
 

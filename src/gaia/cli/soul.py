@@ -173,6 +173,9 @@ def create(
         out.print(f"soul {spec.key!r} already exists — pass --force to overwrite")
         raise typer.Exit(1)
     registry.save(spec)
+    from gaia.state import commit_change
+
+    commit_change(f"soul: created '{spec.key}'", spec.description)
     out.print(f"saved soul {spec.key!r} ({spec.name})")
 
 
@@ -329,6 +332,9 @@ def edit(ctx: typer.Context, key: Annotated[str, typer.Argument(help="The soul k
         raise typer.Exit(1) from exc
 
     registry.save(new_spec)
+    from gaia.state import commit_change
+
+    commit_change(f"soul: edited '{new_spec.key}'", new_spec.description)
     if new_spec.key != key:
         registry.delete(key)  # name changed → don't orphan the old file
         out.print(f"key changed {key!r} → {new_spec.key!r}")

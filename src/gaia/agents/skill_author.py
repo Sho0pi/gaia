@@ -37,13 +37,20 @@ _INSTRUCTION = (
 
 
 def draft_skill(gaia: Gaia, name: str, brief: str, *, user_id: str = "gaia") -> tuple[str, str]:
-    """Research + author ``(description, instructions)`` for a skill (needs a model key)."""
+    """Research + author ``(description, instructions)`` — sync wrapper for the CLI.
+
+    Only for callers with **no** running event loop (the CLI). On an active loop (the
+    self-improve apply path) ``await draft_skill_async(...)`` instead — ``asyncio.run`` would
+    raise there.
+    """
     import asyncio
 
-    return asyncio.run(_draft_skill_async(gaia, name, brief, user_id=user_id))
+    return asyncio.run(draft_skill_async(gaia, name, brief, user_id=user_id))
 
 
-async def _draft_skill_async(gaia: Gaia, name: str, brief: str, *, user_id: str) -> tuple[str, str]:
+async def draft_skill_async(
+    gaia: Gaia, name: str, brief: str, *, user_id: str = "gaia"
+) -> tuple[str, str]:
     from google.adk.agents import LlmAgent
     from google.adk.runners import Runner
     from google.adk.sessions import InMemorySessionService

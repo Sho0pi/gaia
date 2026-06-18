@@ -71,6 +71,9 @@ def _install(skills_dir: object, source: str) -> str:
         ids = install_skill(skills_dir, source)  # type: ignore[arg-type]
     except (FileNotFoundError, FileExistsError, ValueError, RuntimeError) as exc:
         return f"Install failed: {exc}"
+    from gaia.state import commit_change
+
+    commit_change(f"skill: installed {', '.join(ids)}", f"source: {source}")
     return f"Installed: {', '.join(ids)}. Ready to use right away."
 
 
@@ -83,6 +86,9 @@ def _remove(skills_dir: object, rest: str) -> str:
     removed = remove_skills(skills_dir, patterns)  # type: ignore[arg-type]
     if not removed:
         return f"No skills matched {' '.join(patterns)!r} (try /skill list)."
+    from gaia.state import commit_change
+
+    commit_change(f"skill: removed {', '.join(removed)}")
     return f"Removed {len(removed)} skill(s): {', '.join(removed)}."
 
 
