@@ -456,9 +456,12 @@ class WhatsAppWebConnector:
         return f"[voice message] {transcript}"
 
     async def _download_image(self, client: Any, message: Any, image: Any) -> InboundMedia | None:
-        """Download an inbound photo to ``~/.gaia/cache/inbound/<id>.<ext>``; ``None`` on error.
+        """Download an inbound photo to ``UPLOADS_DIR/<id>.<ext>``; ``None`` on error.
 
-        Best-effort like the voice path — a bad image must never take the connector loop down.
+        WhatsApp media is E2E-encrypted on its servers, so it must be downloaded (not read
+        inline). Saved under UPLOADS_DIR (a sandbox root) so a soul can copy it into its
+        workspace and use the real file. Best-effort like the voice path — a bad image must
+        never take the connector loop down.
         """
         import mimetypes
 

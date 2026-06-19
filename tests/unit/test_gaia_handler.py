@@ -124,9 +124,11 @@ async def test_inbound_image_becomes_a_multimodal_turn(tmp_path: Path) -> None:
     parts = captured["new_message"].parts
     assert any(getattr(p, "text", None) == "what's this?" for p in parts)  # the question
     assert any(getattr(p, "inline_data", None) is not None for p in parts)  # the image part
-    # a note tells the agent the file path so it can USE the file (not just see it)
-    assert any(str(img) in (getattr(p, "text", None) or "") for p in parts)
     assert sent == ["it's a cat"]
+    # the file is stashed for delegate_to_soul to copy into a soul's workspace (file use)
+    from gaia.connectors.base import inbound_attachments
+
+    assert inbound_attachments.get() == (img,)
 
 
 async def test_runner_rebuilds_when_config_changes(monkeypatch: pytest.MonkeyPatch) -> None:

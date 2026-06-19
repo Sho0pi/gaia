@@ -92,8 +92,10 @@ def _content_to_input(contents: list[types.Content]) -> list[dict[str, Any]]:
                     }
                 )
             elif part.inline_data and part.inline_data.data:
-                # An inbound image: send it as a Responses input_image (base64 data URL). An
-                # image-only turn would otherwise produce no input items -> 400 "missing input".
+                # An inbound image. This is OpenAI's Responses wire format (input_image +
+                # base64 data URL) — every provider differs (Claude uses source/base64, Gemini
+                # inline_data); we convert here only because this is our own BaseLlm backend.
+                # An image-only turn would otherwise produce no input items -> 400 "missing input".
                 mime = part.inline_data.mime_type or "image/jpeg"
                 b64 = base64.b64encode(bytes(part.inline_data.data)).decode("ascii")
                 items.append(

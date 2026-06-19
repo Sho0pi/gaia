@@ -141,7 +141,7 @@ class GaiaHandler:
         # Build the model turn: the text part (if any) plus an image part per attachment, so
         # the model sees the picture this turn and it stays in the session for follow-ups.
         parts: list[Any] = [types.Part(text=inbound.text)] if inbound.text else []
-        attached: list[str] = []
+        attached: list[Path] = []
         for item in inbound.media:
             try:
                 data = item.path.read_bytes()
@@ -151,22 +151,11 @@ class GaiaHandler:
                 )
                 continue
             parts.append(types.Part.from_bytes(data=data, mime_type=item.mime))
-            attached.append(str(item.path))
-        # Tell the agent the file path(s): the image is also saved in its file sandbox, and
-        # delegate_to_soul copies it into the soul's workspace — so the real file gets used
-        # (e.g. embedded in a website) rather than web-searched or recreated.
-        inbound_attachments.set(tuple(Path(p) for p in attached))
-        if attached:
-            parts.append(
-                types.Part(
-                    text=(
-                        f"[The user attached {len(attached)} image file(s), saved in your "
-                        f"sandbox at: {', '.join(attached)}. To USE an image (e.g. add it to a "
-                        "website), delegate_to_soul — the file is copied into the soul's "
-                        "workspace for it to embed. Don't search the web for it or recreate it.]"
-                    )
-                )
-            )
+            attached.append(item.path)
+        # Stash the files for this turn so delegate_to_soul can copy them into the chosen
+        # soul's workspace (where it can embed them). The model sees the image itself via the
+        # part above — no synthetic "here's the path" message needed.
+        inbound_attachments.set(tuple(attached))
         if not parts:  # nothing to send (empty text, no readable media)
             return
 
