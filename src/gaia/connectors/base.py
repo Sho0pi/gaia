@@ -25,6 +25,12 @@ from pathlib import Path
 #: contextvar form. ``("", "")`` outside any chat (TUI, tests).
 current_chat: ContextVar[tuple[str, str]] = ContextVar("current_chat", default=("", ""))
 
+#: Files the user attached to the turn currently being handled (e.g. an inbound image),
+#: as paths in the file sandbox. The handler sets it per turn; ``delegate_to_soul`` copies
+#: them into the chosen soul's workspace so the soul can use a real, relative file (embed an
+#: image in a site) instead of an absolute path that won't serve. Empty outside a media turn.
+inbound_attachments: ContextVar[tuple[Path, ...]] = ContextVar("inbound_attachments", default=())
+
 
 @dataclass(frozen=True)
 class Media:

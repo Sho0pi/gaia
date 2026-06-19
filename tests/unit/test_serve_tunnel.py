@@ -103,12 +103,17 @@ async def test_unknown_provider_raises(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 class _FakeServer:
-    def __init__(self, port: int = 4321) -> None:
+    def __init__(self, port: int = 4321, entry: str = "") -> None:
         self.port = port
         self.root = "/ws"
+        self.entry = entry
+
+    @property
+    def url(self) -> str:
+        return f"http://127.0.0.1:{self.port}/"
 
     async def serve(self, _path: str) -> tuple[object, str]:
-        return self, f"http://127.0.0.1:{self.port}/"
+        return self, self.url + self.entry
 
     async def stop(self, _target: str) -> object:
         return self
@@ -138,7 +143,16 @@ async def test_serve_public_disabled_reports_error() -> None:
 async def test_serve_public_enabled_returns_url() -> None:
     serve = make_serve(_FakeServer(), _FakeTunnel(), tunnel_enabled=True)  # type: ignore[arg-type]
     out = await serve("/ws", public=True)
-    assert out["public_url"] == "https://pub-4321.loca.lt"
+    assert out["public_url"] == "https://pub-4321.loca.lt/"
+
+
+async def test_public_url_keeps_the_file_entry() -> None:
+    # Serving a specific .html (no index.html): the public link must point at that page, not
+    # the bare directory — otherwise it shows a listing/404 while the screenshot showed the page.
+    serve = make_serve(_FakeServer(entry="site.html"), _FakeTunnel(), tunnel_enabled=True)  # type: ignore[arg-type]
+    out = await serve("/ws", public=True)
+    assert out["url"].endswith("/site.html")
+    assert out["public_url"] == "https://pub-4321.loca.lt/site.html"
 
 
 async def test_serve_auto_public_by_channel(monkeypatch: pytest.MonkeyPatch) -> None:

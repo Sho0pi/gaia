@@ -11,10 +11,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from gaia import constants
-from gaia.connectors.base import Inbound, Send
+from gaia.connectors.base import Inbound, Send, inbound_attachments
 from gaia.logs import log_event
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -151,16 +152,18 @@ class GaiaHandler:
                 continue
             parts.append(types.Part.from_bytes(data=data, mime_type=item.mime))
             attached.append(str(item.path))
-        # Tell the agent the file path(s): the image is also saved in its file sandbox, so it
-        # can read/copy the real file (e.g. to embed in a website) rather than recreate it.
+        # Tell the agent the file path(s): the image is also saved in its file sandbox, and
+        # delegate_to_soul copies it into the soul's workspace — so the real file gets used
+        # (e.g. embedded in a website) rather than web-searched or recreated.
+        inbound_attachments.set(tuple(Path(p) for p in attached))
         if attached:
             parts.append(
                 types.Part(
                     text=(
                         f"[The user attached {len(attached)} image file(s), saved in your "
                         f"sandbox at: {', '.join(attached)}. To USE an image (e.g. add it to a "
-                        "website or a soul's workspace) read or copy it from that path — don't "
-                        "search the web for it or recreate it.]"
+                        "website), delegate_to_soul — the file is copied into the soul's "
+                        "workspace for it to embed. Don't search the web for it or recreate it.]"
                     )
                 )
             )

@@ -17,11 +17,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from gaia import constants
+from gaia.connectors.base import inbound_attachments
 from gaia.souls.smith import SoulDecision, build_soul_smith
 from gaia.tools.fs.base import sandbox_for
 
@@ -67,6 +69,27 @@ def _snapshot(primary: Path) -> dict[str, float]:
     return {
         str(p.relative_to(primary)): p.stat().st_mtime for p in primary.rglob("*") if p.is_file()
     }
+
+
+def _attach_uploads(primary: Path) -> list[str]:
+    """Copy the turn's user attachments into the soul's workspace; return the relative names.
+
+    A binary upload (e.g. an inbound image) lives in the shared uploads dir, outside the
+    soul's workspace and unreachable over the http server that serves a built site. Copying
+    it in gives the soul a real, relative file it can embed (``<img src="logo.jpg">``) and
+    that the server actually serves. No attachments (the dispatcher path) → no-op.
+    """
+    copied: list[str] = []
+    for src in inbound_attachments.get():
+        dest = primary / src.name
+        try:
+            primary.mkdir(parents=True, exist_ok=True)
+            if not dest.exists():
+                shutil.copy2(src, dest)
+            copied.append(src.name)
+        except OSError as exc:  # best-effort; a missing/unreadable upload just isn't attached
+            logger.warning("could not attach upload %s to %s: %s", src, primary, exc)
+    return copied
 
 
 def _changed(before: dict[str, float], after: dict[str, float]) -> list[str]:
@@ -177,6 +200,15 @@ async def execute_decision(
     # threaded in per build rather than living in the static tool registry.
     soul = gaia.factory.create_or_reuse(spec, extra_tools=[make_consult_soul(gaia)])
     primary = sandbox_for(constants.AGENTS_DIR, spec.key).primary
+    # Bring the user's attachments into the workspace *before* the baseline snapshot, so the
+    # copies aren't reported back as the soul's own deliverables.
+    attached = _attach_uploads(primary)
+    if attached:
+        task = (
+            f"{task}\n\n[The user's attached file(s) are in your workspace: "
+            f"{', '.join(attached)} — use these relative names directly (e.g. "
+            f'<img src="{attached[0]}">). Do not search the web for them or recreate them.]'
+        )
     before = _snapshot(primary)
     timeout = gaia.config.souls.timeout_seconds  # read per call so yaml edits hot-reload
     run_state = {**(state or {}), "created_by": spec.key}

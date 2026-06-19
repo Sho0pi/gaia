@@ -82,6 +82,27 @@ async def test_execute_decision_forge_runs_the_soul(
     assert gaia.souls.get("writer") is not None  # forged soul persisted for reuse
 
 
+async def test_execute_decision_copies_attachments_into_workspace(
+    gaia: Gaia, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A user's uploaded image must land in the soul's workspace (relative, servable) — not stay
+    # in the shared uploads dir where a served site can't reach it.
+    from gaia.connectors.base import inbound_attachments
+
+    upload = tmp_path / "logo.png"
+    upload.write_bytes(b"img-bytes")
+    _install(monkeypatch, FakeLlm(responses=[_text("built the site")]))
+
+    token = inbound_attachments.set((upload,))
+    try:
+        run = await execute_decision(gaia, _FORGE, "put the logo on a page", user_id="itay")
+    finally:
+        inbound_attachments.reset(token)
+
+    assert run.ok
+    assert (Path(run.workspace) / "logo.png").read_bytes() == b"img-bytes"
+
+
 async def test_execute_decision_reuse_uses_stored_soul(
     gaia: Gaia, monkeypatch: pytest.MonkeyPatch
 ) -> None:

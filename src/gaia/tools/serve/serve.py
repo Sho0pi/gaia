@@ -74,7 +74,11 @@ def make_serve(
         if want_public:
             if tunnel_enabled and tunnel is not None:
                 try:
-                    result["public_url"] = await tunnel.open(site.port)
+                    # The tunnel forwards the port root; re-attach the entry (e.g. "site.html")
+                    # so the public link opens the same page the local url/screenshot does — not
+                    # the bare directory (a listing or 404 when there's no index.html).
+                    base = (await tunnel.open(site.port)).rstrip("/")
+                    result["public_url"] = base + "/" + url[len(site.url) :]
                 except TunnelError as exc:
                     result["public_url_error"] = str(exc)
             elif public is True:
