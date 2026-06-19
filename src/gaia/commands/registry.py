@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from gaia.commands.base import Command
+from gaia.commands.effort import EffortCommand
 from gaia.commands.forget import ForgetCommand
 from gaia.commands.grow import GrowCommand
 from gaia.commands.help import HelpCommand
@@ -62,6 +63,7 @@ _BUILTINS: tuple[Command, ...] = (
     SkillCommand(),
     GrowCommand(),
     ModelCommand(),
+    EffortCommand(),
 )
 
 

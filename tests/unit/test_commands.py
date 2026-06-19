@@ -57,6 +57,49 @@ def _run(name: str, ctx: CommandContext) -> Any:
     return default_registry().get(name).run(ctx)
 
 
+def _effort_ctx(args: str, cfg_path: Any, *, provider: str = "openai", model: str = "gpt-5.5"):
+    from gaia.config.schema import LLMConfig
+
+    gaia = SimpleNamespace(
+        config=GaiaConfig(llm=LLMConfig(provider=provider, model=model)),
+        settings=SimpleNamespace(model=model, config_path=cfg_path),
+    )
+    return CommandContext(
+        args=args,
+        gaia=gaia,
+        handler=SimpleNamespace(),
+        registry=default_registry(),
+        user_id="u1",
+        session_id="s1",
+    )
+
+
+async def test_effort_shows_writes_and_clears(tmp_path: Any) -> None:
+    cfg = tmp_path / "gaia.yaml"
+
+    # No arg -> shows current (default).
+    assert "(default)" in await _run("effort", _effort_ctx("", cfg))
+
+    # Set -> persisted to yaml.
+    out = await _run("effort", _effort_ctx("high", cfg))
+    assert "set to 'high'" in out
+    assert 'effort: "high"' in cfg.read_text()
+
+    # Clear -> blanks it.
+    await _run("effort", _effort_ctx("off", cfg))
+    assert 'effort: ""' in cfg.read_text()
+
+
+async def test_effort_rejects_unknown_level(tmp_path: Any) -> None:
+    out = await _run("effort", _effort_ctx("turbo", tmp_path / "gaia.yaml"))
+    assert "Unknown effort" in out
+
+
+async def test_effort_warns_on_nonthinking_model(tmp_path: Any) -> None:
+    ctx = _effort_ctx("high", tmp_path / "gaia.yaml", provider="gemini", model="gemini-2.0-flash")
+    assert "no reasoning dial" in await _run("effort", ctx)
+
+
 async def test_help_lists_every_command() -> None:
     out = await _run("help", _ctx())
 

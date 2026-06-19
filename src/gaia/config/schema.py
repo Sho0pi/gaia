@@ -41,6 +41,13 @@ class LLMConfig(BaseModel):
     model: str = Field(
         default="gemini-2.0-flash", description="Model id, e.g. gemini-2.5-flash or gpt-4o."
     )
+    effort: str = Field(
+        default="",
+        description="Reasoning effort for thinking-capable models: minimal|low|medium|high "
+        "(blank = provider default). Mapped per provider — OpenAI/Anthropic via litellm "
+        "reasoning_effort, ChatGPT-OAuth via reasoning.effort, Gemini via thinking budget. "
+        "Change it from chat with /effort.",
+    )
     # Per-provider blocks. Each provider gets its own settings sub-block here as needed
     # (openai today; anthropic/gemini/… can follow the same shape).
     openai: OpenAIConfig = Field(

@@ -7,9 +7,10 @@ ADK's request/response to that backend, mirroring openclaw's
 ``src/llm/providers/openai-chatgpt-responses.ts``.
 
 Scope: text + inbound images + function (tool) calls, with gpt-5.x reasoning items replayed
-across turns (carried on a ``thought_signature`` part) so tool calls don't loop. (A vision
-model is needed for images.) The wire shape of this backend is unofficial and may change; everything
-backend-specific is kept in this one module.
+across turns (carried on a ``thought_signature`` part) so tool calls don't loop, and a tunable
+reasoning ``effort`` (``reasoning.effort``). (A vision model is needed for images.) The wire
+shape of this backend is unofficial and may change; everything backend-specific is kept in
+this one module.
 
 httpx is imported lazily (optional ``llm`` dep group).
 """
@@ -186,6 +187,10 @@ def _system_text(llm_request: LlmRequest) -> str:
 class ChatGptOAuthLlm(BaseLlm):
     """Run an LLM turn over the user's ChatGPT subscription (Responses backend)."""
 
+    #: Reasoning effort (minimal|low|medium|high); blank = the model's default. Sent as the
+    #: Responses ``reasoning.effort`` so the gpt-5.x backend thinks harder or faster on demand.
+    effort: str = ""
+
     @staticmethod
     def supported_models() -> list[str]:
         return [r"openai-chatgpt/.*", r"chatgpt/.*"]
@@ -193,19 +198,12 @@ class ChatGptOAuthLlm(BaseLlm):
     def _model_id(self) -> str:
         return self.model.split("/", 1)[1] if "/" in self.model else self.model
 
-    async def generate_content_async(
-        self, llm_request: LlmRequest, stream: bool = False
-    ) -> AsyncGenerator[LlmResponse, None]:
-        import httpx
-
-        creds = load_credentials()
-        if creds is None:
-            raise ChatGptNotAuthenticatedError("no ChatGPT login — run: gaia llm auth openai")
-
-        # Body shape matches openclaw's working Codex request (buildRequestBody): the
-        # backend 400s without text/include/tool_choice/parallel_tool_calls/prompt_cache_key,
-        # and rejects an empty instructions string or an empty tools array.
-        session_id = str(uuid.uuid4())
+    def _request_body(self, llm_request: LlmRequest, session_id: str) -> dict[str, Any]:
+        """The Responses request body. Shape matches openclaw's working Codex request
+        (buildRequestBody): the backend 400s without text/include/tool_choice/
+        parallel_tool_calls/prompt_cache_key, and rejects an empty instructions string or an
+        empty tools array. ``reasoning.effort`` is added only when an effort is set.
+        """
         body: dict[str, Any] = {
             "model": self._model_id(),
             "instructions": _system_text(llm_request) or "You are a helpful assistant.",
@@ -218,9 +216,24 @@ class ChatGptOAuthLlm(BaseLlm):
             "include": ["reasoning.encrypted_content"],
             "prompt_cache_key": session_id,
         }
+        if self.effort:
+            body["reasoning"] = {"effort": self.effort}
         tools = _tools_from_request(llm_request)
         if tools:
             body["tools"] = tools
+        return body
+
+    async def generate_content_async(
+        self, llm_request: LlmRequest, stream: bool = False
+    ) -> AsyncGenerator[LlmResponse, None]:
+        import httpx
+
+        creds = load_credentials()
+        if creds is None:
+            raise ChatGptNotAuthenticatedError("no ChatGPT login — run: gaia llm auth openai")
+
+        session_id = str(uuid.uuid4())
+        body = self._request_body(llm_request, session_id)
 
         async with httpx.AsyncClient(timeout=httpx.Timeout(600.0)) as client:
             creds = await self._ensure_fresh(creds, client)

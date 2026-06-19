@@ -32,6 +32,7 @@ def test_default_registry_has_every_builtin() -> None:
         "skill",
         "grow",
         "model",
+        "effort",
     }
 
 
