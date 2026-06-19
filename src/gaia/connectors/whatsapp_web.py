@@ -170,15 +170,35 @@ def _message_text(message: Any) -> str:
     return text
 
 
-def _image_message(message: Any) -> Any | None:
-    """The inbound ``imageMessage`` if this event carries a real photo, else ``None``.
+#: Downloadable inbound attachments, as ``(neonize proto field, InboundMedia.kind)``. The
+#: handler hands each to the model as a file part, so the kind only labels it; stickers are
+#: webp images. Audio is *not* here — it goes through the transcription path instead.
+_MEDIA_KINDS: tuple[tuple[str, str], ...] = (
+    ("imageMessage", "image"),
+    ("videoMessage", "video"),
+    ("documentMessage", "document"),
+    ("stickerMessage", "image"),
+)
 
-    Mirrors the voice check: the proto field is always present, so a non-empty ``mediaKey``
-    is what tells a real attachment from the default-empty one.
+#: Fallback mime when a proto omits ``mimetype``, by kind.
+_DEFAULT_MIME = {
+    "image": "image/jpeg",
+    "video": "video/mp4",
+    "document": "application/octet-stream",
+}
+
+
+def _media_message(message: Any) -> tuple[Any, str] | None:
+    """The first real downloadable attachment as ``(proto, kind)``, else ``None``.
+
+    Like the voice check, the proto field is always present, so a non-empty ``mediaKey`` is
+    what distinguishes a real attachment from the default-empty one.
     """
-    image = getattr(message.Message, "imageMessage", None)
-    if image is not None and getattr(image, "mediaKey", None):
-        return image
+    msg = message.Message
+    for field, kind in _MEDIA_KINDS:
+        proto = getattr(msg, field, None)
+        if proto is not None and getattr(proto, "mediaKey", None):
+            return proto, kind
     return None
 
 
@@ -275,12 +295,13 @@ class WhatsAppWebConnector:
             text = _message_text(message)
             was_voice = False
             media: tuple[InboundMedia, ...] = ()
-            image = _image_message(message)
-            if image is not None:  # an inbound photo (with optional caption)
-                item = await self._download_image(client, message, image)
+            found = _media_message(message)  # image/video/document/sticker, with optional caption
+            if found is not None:
+                proto, kind = found
+                item = await self._download_media(client, message, proto, kind)
                 if item is not None:
                     media = (item,)
-                    text = text or (getattr(image, "caption", "") or "")
+                    text = text or (getattr(proto, "caption", "") or "")
             elif not text:
                 text = await self._transcribe_voice(client, message)
                 was_voice = bool(text)  # inbound was a (transcribed) voice note
@@ -455,28 +476,33 @@ class WhatsAppWebConnector:
         # The prefix tells Gaia the modality, so it answers the spoken content naturally.
         return f"[voice message] {transcript}"
 
-    async def _download_image(self, client: Any, message: Any, image: Any) -> InboundMedia | None:
-        """Download an inbound photo to ``UPLOADS_DIR/<id>.<ext>``; ``None`` on error.
+    async def _download_media(
+        self, client: Any, message: Any, proto: Any, kind: str
+    ) -> InboundMedia | None:
+        """Download an inbound attachment (image/video/document/sticker) to ``UPLOADS_DIR``.
 
         WhatsApp media is E2E-encrypted on its servers, so it must be downloaded (not read
         inline). Saved under UPLOADS_DIR (a sandbox root) so a soul can copy it into its
-        workspace and use the real file. Best-effort like the voice path — a bad image must
-        never take the connector loop down.
+        workspace and use the real file. Best-effort like the voice path — a bad attachment
+        must never take the connector loop down; returns ``None`` on failure.
         """
         import mimetypes
 
-        mime = getattr(image, "mimetype", "") or "image/jpeg"
-        ext = mimetypes.guess_extension(mime.split(";")[0]) or ".jpg"
-        # Saved under UPLOADS_DIR (a sandbox root) so a tool/soul can read or copy it, not
-        # just see it in the model's context.
+        mime = getattr(proto, "mimetype", "") or _DEFAULT_MIME[kind]
+        # Prefer a document's own extension; else derive one from the mime.
+        ext = (
+            Path(getattr(proto, "fileName", "") or "").suffix
+            or mimetypes.guess_extension(mime.split(";")[0])
+            or ".bin"
+        )
         path = constants.UPLOADS_DIR / f"{message.Info.ID}{ext}"
         path.parent.mkdir(parents=True, exist_ok=True)
         try:
             await client.download_any(message.Message, str(path))
         except Exception:
-            logger.warning("inbound image dropped: download failed", exc_info=True)
+            logger.warning("inbound %s dropped: download failed", kind, exc_info=True)
             return None
-        return InboundMedia(path=path, mime=mime, kind="image")
+        return InboundMedia(path=path, mime=mime, kind=kind)
 
     async def pair(self, timeout_s: float = 120.0) -> bool:
         """Foreground QR pairing: connect, wait for scan, then shut the client down.

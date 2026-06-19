@@ -93,21 +93,26 @@ def _content_to_input(contents: list[types.Content]) -> list[dict[str, Any]]:
                     }
                 )
             elif part.inline_data and part.inline_data.data:
-                # An inbound image. This is OpenAI's Responses wire format (input_image +
-                # base64 data URL) — every provider differs (Claude uses source/base64, Gemini
-                # inline_data); we convert here only because this is our own BaseLlm backend.
-                # An image-only turn would otherwise produce no input items -> 400 "missing input".
                 mime = part.inline_data.mime_type or "image/jpeg"
-                b64 = base64.b64encode(bytes(part.inline_data.data)).decode("ascii")
-                items.append(
-                    {
-                        "type": "message",
-                        "role": role,
-                        "content": [
-                            {"type": "input_image", "image_url": f"data:{mime};base64,{b64}"}
-                        ],
+                if mime.startswith("image/"):
+                    # An inbound image. This is OpenAI's Responses wire format (input_image +
+                    # base64 data URL) — every provider differs (Claude uses source/base64,
+                    # Gemini inline_data); we convert here only because this is our own backend.
+                    # An image-only turn would otherwise produce no input items -> 400.
+                    b64 = base64.b64encode(bytes(part.inline_data.data)).decode("ascii")
+                    block: dict[str, Any] = {
+                        "type": "input_image",
+                        "image_url": f"data:{mime};base64,{b64}",
                     }
-                )
+                else:
+                    # Video/audio/PDF: this backend has no vision for them. Don't drop the part
+                    # silently (an attachment-only turn would then have no input -> 400); send a
+                    # text note so the turn stays valid and the model can say it can't view it.
+                    block = {
+                        "type": "input_text",
+                        "text": f"[the user sent a {mime} file, which this model can't open]",
+                    }
+                items.append({"type": "message", "role": role, "content": [block]})
             elif part.function_call:
                 call_id = part.function_call.id or part.function_call.name or ""
                 call_ids.add(call_id)
