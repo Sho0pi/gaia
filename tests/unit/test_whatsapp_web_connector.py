@@ -463,6 +463,41 @@ async def test_inbound_media_types_downloaded_and_dispatched(
         assert item.path.suffix == ".pdf"  # document keeps its own extension
 
 
+async def test_inbound_location_becomes_text(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
+    captured: list[Inbound] = []
+
+    async def dispatch(_sender_id: str, _name: str, inbound: Inbound, _send: Send) -> None:
+        captured.append(inbound)
+
+    msg = _msg()
+    msg.Message.locationMessage = SimpleNamespace(
+        degreesLatitude=32.07, degreesLongitude=34.78, name="Tel Aviv", address=""
+    )
+    client = WhatsAppWebConnector(tmp_path / "wa.db", dispatch).build_client()
+    await client.handlers[fake_neonize["MessageEv"]](client, msg)
+
+    assert len(captured) == 1 and not captured[0].media
+    text = captured[0].text
+    assert "32.07,34.78" in text and "Tel Aviv" in text and "maps.google.com" in text
+
+
+async def test_inbound_contact_becomes_text(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
+    captured: list[Inbound] = []
+
+    async def dispatch(_sender_id: str, _name: str, inbound: Inbound, _send: Send) -> None:
+        captured.append(inbound)
+
+    msg = _msg()
+    msg.Message.contactMessage = SimpleNamespace(
+        displayName="Dana", vcard="BEGIN:VCARD\nTEL;waid=972:+972 50-123-4567\nEND:VCARD"
+    )
+    client = WhatsAppWebConnector(tmp_path / "wa.db", dispatch).build_client()
+    await client.handlers[fake_neonize["MessageEv"]](client, msg)
+
+    assert len(captured) == 1
+    assert "Dana" in captured[0].text and "+972 50-123-4567" in captured[0].text
+
+
 async def test_start_stops_client_on_cancel(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
     # The shutdown hang: a cancelled start() must call stop() — disconnect() alone leaves
     # neonize's blocking Go call parked in a non-daemon thread that wedges interpreter exit.
