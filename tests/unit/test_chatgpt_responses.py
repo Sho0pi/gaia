@@ -76,6 +76,23 @@ def test_reasoning_part_is_replayed_as_a_reasoning_item() -> None:
     assert item == {"type": "reasoning", "id": "rs_1", "encrypted_content": "enc", "summary": []}
 
 
+def test_inbound_image_becomes_an_input_image_item() -> None:
+    # An image-only turn must produce a real input item (else the backend 400s "missing input").
+    contents = [
+        types.Content(
+            role="user",
+            parts=[types.Part.from_bytes(data=b"\xff\xd8\xffjpeg", mime_type="image/jpeg")],
+        )
+    ]
+
+    item = _content_to_input(contents)[0]
+
+    assert item["type"] == "message" and item["role"] == "user"
+    img = item["content"][0]
+    assert img["type"] == "input_image"
+    assert img["image_url"].startswith("data:image/jpeg;base64,")
+
+
 def test_orphaned_function_call_gets_synthetic_output() -> None:
     # A turn cancelled mid-flight leaves a function_call with no matching response.
     # Without healing, the backend 400s ("No tool output found") on every later turn.
