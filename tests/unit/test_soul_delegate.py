@@ -30,7 +30,7 @@ class _FakeFactory:
     def __init__(self, registry: SoulRegistry) -> None:
         self._registry = registry
 
-    def create_or_reuse(self, spec: AgentSpec, *, extra_tools: Any = None) -> Any:
+    def create_or_reuse(self, spec: AgentSpec, *, effort: str = "", extra_tools: Any = None) -> Any:
         if self._registry.get(spec.key) is None:
             self._registry.save(spec)
         return SimpleNamespace(name=spec.key)
@@ -40,7 +40,7 @@ def _gaia(registry: SoulRegistry) -> Any:
     return SimpleNamespace(
         config=SimpleNamespace(
             llm=SimpleNamespace(
-                model="m", provider="gemini", openai=SimpleNamespace(use_oauth=False)
+                model="m", provider="gemini", effort="", openai=SimpleNamespace(use_oauth=False)
             ),
             souls=SimpleNamespace(timeout_seconds=300.0),
         ),

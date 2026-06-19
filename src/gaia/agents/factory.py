@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 from gaia.agents.registry import SoulRegistry
 from gaia.agents.spec import AgentSpec, slugify
 from gaia.communication import DEFAULT_COMMUNICATION_STYLE, apply_communication_style
-from gaia.models import resolve_model
+from gaia.models import resolve_model, thinking_planner
 from gaia.skills import attach_skills, load_skill
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -64,23 +64,27 @@ class AgentFactory:
         self._mcp_toolsets_provider = mcp_toolsets_provider or (lambda: [])
         self._skill_toolset_provider = skill_toolset_provider or (lambda: [])
 
-    def create_or_reuse(self, spec: AgentSpec, *, extra_tools: list[Any] | None = None) -> LlmAgent:
+    def create_or_reuse(
+        self, spec: AgentSpec, *, effort: str = "", extra_tools: list[Any] | None = None
+    ) -> LlmAgent:
         """Return an ADK agent for ``spec``, loading from the registry if present.
 
         New specs are persisted so future tasks reuse them instead of recreating.
         ``extra_tools`` are appended to the soul's tools at build time — the soul-run core
         passes ``consult_soul`` here (it needs the live ``gaia``, so it can't sit in the
-        static registry and must be threaded in per build).
+        static registry and must be threaded in per build). ``effort`` is the live
+        ``llm.effort`` (passed by the caller, which has the live config) so souls reason at the
+        configured level without a restart.
         """
         stored = self._registry.get(spec.key)
         if stored is not None:
             spec = stored
         else:
             self._registry.save(spec)
-        return self._build_llm_agent(spec, extra_tools=extra_tools)
+        return self._build_llm_agent(spec, effort=effort, extra_tools=extra_tools)
 
     def _build_llm_agent(
-        self, spec: AgentSpec, *, extra_tools: list[Any] | None = None
+        self, spec: AgentSpec, *, effort: str = "", extra_tools: list[Any] | None = None
     ) -> LlmAgent:
         """Construct the concrete ADK agent. Imports ADK lazily on purpose."""
         from google.adk.agents import LlmAgent
@@ -106,13 +110,16 @@ class AgentFactory:
             *(extra_tools or []),
         ]
 
+        model_id = spec.model or self._default_model
         return LlmAgent(
             name=spec.key,
             model=resolve_model(
-                spec.model or self._default_model,
+                model_id,
                 provider=self._default_provider,
                 use_oauth=self._default_use_oauth,
+                effort=effort,
             ),
+            planner=thinking_planner(self._default_provider, model_id, effort),
             description=spec.description,
             instruction=instruction,
             tools=tools,

@@ -24,7 +24,7 @@ from gaia.communication import apply_communication_style
 from gaia.config import ConfigSupplier, Settings, configure_adk_env, get_settings
 from gaia.config.schema import AgentBinding
 from gaia.di import Container
-from gaia.models import resolve_model
+from gaia.models import resolve_model, thinking_planner
 from gaia.skills import attach_skills
 
 logger = logging.getLogger(__name__)
@@ -109,7 +109,7 @@ class Gaia:
 
     def ensure_agent(self, spec: AgentSpec) -> LlmAgent:
         """Get a subagent for ``spec`` — reused if known, created+stored if new."""
-        return self.factory.create_or_reuse(spec)
+        return self.factory.create_or_reuse(spec, effort=self.config.llm.effort)
 
     def known_souls(self) -> list[str]:
         """Keys of every subagent Gaia has already learned."""
@@ -133,7 +133,7 @@ class Gaia:
         from google.adk.agents import BaseAgent, LlmAgent
 
         sub_agents: list[BaseAgent] = [
-            self.factory.create_or_reuse(self.souls.get(key))  # type: ignore[arg-type]
+            self.factory.create_or_reuse(self.souls.get(key), effort=self.config.llm.effort)  # type: ignore[arg-type]
             for key in self.known_souls()
         ]
         from datetime import datetime
@@ -217,13 +217,16 @@ class Gaia:
         # delegate_to_soul and message_user are attached to the root only — souls (built
         # from self.tools) never receive them, so a soul can neither spawn souls nor text
         # arbitrary users. message_user needs the live connector registry on `self`.
+        root_model = self.config.llm.model or self.settings.model
         return LlmAgent(
             name="gaia",
             model=resolve_model(
-                self.config.llm.model or self.settings.model,
+                root_model,
                 provider=self.config.llm.provider,
                 use_oauth=self.config.llm.openai.use_oauth,
+                effort=self.config.llm.effort,
             ),
+            planner=thinking_planner(self.config.llm.provider, root_model, self.config.llm.effort),
             description="Root orchestrator that routes tasks to specialized subagents.",
             instruction=instruction,
             tools=[

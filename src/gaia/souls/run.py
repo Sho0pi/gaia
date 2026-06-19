@@ -213,7 +213,9 @@ async def execute_decision(
 
     # Every soul run can ask an expert (consult_soul); it needs the live gaia, so it's
     # threaded in per build rather than living in the static tool registry.
-    soul = gaia.factory.create_or_reuse(spec, extra_tools=[make_consult_soul(gaia)])
+    soul = gaia.factory.create_or_reuse(
+        spec, effort=gaia.config.llm.effort, extra_tools=[make_consult_soul(gaia)]
+    )
     # Scope the whole run to the project dir: set the contextvar *before* resolving the
     # workspace, so the upload-copy, snapshot, the soul's own fs/exec tools, and the diff all
     # target workspace/<project>. Reset on exit so the caller (root Gaia) isn't left scoped.

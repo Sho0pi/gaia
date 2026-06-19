@@ -36,6 +36,19 @@ def test_tool_schema_types_are_lowercased_json_schema() -> None:
     assert params["properties"]["c"]["type"] == "string"
 
 
+def test_request_body_includes_reasoning_effort_when_set() -> None:
+    req = LlmRequest(
+        contents=[types.Content(role="user", parts=[types.Part(text="hi")])],
+        config=types.GenerateContentConfig(),
+    )
+
+    high = ChatGptOAuthLlm(model="gpt-5.5", effort="high")._request_body(req, "sid")
+    assert high["reasoning"] == {"effort": "high"}
+
+    default = ChatGptOAuthLlm(model="gpt-5.5")._request_body(req, "sid")
+    assert "reasoning" not in default  # no effort -> field omitted
+
+
 def test_function_response_with_pydantic_payload_is_serializable() -> None:
     import json
 
