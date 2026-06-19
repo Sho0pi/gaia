@@ -48,6 +48,14 @@ class Settings(BaseSettings):
         default=constants.LOG_DIR, validation_alias=f"{constants.ENV_PREFIX}LOG_DIR"
     )
 
+    # Cross-channel user store (channel sender -> canonical user). ``default_factory`` reads
+    # ``constants`` at construction so tests can redirect the whole store to a tmp home by
+    # patching ``constants.USERS_FILE`` (keeps test runs from writing the real ~/.gaia file).
+    users_file: Path = Field(
+        default_factory=lambda: constants.USERS_FILE,
+        validation_alias=f"{constants.ENV_PREFIX}USERS_FILE",
+    )
+
     # Connector credentials.
     telegram_bot_token: str | None = Field(
         default=None, validation_alias=f"{constants.ENV_PREFIX}TELEGRAM_BOT_TOKEN"
