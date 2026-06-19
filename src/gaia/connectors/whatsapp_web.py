@@ -198,9 +198,9 @@ def _vcard_phone(vcard: str) -> str:
 def _describe_special(message: Any) -> str:
     """A text proxy for inbound types that are neither text nor a downloadable file.
 
-    Location and shared contacts have no file to hand the model, so we turn them into a short
-    bracketed line Gaia answers like any text. Returns ``""`` when none apply (so the message is
-    ignored as before). Interactive/poll types are a follow-up.
+    Location, shared contacts, and interactive replies (poll / button / list / reaction) have no
+    file to hand the model, so we turn them into a short bracketed line Gaia answers like any
+    text. Returns ``""`` when none apply (so the message is dropped as before).
     """
     msg = message.Message
     loc = getattr(msg, "locationMessage", None) or getattr(msg, "liveLocationMessage", None)
@@ -224,6 +224,28 @@ def _describe_special(message: Any) -> str:
             for c in contacts
         )
         return f"[Contacts: {names}]"
+    return _interactive_text(msg)
+
+
+def _interactive_text(msg: Any) -> str:
+    """Text proxy for an interactive reply (button / list / template / poll / reaction)."""
+    for field in ("buttonsResponseMessage", "templateButtonReplyMessage"):
+        chosen = getattr(getattr(msg, field, None), "selectedDisplayText", None)
+        if chosen:
+            return f"[Selected: {chosen}]"
+    title = getattr(getattr(msg, "listResponseMessage", None), "title", None)
+    if title:
+        return f"[Selected: {title}]"
+    poll = getattr(msg, "pollCreationMessage", None)
+    poll_name = getattr(poll, "name", None) if poll is not None else None
+    if poll_name:
+        opts = ", ".join(
+            getattr(o, "optionName", "") for o in getattr(poll, "options", None) or [] if o
+        )
+        return f"[Poll: {poll_name}" + (f" — options: {opts}" if opts else "") + "]"
+    emoji = getattr(getattr(msg, "reactionMessage", None), "text", None)
+    if emoji:
+        return f"[Reacted {emoji} to a message]"
     return ""
 
 
