@@ -13,6 +13,7 @@ class StatusCommand(Command):
     async def run(self, ctx: CommandContext) -> str:
         cfg = ctx.gaia.config
         model = cfg.llm.model or ctx.gaia.settings.model
+        effort = f"  (effort: {cfg.llm.effort})" if cfg.llm.effort else ""
         mem = cfg.memory
         memory_line = (
             f"on (auto_ingest={mem.auto_ingest}, batch={mem.ingest_batch_size})"
@@ -20,7 +21,7 @@ class StatusCommand(Command):
             else "off"
         )
         lines = [
-            f"model: {model}",
+            f"model: {model}{effort}",
             f"memory: {memory_line}",
             f"subagents: {len(ctx.gaia.known_souls())}",
             f"tools: {len(ctx.gaia.tools.names())}",
