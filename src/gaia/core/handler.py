@@ -212,7 +212,7 @@ class GaiaHandler:
         media = media_for_outputs(events)
         if media:
             # The reply text rides as the caption of the first attachment (one combined
-            # message); each file keeps its own caption otherwise (a share_file carries the
+            # message); each file keeps its own caption otherwise (a send_file carries the
             # model's words, screenshots their "screenshot" label).
             caption = "\n".join(t.strip() for t in texts if t.strip())
             for i, item in enumerate(media):

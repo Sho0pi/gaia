@@ -44,7 +44,7 @@ def make_serve(
         """Serve a built *website* so you can open or screenshot it (or share a live preview).
 
         This is for previewing a website. To hand the user a FILE (document, image, a zip of
-        files), use share_file — never serve a link for that.
+        files), use send_file — never serve a link for that.
 
         Pass a soul's workspace directory (or a specific .html file in it). Open the
         returned ``url`` with browser_navigate and browser_screenshot to render it — a real

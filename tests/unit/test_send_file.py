@@ -1,4 +1,4 @@
-"""share_file tool + the outbound-media event scan that surfaces its result as Media."""
+"""send_file tool + the outbound-media event scan that surfaces its result as Media."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from gaia import constants
-from gaia.tools.share import make_share_file
+from gaia.tools.send_file import make_send_file
 
 
 @pytest.fixture(autouse=True)
@@ -22,44 +22,44 @@ def _ctx(agent: str = "gaia") -> SimpleNamespace:
     return SimpleNamespace(agent_name=agent)
 
 
-async def test_share_file_reports_path_kind_caption(tmp_path: Path) -> None:
+async def test_send_file_reports_path_kind_caption(tmp_path: Path) -> None:
     f = tmp_path / "agents" / "gaia" / "workspace" / "report.pdf"
     f.parent.mkdir(parents=True)
     f.write_bytes(b"%PDF-1.4")
 
-    out = await make_share_file()(str(f), caption="here you go", tool_context=_ctx())
+    out = await make_send_file()(str(f), caption="here you go", tool_context=_ctx())
 
     assert out["status"] == "success"
     assert out["kind"] == "document" and out["caption"] == "here you go"
     assert out["path"].endswith("report.pdf")
 
 
-async def test_share_file_infers_image_kind(tmp_path: Path) -> None:
+async def test_send_file_infers_image_kind(tmp_path: Path) -> None:
     f = tmp_path / "agents" / "gaia" / "workspace" / "pic.png"
     f.parent.mkdir(parents=True)
     f.write_bytes(b"\x89PNG")
 
-    out = await make_share_file()(str(f), tool_context=_ctx())
+    out = await make_send_file()(str(f), tool_context=_ctx())
 
     assert out["status"] == "success" and out["kind"] == "image"
 
 
-async def test_share_file_rejects_path_outside_sandbox() -> None:
-    out = await make_share_file()("/etc/passwd", tool_context=_ctx())
+async def test_send_file_rejects_path_outside_sandbox() -> None:
+    out = await make_send_file()("/etc/passwd", tool_context=_ctx())
     assert out["status"] == "error"
 
 
-async def test_share_file_errors_on_missing_file(tmp_path: Path) -> None:
+async def test_send_file_errors_on_missing_file(tmp_path: Path) -> None:
     target = tmp_path / "agents" / "gaia" / "workspace" / "nope.pdf"
-    out = await make_share_file()(str(target), tool_context=_ctx())
+    out = await make_send_file()(str(target), tool_context=_ctx())
     assert out["status"] == "error" and "not a file" in out["error_message"]
 
 
-def test_media_for_outputs_surfaces_share_file() -> None:
+def test_media_for_outputs_surfaces_send_file() -> None:
     from gaia.core.screenshots import media_for_outputs
 
     resp = SimpleNamespace(
-        name="share_file",
+        name="send_file",
         response={"status": "success", "path": "/tmp/a.mp4", "caption": "clip", "kind": "video"},
     )
     event = SimpleNamespace(get_function_responses=lambda: [resp])

@@ -35,9 +35,9 @@ _IMAGE_PATH_RE = re.compile(r"[\w./\\-]+\.(?:png|jpe?g)", re.IGNORECASE)
 def media_for_outputs(events: list[Any]) -> list[Media]:
     """Every file a turn produced for the user, as :class:`Media` replies (in order).
 
-    Covers screenshots Gaia takes itself and any file it explicitly sends with ``share_file``
+    Covers screenshots Gaia takes itself and any file it explicitly sends with ``send_file``
     (a generated image, a soul's deliverable, an uploaded file). Files a delegated soul writes
-    on its own still come back via delegate_to_soul; the model shares them with ``share_file``.
+    on its own still come back via delegate_to_soul; the model sends them with ``send_file``.
     """
     media: list[Media] = []
     for event in events:
@@ -52,14 +52,14 @@ def media_for_outputs(events: list[Any]) -> list[Media]:
 
 
 def _output_media(name: str, result: Any) -> Media | None:
-    """A :class:`Media` reply for a screenshot / share_file tool result, or ``None``."""
+    """A :class:`Media` reply for a screenshot / send_file tool result, or ``None``."""
     from gaia.connectors.base import Media
     from gaia.tools.browser import SCREENSHOT
-    from gaia.tools.share import NAME as SHARE_FILE
+    from gaia.tools.send_file import NAME as SEND_FILE
 
     if not isinstance(result, dict):
         return None
-    if name == SHARE_FILE and result.get("status") == "success" and result.get("path"):
+    if name == SEND_FILE and result.get("status") == "success" and result.get("path"):
         # The model picked the file and its caption; kind was inferred by the tool.
         return Media(
             Path(result["path"]), caption=result.get("caption", ""), kind=result.get("kind", "")

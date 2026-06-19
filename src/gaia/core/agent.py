@@ -165,10 +165,10 @@ class Gaia:
             "recipient may be a known user's name/id or a raw phone; combine it with the "
             "cron tool for 'in 5 minutes text Grace ...'-style tasks.\n"
             "To give the user a FILE — a document, image, audio, or a soul's deliverable — call "
-            "share_file(path, caption); it sends the real file right in the chat. Never hand "
+            "send_file(path, caption); it sends the real file right in the chat. Never hand "
             "over a file as a link or a pasted path, and never use serve for this — serve is "
-            "ONLY for previewing a website. For several files, zip them (exec) and share_file "
-            "the zip, or call share_file once per file.\n"
+            "ONLY for previewing a website. For several files, zip them (exec) and send_file "
+            "the zip, or call send_file once per file.\n"
             "For multi-step or long-running work that should run in the background and "
             "survive restarts, use the task board: a daemon worker runs each task on a "
             "specialist soul and delivers the result. For a mission with MORE THAN ONE step "
@@ -217,7 +217,7 @@ class Gaia:
         from gaia.tools.command import make_run_command
         from gaia.tools.message import make_message_user
         from gaia.tools.permission import make_manage_permission
-        from gaia.tools.share import make_share_file
+        from gaia.tools.send_file import make_send_file
         from gaia.tools.task import make_task_plan
 
         # delegate_to_soul and message_user are attached to the root only — souls (built
@@ -241,7 +241,7 @@ class Gaia:
                 make_run_command(self, handler),
                 make_message_user(self.users, self.connectors, lambda: self.memory_service),
                 make_manage_permission(self),
-                make_share_file(),
+                make_send_file(),
                 make_task_plan(self.tasks, max_tasks=self.config.missions.max_tasks),
                 *self.container.mcp_toolsets(),
                 *self.container.skill_toolsets(),
