@@ -115,6 +115,16 @@ async def test_whoami_shows_user_and_memory() -> None:
     assert "long-term memory: on" in out
 
 
+async def test_whoami_shows_effort_only_when_set() -> None:
+    from gaia.config.schema import LLMConfig
+
+    assert "(effort:" not in await _run("whoami", _ctx())  # blank -> no clutter
+
+    ctx = _ctx()
+    ctx.gaia.config = GaiaConfig(llm=LLMConfig(effort="high"))
+    assert "(effort: high)" in await _run("whoami", ctx)
+
+
 async def test_souls_empty_and_populated() -> None:
     assert "No souls" in await _run("souls", _ctx())
     assert "- researcher" in await _run("souls", _ctx(agents=["researcher"]))
@@ -127,6 +137,16 @@ async def test_status_reports_counts() -> None:
     assert "tools: 2" in out
     assert "memory: on" in out
     assert "disabled tools:" not in out  # nothing missing → no line
+
+
+async def test_status_shows_effort_only_when_set() -> None:
+    from gaia.config.schema import LLMConfig
+
+    assert "(effort:" not in await _run("status", _ctx())  # blank -> no clutter
+
+    ctx = _ctx()
+    ctx.gaia.config = GaiaConfig(llm=LLMConfig(effort="high"))
+    assert "(effort: high)" in await _run("status", ctx)
 
 
 async def test_status_lists_disabled_tools() -> None:
