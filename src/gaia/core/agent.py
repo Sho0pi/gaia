@@ -179,13 +179,19 @@ class Gaia:
             "when the user is an ADMIN, to manage users and permissions on their behalf: "
             "run_command('grant <user> <capability>'), run_command('approve <user> <role>'), "
             "run_command('users'), run_command('perms <user>'). run_command only runs commands "
-            "available to you; if it returns an error, tell the user what it said.\n"
-            "You have long-term memory of this user: what you already know about them "
-            "(facts + recent projects) is provided above under <USER_PROFILE> — use it and "
-            "don't re-ask. When the user shares something durable (preferences, identity, "
-            "ongoing context), save it with the remember tool. For older or more specific "
-            "details not in the profile, call load_memory(query) to search your memory."
+            "available to you; if it returns an error, tell the user what it said."
         )
+        # Memory guidance only when long-term memory is on — so the prompt never advertises
+        # the remember/load_memory tools or a <USER_PROFILE> block that aren't attached.
+        # (Gated on memory.enabled, NOT on `profile`: an empty store still has the tools.)
+        if self.config.memory.enabled:
+            base_instruction += (
+                "\nYou have long-term memory of this user: what you already know about them "
+                "(facts + recent projects) is provided above under <USER_PROFILE> — use it and "
+                "don't re-ask. When the user shares something durable (preferences, identity, "
+                "ongoing context), save it with the remember tool. For older or more specific "
+                "details not in the profile, call load_memory(query) to search your memory."
+            )
         bound = self.config.agents.get("gaia", AgentBinding())
         instruction = attach_skills(base_instruction, bound.skills, self.skills_dir)
         style = bound.communication_style or self.config.default_communication_style
