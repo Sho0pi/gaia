@@ -396,8 +396,10 @@ def _image_msg(caption: str = "") -> SimpleNamespace:
 
 
 async def test_inbound_image_downloaded_and_dispatched_with_caption(
-    fake_neonize: dict[str, Any], tmp_path: Path, cache_dir: Path
+    fake_neonize: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    uploads = tmp_path / "uploads"
+    monkeypatch.setattr("gaia.constants.UPLOADS_DIR", uploads)
     sys.modules["neonize.aioze.client"].NewAClient = _DownloadClient  # type: ignore[attr-defined]
     captured: list[Inbound] = []
 
@@ -413,7 +415,7 @@ async def test_inbound_image_downloaded_and_dispatched_with_caption(
     assert len(inbound.media) == 1
     item = inbound.media[0]
     assert item.kind == "image" and item.mime == "image/jpeg"
-    saved = next((cache_dir / "inbound").glob("IMG123.*"))  # downloaded under the cache dir
+    saved = next(uploads.glob("IMG123.*"))  # downloaded into the sandbox-reachable uploads dir
     assert saved.read_bytes() == b"OGGDATA" and item.path == saved
 
 

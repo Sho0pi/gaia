@@ -47,6 +47,9 @@ TASKS_DB = HOME_DIR / "tasks.db"
 AGENTS_DIR = HOME_DIR / "agents"
 # Transient downloaded artifacts (e.g. inbound voice notes under cache/voice/).
 CACHE_DIR = HOME_DIR / "cache"
+# Files a user sent in (e.g. an inbound image). A read root in every agent's sandbox so a
+# tool/soul can read or copy an uploaded file (e.g. embed it in a website), not just see it.
+UPLOADS_DIR = HOME_DIR / "uploads"
 
 # Logging identity. The system logger is the app name; events are a child of it.
 LOGGER_NAME = APP_NAME

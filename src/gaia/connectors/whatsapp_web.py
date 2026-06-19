@@ -464,7 +464,9 @@ class WhatsAppWebConnector:
 
         mime = getattr(image, "mimetype", "") or "image/jpeg"
         ext = mimetypes.guess_extension(mime.split(";")[0]) or ".jpg"
-        path = constants.CACHE_DIR / "inbound" / f"{message.Info.ID}{ext}"
+        # Saved under UPLOADS_DIR (a sandbox root) so a tool/soul can read or copy it, not
+        # just see it in the model's context.
+        path = constants.UPLOADS_DIR / f"{message.Info.ID}{ext}"
         path.parent.mkdir(parents=True, exist_ok=True)
         try:
             await client.download_any(message.Message, str(path))

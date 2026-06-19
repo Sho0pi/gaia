@@ -72,6 +72,21 @@ def test_scoped_tmp_is_allowed(tmp_path: Path) -> None:
         target.unlink(missing_ok=True)
 
 
+def test_uploads_dir_is_readable_by_any_agent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A user's uploaded file (e.g. an inbound image) lives in the shared uploads dir, which is
+    # a root in every agent's sandbox — so a tool/soul can read or copy it.
+    uploads = tmp_path / "uploads"
+    monkeypatch.setattr("gaia.constants.UPLOADS_DIR", uploads)
+    uploads.mkdir()
+    (uploads / "photo.png").write_text("img-bytes")
+
+    out = make_fs_read(tmp_path)(str(uploads / "photo.png"), tool_context=_Ctx())
+
+    assert out["status"] == "success" and out["content"] == "img-bytes"
+
+
 def test_generic_tmp_is_blocked(tmp_path: Path) -> None:
     # A /tmp path outside the agent's own scratch dir must be refused.
     out = make_fs_read(tmp_path)("/tmp/other_app_secret.txt", tool_context=_Ctx())
