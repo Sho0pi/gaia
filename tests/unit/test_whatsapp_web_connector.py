@@ -419,6 +419,50 @@ async def test_inbound_image_downloaded_and_dispatched_with_caption(
     assert saved.read_bytes() == b"OGGDATA" and item.path == saved
 
 
+@pytest.mark.parametrize(
+    ("field", "kind", "mime", "extra"),
+    [
+        ("videoMessage", "video", "video/mp4", {"caption": "watch this"}),
+        ("documentMessage", "document", "application/pdf", {"fileName": "report.pdf"}),
+        ("stickerMessage", "image", "image/webp", {}),
+    ],
+)
+async def test_inbound_media_types_downloaded_and_dispatched(
+    field: str,
+    kind: str,
+    mime: str,
+    extra: dict[str, Any],
+    fake_neonize: dict[str, Any],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Video / document / sticker each download to the sandbox uploads dir and reach the handler
+    # as an InboundMedia with the right kind/mime (the handler then hands it to the model).
+    uploads = tmp_path / "uploads"
+    monkeypatch.setattr("gaia.constants.UPLOADS_DIR", uploads)
+    sys.modules["neonize.aioze.client"].NewAClient = _DownloadClient  # type: ignore[attr-defined]
+    captured: list[Inbound] = []
+
+    async def dispatch(_sender_id: str, _name: str, inbound: Inbound, _send: Send) -> None:
+        captured.append(inbound)
+
+    msg = _msg()
+    setattr(msg.Message, field, SimpleNamespace(mediaKey=b"key", mimetype=mime, **extra))
+    msg.Info.ID = "MEDIA1"
+
+    client = WhatsAppWebConnector(tmp_path / "wa.db", dispatch).build_client()
+    await client.handlers[fake_neonize["MessageEv"]](client, msg)
+
+    assert len(captured) == 1
+    item = captured[0].media[0]
+    assert item.kind == kind and item.mime == mime
+    assert item.path.exists() and item.path.read_bytes() == b"OGGDATA"
+    if extra.get("caption"):
+        assert captured[0].text == extra["caption"]
+    if extra.get("fileName"):
+        assert item.path.suffix == ".pdf"  # document keeps its own extension
+
+
 async def test_start_stops_client_on_cancel(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
     # The shutdown hang: a cancelled start() must call stop() — disconnect() alone leaves
     # neonize's blocking Go call parked in a non-daemon thread that wedges interpreter exit.

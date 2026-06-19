@@ -106,6 +106,23 @@ def test_inbound_image_becomes_an_input_image_item() -> None:
     assert img["image_url"].startswith("data:image/jpeg;base64,")
 
 
+def test_non_image_inline_data_becomes_a_text_note() -> None:
+    # This backend can't view video/audio/PDF; the part must become a text note (not be
+    # dropped — an attachment-only turn would otherwise have no input and 400).
+    contents = [
+        types.Content(
+            role="user",
+            parts=[types.Part.from_bytes(data=b"%PDF-1.4", mime_type="application/pdf")],
+        )
+    ]
+
+    item = _content_to_input(contents)[0]
+
+    assert item["type"] == "message"
+    content = item["content"][0]
+    assert content["type"] == "input_text" and "application/pdf" in content["text"]
+
+
 def test_orphaned_function_call_gets_synthetic_output() -> None:
     # A turn cancelled mid-flight leaves a function_call with no matching response.
     # Without healing, the backend 400s ("No tool output found") on every later turn.
