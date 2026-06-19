@@ -21,11 +21,12 @@ import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 from gaia import constants
 from gaia.connectors.base import inbound_attachments
 from gaia.souls.smith import SoulDecision, build_soul_smith
-from gaia.tools.fs.base import sandbox_for
+from gaia.tools.fs.base import _safe_dir, current_project, sandbox_for
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from gaia.core.agent import Gaia
@@ -50,6 +51,7 @@ class SoulRun:
     reason: str = ""
     summary: str = ""
     workspace: str = ""
+    project: str = ""
     files: list[str] = field(default_factory=list)
     error: str = ""
 
@@ -171,12 +173,23 @@ def resolve_spec(gaia: Gaia, decision: SoulDecision) -> tuple[Any, bool] | None:
     return None
 
 
+def _project_slug(project: str, task: str) -> str:
+    """The project dir slug for a run: the caller's name, else a fresh unique one.
+
+    A named project lets the model continue an existing one (reuse the same slug) or start a
+    new one. Omitted -> a unique slug derived from the task, so two unnamed runs of the same
+    soul still get separate dirs instead of overwriting each other.
+    """
+    return _safe_dir(project) if project else f"{_safe_dir(task)[:24]}-{uuid4().hex[:6]}"
+
+
 async def execute_decision(
     gaia: Gaia,
     decision: SoulDecision,
     task: str,
     user_id: str,
     *,
+    project: str = "",
     state: dict[str, Any] | None = None,
 ) -> SoulRun:
     """Build the chosen soul and run it on ``task``; capture the workspace diff as artifacts.
@@ -185,9 +198,11 @@ async def execute_decision(
     the soul (``create_or_reuse``), snapshot its workspace, run it (bounded by the configured
     ``souls.timeout_seconds``), and report the files it created/modified.
 
-    ``state`` (e.g. the dispatched ``task_id``/``owner``) is seeded into the soul's session so
-    its tools know which task they run; we also stamp ``created_by`` with the soul's own key so
-    any subtask it files is attributed to it, not to Gaia.
+    The run is scoped to a **project** dir (``workspace/<project>``) so separate projects the
+    same soul builds don't overwrite each other — ``project`` names it (reuse to continue one),
+    else a fresh unique slug is used. ``state`` (e.g. the dispatched ``task_id``/``owner``) is
+    seeded into the soul's session so its tools know which task they run; we also stamp
+    ``created_by`` with the soul's own key so any subtask it files is attributed to it.
     """
     resolved = resolve_spec(gaia, decision)
     if resolved is None:
@@ -199,31 +214,40 @@ async def execute_decision(
     # Every soul run can ask an expert (consult_soul); it needs the live gaia, so it's
     # threaded in per build rather than living in the static tool registry.
     soul = gaia.factory.create_or_reuse(spec, extra_tools=[make_consult_soul(gaia)])
-    primary = sandbox_for(constants.AGENTS_DIR, spec.key).primary
-    # Bring the user's attachments into the workspace *before* the baseline snapshot, so the
-    # copies aren't reported back as the soul's own deliverables.
-    attached = _attach_uploads(primary)
-    if attached:
-        task = (
-            f"{task}\n\n[The user's attached file(s) are in your workspace: "
-            f"{', '.join(attached)} — use these relative names directly (e.g. "
-            f'<img src="{attached[0]}">). Do not search the web for them or recreate them.]'
-        )
-    before = _snapshot(primary)
-    timeout = gaia.config.souls.timeout_seconds  # read per call so yaml edits hot-reload
-    run_state = {**(state or {}), "created_by": spec.key}
+    # Scope the whole run to the project dir: set the contextvar *before* resolving the
+    # workspace, so the upload-copy, snapshot, the soul's own fs/exec tools, and the diff all
+    # target workspace/<project>. Reset on exit so the caller (root Gaia) isn't left scoped.
+    slug = _project_slug(project, task)
+    token = current_project.set(slug)
     try:
-        summary = await asyncio.wait_for(
-            run_soul_agent(gaia, soul, spec.key, task, user_id, state=run_state), timeout=timeout
-        )
-    except TimeoutError:
-        return SoulRun(
-            False, spec.key, spec.name, created, error=f"soul timed out after {timeout:.0f}s"
-        )
-    except Exception as exc:
-        return SoulRun(False, spec.key, spec.name, created, error=f"soul run failed: {exc}")
+        primary = sandbox_for(constants.AGENTS_DIR, spec.key).primary
+        # Bring the user's attachments into the workspace *before* the baseline snapshot, so
+        # the copies aren't reported back as the soul's own deliverables.
+        attached = _attach_uploads(primary)
+        if attached:
+            task = (
+                f"{task}\n\n[The user's attached file(s) are in your workspace: "
+                f"{', '.join(attached)} — use these relative names directly (e.g. "
+                f'<img src="{attached[0]}">). Do not search the web for them or recreate them.]'
+            )
+        before = _snapshot(primary)
+        timeout = gaia.config.souls.timeout_seconds  # read per call so yaml edits hot-reload
+        run_state = {**(state or {}), "created_by": spec.key}
+        try:
+            summary = await asyncio.wait_for(
+                run_soul_agent(gaia, soul, spec.key, task, user_id, state=run_state),
+                timeout=timeout,
+            )
+        except TimeoutError:
+            return SoulRun(
+                False, spec.key, spec.name, created, error=f"soul timed out after {timeout:.0f}s"
+            )
+        except Exception as exc:
+            return SoulRun(False, spec.key, spec.name, created, error=f"soul run failed: {exc}")
 
-    files = _changed(before, _snapshot(primary))
+        files = _changed(before, _snapshot(primary))
+    finally:
+        current_project.reset(token)
     return SoulRun(
         ok=True,
         soul_key=spec.key,
@@ -232,5 +256,6 @@ async def execute_decision(
         reason=decision.reason,
         summary=summary,
         workspace=str(primary),
+        project=slug,
         files=files,
     )

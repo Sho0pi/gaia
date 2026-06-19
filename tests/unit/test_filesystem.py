@@ -87,6 +87,31 @@ def test_uploads_dir_is_readable_by_any_agent(
     assert out["status"] == "success" and out["content"] == "img-bytes"
 
 
+def test_project_nests_the_workspace(tmp_path: Path) -> None:
+    # A soul run sets current_project; every fs tool then anchors under workspace/<project>,
+    # so two projects don't see each other's files (no overwrite).
+    from gaia.tools.fs.base import current_project
+
+    token = current_project.set("plant-shop")
+    try:
+        make_fs_write(tmp_path)("index.html", "shop", tool_context=_Ctx())
+    finally:
+        current_project.reset(token)
+
+    assert (tmp_path / "tester" / "workspace" / "plant-shop" / "index.html").read_text() == "shop"
+
+    # A different project can't see the first project's file (separate dirs).
+    token = current_project.set("bakery")
+    try:
+        out = make_fs_read(tmp_path)("index.html", tool_context=_Ctx())
+    finally:
+        current_project.reset(token)
+    assert out["status"] == "error" and "not a file" in out["error_message"]
+
+    # Unset project (root agent / no run) -> flat workspace, also doesn't see the project file.
+    assert make_fs_read(tmp_path)("index.html", tool_context=_Ctx())["status"] == "error"
+
+
 def test_generic_tmp_is_blocked(tmp_path: Path) -> None:
     # A /tmp path outside the agent's own scratch dir must be refused.
     out = make_fs_read(tmp_path)("/tmp/other_app_secret.txt", tool_context=_Ctx())
