@@ -370,7 +370,7 @@ def send_message(
     was gated (an unknown sender on a guest-default channel, or an explicit guest) — no
     reply was emitted; a non-empty list is a real model reply for a known user/admin.
     """
-    from gaia.connectors.base import Reply, as_text
+    from gaia.connectors.base import Inbound, Reply, as_text
     from gaia.core.dispatch import build_dispatcher
 
     settings = settings or get_settings(env_file)
@@ -385,7 +385,7 @@ def send_message(
 
         async with gaia:
             dispatch = build_dispatcher(gaia).for_channel(channel)
-            await dispatch(sender_id, name, text, send)
+            await dispatch(sender_id, name, Inbound(text=text), send)
         return replies
 
     return asyncio.run(_run())

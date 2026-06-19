@@ -6,7 +6,7 @@ input lines and a fake dispatch so no Gaia/ADK/model backend is needed.
 
 from __future__ import annotations
 
-from gaia.connectors.base import Send
+from gaia.connectors.base import Inbound, Send
 from gaia.connectors.cli import CLIConnector
 
 
@@ -17,8 +17,8 @@ async def test_streams_replies_into_chat(capsys) -> None:  # type: ignore[no-unt
     async def prompt(_prompt: str) -> str:
         return next(inputs)
 
-    async def dispatch(sender_id: str, _name: str, text: str, send: Send) -> None:
-        seen.append((sender_id, text))
+    async def dispatch(sender_id: str, _name: str, inbound: Inbound, send: Send) -> None:
+        seen.append((sender_id, inbound.text))
         await send("**a**")
         await send("b")
 
@@ -38,7 +38,7 @@ async def test_empty_input_ignored() -> None:
     async def prompt(_prompt: str) -> str:
         return next(inputs)
 
-    async def dispatch(_sender_id: str, _name: str, _text: str, _send: Send) -> None:
+    async def dispatch(_sender_id: str, _name: str, _inbound: Inbound, _send: Send) -> None:
         nonlocal called
         called = True
 
@@ -53,7 +53,7 @@ async def test_eof_exits_chat() -> None:
     async def prompt(_prompt: str) -> str:
         raise EOFError
 
-    async def dispatch(_sender_id: str, _name: str, _text: str, _send: Send) -> None:
+    async def dispatch(_sender_id: str, _name: str, _inbound: Inbound, _send: Send) -> None:
         nonlocal called
         called = True
 

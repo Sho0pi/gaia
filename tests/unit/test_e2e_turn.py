@@ -23,6 +23,7 @@ from google.genai import types
 
 from gaia import constants
 from gaia.config import Settings
+from gaia.connectors.base import Inbound
 from gaia.core import Gaia
 from gaia.core.handler import build_handler
 
@@ -70,7 +71,7 @@ async def _run_turn(gaia: Gaia, text: str) -> list[str]:
     async def send(reply: Any) -> None:
         replies.append(str(reply))
 
-    await build_handler(gaia)(text, send)
+    await build_handler(gaia)(Inbound(text=text), send)
     return replies
 
 
@@ -156,8 +157,8 @@ async def test_two_users_get_separate_memory_partitions(
 
     dispatcher = Dispatcher(gaia)
     wa = dispatcher.for_channel("whatsapp")
-    await wa("111@s.whatsapp.net", "Itay", "remember me", send)
-    await wa("972@s.whatsapp.net", "Grace", "remember me", send)
+    await wa("111@s.whatsapp.net", "Itay", Inbound(text="remember me"), send)
+    await wa("972@s.whatsapp.net", "Grace", Inbound(text="remember me"), send)
     await dispatcher.flush_all()  # drain the background ingests before asserting
 
     assert set(partitions) == {"itay", "grace"}  # two people, two memory partitions

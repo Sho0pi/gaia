@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from gaia.connectors.base import Dispatch, Media, Reply, as_text, current_chat
+from gaia.connectors.base import Dispatch, Inbound, Media, Reply, as_text, current_chat
 
 
 class TelegramConnector:
@@ -43,7 +43,7 @@ class TelegramConnector:
                 # capture the chat for later proactive delivery (the chat, not the sender).
                 current_chat.set((self.NAME, str(message.chat_id)))
                 name = sender.first_name or sender.username or str(sender.id)
-                await self._dispatch(str(sender.id), name, message.text, send)
+                await self._dispatch(str(sender.id), name, Inbound(text=message.text or ""), send)
 
         # filters.TEXT keeps slash-commands (/help, /reset, …) flowing to the handler,
         # which dispatches them itself; ~COMMAND would swallow them before Gaia sees them.

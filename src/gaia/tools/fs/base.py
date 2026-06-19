@@ -81,7 +81,9 @@ def sandbox_for(agents_dir: Path, agent_name: str) -> Sandbox:
     prompt-injected soul can never touch a sibling's files.
     """
     name = _safe_dir(agent_name)
-    extra: tuple[Path, ...] = (Path("/tmp/gaia") / name,)
+    # Every agent also gets the shared uploads dir as a root, so a tool/soul can read or copy
+    # a file the user sent in (e.g. an inbound image to embed in a website), not just see it.
+    extra: tuple[Path, ...] = (Path("/tmp/gaia") / name, constants.UPLOADS_DIR)
     if name == constants.APP_NAME:  # the root agent ("gaia") owns the whole agents tree
         extra = (*extra, agents_dir)
     return Sandbox(agents_dir / name / "workspace", extra)

@@ -9,7 +9,7 @@ import logging
 import os
 from pathlib import Path
 
-from gaia.connectors.base import Dispatch, Media, Reply
+from gaia.connectors.base import Dispatch, Inbound, Media, Reply
 from gaia.connectors.socket_protocol import (
     ProtocolError,
     decode_frame,
@@ -104,7 +104,7 @@ class SocketConnector:
             await writer.drain()
 
         try:
-            await self._dispatch("local", "operator", text, send)
+            await self._dispatch("local", "operator", Inbound(text=text), send)
         except Exception as exc:
             logger.exception("daemon socket dispatch failed")
             writer.write(encode_frame(error_frame(str(exc))))
@@ -127,10 +127,12 @@ class SocketChatClient:
             await writer.wait_closed()
         del reader
 
-    async def dispatch(self, _sender: str, _name: str, text: str, send: DispatchReply) -> None:
+    async def dispatch(
+        self, _sender: str, _name: str, inbound: Inbound, send: DispatchReply
+    ) -> None:
         reader, writer = await self._connect()
         try:
-            writer.write(encode_frame(message_frame(text)))
+            writer.write(encode_frame(message_frame(inbound.text)))
             await writer.drain()
             while line := await reader.readline():
                 frame = decode_frame(line)

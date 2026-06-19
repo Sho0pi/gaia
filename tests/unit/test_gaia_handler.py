@@ -16,6 +16,7 @@ from typing import Any
 
 import pytest
 
+from gaia.connectors.base import Inbound, InboundMedia
 from gaia.core.handler import GaiaHandler
 
 
@@ -43,7 +44,7 @@ async def _collect(handler: GaiaHandler, text: str) -> list[str]:
     async def send(reply: str) -> None:
         sent.append(reply)
 
-    await handler(text, send)
+    await handler(Inbound(text=text), send)
     return sent
 
 
@@ -98,6 +99,36 @@ async def test_plain_text_still_reaches_the_model() -> None:
     handler._runner = _FakeRunner([_event("answer")])
 
     assert await _collect(handler, "not a command") == ["answer"]
+
+
+async def test_inbound_image_becomes_a_multimodal_turn(tmp_path: Path) -> None:
+    img = tmp_path / "pic.jpg"
+    img.write_bytes(b"\xff\xd8\xff fake jpeg bytes")
+    captured: dict[str, Any] = {}
+
+    class _CapturingRunner:
+        async def run_async(self, **kwargs: Any) -> AsyncIterator[SimpleNamespace]:
+            captured.update(kwargs)
+            yield _event("it's a cat")
+
+    handler = GaiaHandler(SimpleNamespace(memory_service=None))
+    handler._runner = _CapturingRunner()
+    sent: list[str] = []
+
+    async def send(reply: str) -> None:
+        sent.append(reply)
+
+    inbound = Inbound(text="what's this?", media=(InboundMedia(path=img, mime="image/jpeg"),))
+    await handler(inbound, send)
+
+    parts = captured["new_message"].parts
+    assert any(getattr(p, "text", None) == "what's this?" for p in parts)  # the question
+    assert any(getattr(p, "inline_data", None) is not None for p in parts)  # the image part
+    assert sent == ["it's a cat"]
+    # the file is stashed for delegate_to_soul to copy into a soul's workspace (file use)
+    from gaia.connectors.base import inbound_attachments
+
+    assert inbound_attachments.get() == (img,)
 
 
 async def test_runner_rebuilds_when_config_changes(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -283,7 +314,7 @@ async def _collect_replies(handler: GaiaHandler, text: str) -> list[Any]:
     async def send(reply: Any) -> None:
         sent.append(reply)
 
-    await handler(text, send)
+    await handler(Inbound(text=text), send)
     return sent
 
 

@@ -48,14 +48,15 @@ def make_serve(
         http render, unlike a blank file:// one. The server stays up (for live testing)
         until idle or serve_stop.
 
-        By default the site is also exposed on a public https URL (``public_url``) when the
-        user is messaging from a phone/remote channel, and kept local-only when they're at
-        the computer (cli). Pass public=True/False to override.
+        Remote users (whatsapp/telegram) always get a public https URL (``public_url``) to
+        share — a 127.0.0.1 link is useless on their phone. A local user (cli) stays
+        local-only by default; pass public=True there to also expose it.
 
         Args:
             path: absolute path to a workspace directory under the agents tree, or an
                 .html file inside one.
-            public: force a public URL on/off; omit to auto-pick by channel.
+            public: for a local (cli) user, force a public URL on; ignored for remote users
+                (they always get one).
         """
         try:
             site, url = await manager.serve(path.strip())
@@ -70,11 +71,18 @@ def make_serve(
             "port": site.port,
             "root": str(site.root),
         }
-        want_public = _auto_public() if public is None else public
+        # A remote user (whatsapp/telegram) can't open a 127.0.0.1 link, so they always need
+        # the public URL — even if the model passed public=False (it has no reason to strand a
+        # phone user local-only). Explicit on/off is honoured only for local channels (cli).
+        want_public = _auto_public() or bool(public)
         if want_public:
             if tunnel_enabled and tunnel is not None:
                 try:
-                    result["public_url"] = await tunnel.open(site.port)
+                    # The tunnel forwards the port root; re-attach the entry (e.g. "site.html")
+                    # so the public link opens the same page the local url/screenshot does — not
+                    # the bare directory (a listing or 404 when there's no index.html).
+                    base = (await tunnel.open(site.port)).rstrip("/")
+                    result["public_url"] = base + "/" + url[len(site.url) :]
                 except TunnelError as exc:
                     result["public_url_error"] = str(exc)
             elif public is True:

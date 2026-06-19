@@ -11,10 +11,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from gaia import constants
-from gaia.connectors.base import Send
+from gaia.connectors.base import Inbound, Send, inbound_attachments
 from gaia.logs import log_event
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -121,18 +122,45 @@ class GaiaHandler:
             self._runner = self._build_runner(await self._profile_block())
         return self._runner
 
-    async def __call__(self, text: str, send: Send) -> None:
+    async def __call__(self, inbound: Inbound, send: Send) -> None:
         from google.genai import types
 
-        log_event("message_in", user=self._user_id, session=self._session_id, chars=len(text))
+        log_event(
+            "message_in",
+            user=self._user_id,
+            session=self._session_id,
+            chars=len(inbound.text),
+            media=len(inbound.media) or None,
+        )
 
         # A slash command is handled out-of-band: it never reaches the model or the
-        # memory ingest path.
-        if await self._maybe_run_command(text, send):
+        # memory ingest path. Media-only messages are never commands.
+        if await self._maybe_run_command(inbound.text, send):
+            return
+
+        # Build the model turn: the text part (if any) plus an image part per attachment, so
+        # the model sees the picture this turn and it stays in the session for follow-ups.
+        parts: list[Any] = [types.Part(text=inbound.text)] if inbound.text else []
+        attached: list[Path] = []
+        for item in inbound.media:
+            try:
+                data = item.path.read_bytes()
+            except OSError:
+                logging.getLogger(constants.LOGGER_NAME).warning(
+                    "dropped inbound attachment (unreadable): %s", item.path
+                )
+                continue
+            parts.append(types.Part.from_bytes(data=data, mime_type=item.mime))
+            attached.append(item.path)
+        # Stash the files for this turn so delegate_to_soul can copy them into the chosen
+        # soul's workspace (where it can embed them). The model sees the image itself via the
+        # part above — no synthetic "here's the path" message needed.
+        inbound_attachments.set(tuple(attached))
+        if not parts:  # nothing to send (empty text, no readable media)
             return
 
         runner = await self._ensure_runner()
-        content = types.Content(role="user", parts=[types.Part(text=text)])
+        content = types.Content(role="user", parts=parts)
 
         turn_events: list[Any] = []
         texts: list[str] = []

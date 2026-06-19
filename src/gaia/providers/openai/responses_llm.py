@@ -6,9 +6,9 @@ ChatGPT OAuth tokens don't work against ``api.openai.com``; they call
 ADK's request/response to that backend, mirroring openclaw's
 ``src/llm/providers/openai-chatgpt-responses.ts``.
 
-Scope: text + function (tool) calls, with gpt-5.x reasoning items replayed across turns
-(carried on a ``thought_signature`` part) so tool calls don't loop. Inline images are out
-of scope. The wire shape of this backend is unofficial and may change; everything
+Scope: text + inbound images + function (tool) calls, with gpt-5.x reasoning items replayed
+across turns (carried on a ``thought_signature`` part) so tool calls don't loop. (A vision
+model is needed for images.) The wire shape of this backend is unofficial and may change; everything
 backend-specific is kept in this one module.
 
 httpx is imported lazily (optional ``llm`` dep group).
@@ -16,6 +16,7 @@ httpx is imported lazily (optional ``llm`` dep group).
 
 from __future__ import annotations
 
+import base64
 import json
 import uuid
 from collections.abc import AsyncGenerator
@@ -88,6 +89,22 @@ def _content_to_input(contents: list[types.Content]) -> list[dict[str, Any]]:
                         "type": "message",
                         "role": role,
                         "content": [{"type": kind, "text": part.text}],
+                    }
+                )
+            elif part.inline_data and part.inline_data.data:
+                # An inbound image. This is OpenAI's Responses wire format (input_image +
+                # base64 data URL) — every provider differs (Claude uses source/base64, Gemini
+                # inline_data); we convert here only because this is our own BaseLlm backend.
+                # An image-only turn would otherwise produce no input items -> 400 "missing input".
+                mime = part.inline_data.mime_type or "image/jpeg"
+                b64 = base64.b64encode(bytes(part.inline_data.data)).decode("ascii")
+                items.append(
+                    {
+                        "type": "message",
+                        "role": role,
+                        "content": [
+                            {"type": "input_image", "image_url": f"data:{mime};base64,{b64}"}
+                        ],
                     }
                 )
             elif part.function_call:
