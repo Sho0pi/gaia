@@ -115,7 +115,7 @@ class Gaia:
         """Keys of every subagent Gaia has already learned."""
         return self.souls.list_keys()
 
-    def build_root_agent(self, handler: Any = None) -> LlmAgent:
+    def build_root_agent(self, handler: Any = None, *, profile: str | None = None) -> LlmAgent:
         """Construct the ADK root agent with all known subagents attached.
 
         ``handler`` (the live :class:`~gaia.core.handler.GaiaHandler`, passed by it) is
@@ -181,10 +181,31 @@ class Gaia:
             "run_command('users'), run_command('perms <user>'). run_command only runs commands "
             "available to you; if it returns an error, tell the user what it said."
         )
+        # Memory guidance only when long-term memory is on — so the prompt never advertises
+        # the remember/load_memory tools or a <USER_PROFILE> block that aren't attached.
+        # (Gated on memory.enabled, NOT on `profile`: an empty store still has the tools.)
+        if self.config.memory.enabled:
+            base_instruction += (
+                "\nYou have long-term memory of this user: what you already know about them "
+                "(facts + recent projects) is provided above under <USER_PROFILE> — use it and "
+                "don't re-ask. When the user shares something durable (preferences, identity, "
+                "ongoing context), save it with the remember tool. For older or more specific "
+                "details not in the profile, call load_memory(query) to search your memory."
+            )
         bound = self.config.agents.get("gaia", AgentBinding())
         instruction = attach_skills(base_instruction, bound.skills, self.skills_dir)
         style = bound.communication_style or self.config.default_communication_style
         instruction = apply_communication_style(instruction, style)
+
+        # Profile recall: a compact, importance-ranked block of what gaia knows about the
+        # user (durable facts + recent projects), distilled by one LLM call when the handler
+        # builds this agent (session start / config reload) and baked into the prompt — like
+        # the timestamp above. Always fresh per session; deep lookups stay in load_memory.
+        if profile:
+            instruction += (
+                "\n\nWhat you know about the user (long-term memory + recent projects):\n"
+                f"<USER_PROFILE>\n{profile}\n</USER_PROFILE>"
+            )
 
         from gaia.core.acl_toolset import AclToolset
         from gaia.souls import make_delegate
@@ -209,7 +230,7 @@ class Gaia:
                 AclToolset(self),
                 make_delegate(self),
                 make_run_command(self, handler),
-                make_message_user(self.users, self.connectors),
+                make_message_user(self.users, self.connectors, lambda: self.memory_service),
                 make_manage_permission(self),
                 make_task_plan(self.tasks, max_tasks=self.config.missions.max_tasks),
                 *self.container.mcp_toolsets(),

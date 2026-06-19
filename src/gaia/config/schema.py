@@ -425,8 +425,23 @@ class MemoryConfig(BaseModel):
         default=3600,
         description="Also flush if this many seconds have passed since the first buffered turn.",
     )
+    extraction_instructions: str = Field(
+        default="",
+        description="Override what long-term memory extracts (mem0 custom_instructions); "
+        "empty = the built-in default (durable user facts only, no assistant action logs).",
+    )
     recall_limit: int = Field(
         default=5, description="How many memories load_memory returns per search."
+    )
+    preload: bool = Field(
+        default=True,
+        description="At session start, distil the user's facts + recent projects into a "
+        "profile baked into the prompt (always-on recall); off = the agent must call "
+        "load_memory to recall anything.",
+    )
+    preload_limit: int = Field(
+        default=20,
+        description="Max bullet points the session-start profile keeps (importance-ranked).",
     )
     # Provider-agnostic components. Defaults wire Gemini (reusing the agent's model; keys
     # come from env like the agent) + a local chroma store; override provider/model per

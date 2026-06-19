@@ -128,7 +128,7 @@ async def test_runner_rebuilds_when_config_changes(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr("gaia.core.plugins.ToolPermissionPlugin", lambda gaia: object())
     monkeypatch.setattr("gaia.core.plugins.ToolLoggingPlugin", lambda: object())
 
-    def _build(_handler: object) -> object:
+    def _build(_handler: object, *, profile: object = None) -> object:
         agent = object()
         builds.append(agent)
         return agent
@@ -146,6 +146,38 @@ async def test_runner_rebuilds_when_config_changes(monkeypatch: pytest.MonkeyPat
 
     assert len(builds) == 2  # rebuilt against the new config
     assert len(services) == 1  # session service reused → conversation history preserved
+
+
+async def test_user_message_is_included_in_the_event_stream() -> None:
+    """The user's own turn must be yielded so auto-ingest sees both sides (not just Gaia)."""
+    captured: dict[str, Any] = {}
+
+    class _CapturingRunner:
+        async def run_async(self, **kwargs: Any) -> AsyncIterator[SimpleNamespace]:
+            captured.update(kwargs)
+            yield _event("ok")
+
+    handler = GaiaHandler(SimpleNamespace(memory_service=None))
+    handler._runner = _CapturingRunner()
+
+    await _collect(handler, "hi")
+
+    assert captured.get("yield_user_message") is True
+
+
+async def test_profile_block_distills_when_preload_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_distill(gaia: object, user_id: str) -> str:
+        return f"PROFILE for {user_id}"
+
+    monkeypatch.setattr("gaia.memory.profile.distill_profile", fake_distill)
+    memory = SimpleNamespace(preload=True)
+    gaia = SimpleNamespace(config=SimpleNamespace(memory=memory))
+    handler = GaiaHandler(gaia, user_id="u1")
+
+    assert await handler._profile_block() == "PROFILE for u1"
+
+    memory.preload = False
+    assert await handler._profile_block() is None  # gated off → no distill
 
 
 class _BoomRunner:
