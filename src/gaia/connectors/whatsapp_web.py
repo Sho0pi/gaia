@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -188,6 +189,44 @@ _DEFAULT_MIME = {
 }
 
 
+def _vcard_phone(vcard: str) -> str:
+    """The first phone number in a vCard's ``TEL`` line, as `` <number>`` (or ``""``)."""
+    match = re.search(r"TEL[^:\n]*:\s*([+\d][\d\s().-]+)", vcard or "")
+    return f" {match.group(1).strip()}" if match else ""
+
+
+def _describe_special(message: Any) -> str:
+    """A text proxy for inbound types that are neither text nor a downloadable file.
+
+    Location and shared contacts have no file to hand the model, so we turn them into a short
+    bracketed line Gaia answers like any text. Returns ``""`` when none apply (so the message is
+    ignored as before). Interactive/poll types are a follow-up.
+    """
+    msg = message.Message
+    loc = getattr(msg, "locationMessage", None) or getattr(msg, "liveLocationMessage", None)
+    if loc is not None:
+        lat = getattr(loc, "degreesLatitude", None)
+        lng = getattr(loc, "degreesLongitude", None)
+        if lat or lng:
+            label = getattr(loc, "name", None) or getattr(loc, "address", None) or ""
+            where = f" ({label})" if label else ""
+            return f"[Location{where}: {lat},{lng} — https://maps.google.com/?q={lat},{lng}]"
+    contact = getattr(msg, "contactMessage", None)
+    name = getattr(contact, "displayName", None) if contact is not None else None
+    if name:
+        return f"[Contact: {name}{_vcard_phone(getattr(contact, 'vcard', None) or '')}]"
+    array = getattr(msg, "contactsArrayMessage", None)
+    contacts = getattr(array, "contacts", None) if array is not None else None
+    if contacts:
+        names = ", ".join(
+            f"{getattr(c, 'displayName', None) or ''}"
+            f"{_vcard_phone(getattr(c, 'vcard', None) or '')}".strip()
+            for c in contacts
+        )
+        return f"[Contacts: {names}]"
+    return ""
+
+
 def _media_message(message: Any) -> tuple[Any, str] | None:
     """The first real downloadable attachment as ``(proto, kind)``, else ``None``.
 
@@ -303,8 +342,11 @@ class WhatsAppWebConnector:
                     media = (item,)
                     text = text or (getattr(proto, "caption", "") or "")
             elif not text:
-                text = await self._transcribe_voice(client, message)
-                was_voice = bool(text)  # inbound was a (transcribed) voice note
+                voice = await self._transcribe_voice(client, message)
+                if voice:
+                    text, was_voice = voice, True  # a (transcribed) voice note
+                else:
+                    text = _describe_special(message)  # location/contact → a text proxy
             if text or media:
                 if not await self._should_handle(client, message, source):
                     return  # a group message Gaia wasn't addressed in (mention/reply)
