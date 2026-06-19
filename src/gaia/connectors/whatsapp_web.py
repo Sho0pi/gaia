@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from gaia import constants
-from gaia.connectors.base import Dispatch, Media, Reply, current_chat
+from gaia.connectors.base import Dispatch, Inbound, InboundMedia, Media, Reply, current_chat
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from neonize.aioze.client import NewAClient
@@ -170,6 +170,18 @@ def _message_text(message: Any) -> str:
     return text
 
 
+def _image_message(message: Any) -> Any | None:
+    """The inbound ``imageMessage`` if this event carries a real photo, else ``None``.
+
+    Mirrors the voice check: the proto field is always present, so a non-empty ``mediaKey``
+    is what tells a real attachment from the default-empty one.
+    """
+    image = getattr(message.Message, "imageMessage", None)
+    if image is not None and getattr(image, "mediaKey", None):
+        return image
+    return None
+
+
 class WhatsAppWebConnector:
     """Bridges regular-account WhatsApp messages to the dispatcher (per-sender identity).
 
@@ -262,10 +274,17 @@ class WhatsAppWebConnector:
             )
             text = _message_text(message)
             was_voice = False
-            if not text:
+            media: tuple[InboundMedia, ...] = ()
+            image = _image_message(message)
+            if image is not None:  # an inbound photo (with optional caption)
+                item = await self._download_image(client, message, image)
+                if item is not None:
+                    media = (item,)
+                    text = text or (getattr(image, "caption", "") or "")
+            elif not text:
                 text = await self._transcribe_voice(client, message)
                 was_voice = bool(text)  # inbound was a (transcribed) voice note
-            if text:
+            if text or media:
                 if not await self._should_handle(client, message, source):
                     return  # a group message Gaia wasn't addressed in (mention/reply)
                 chat = source.Chat  # JID to send media replies to
@@ -292,7 +311,9 @@ class WhatsAppWebConnector:
                 # coincide for DMs, differ in groups. PushName is WhatsApp's display name.
                 name = getattr(message.Info, "Pushname", "") or ""
                 try:
-                    await self._dispatch(_sender_jid(source), name, text, send)
+                    await self._dispatch(
+                        _sender_jid(source), name, Inbound(text=text, media=media), send
+                    )
                 finally:
                     await self._end_typing(client, chat, typing)
 
@@ -433,6 +454,24 @@ class WhatsAppWebConnector:
             return ""
         # The prefix tells Gaia the modality, so it answers the spoken content naturally.
         return f"[voice message] {transcript}"
+
+    async def _download_image(self, client: Any, message: Any, image: Any) -> InboundMedia | None:
+        """Download an inbound photo to ``~/.gaia/cache/inbound/<id>.<ext>``; ``None`` on error.
+
+        Best-effort like the voice path — a bad image must never take the connector loop down.
+        """
+        import mimetypes
+
+        mime = getattr(image, "mimetype", "") or "image/jpeg"
+        ext = mimetypes.guess_extension(mime.split(";")[0]) or ".jpg"
+        path = constants.CACHE_DIR / "inbound" / f"{message.Info.ID}{ext}"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            await client.download_any(message.Message, str(path))
+        except Exception:
+            logger.warning("inbound image dropped: download failed", exc_info=True)
+            return None
+        return InboundMedia(path=path, mime=mime, kind="image")
 
     async def pair(self, timeout_s: float = 120.0) -> bool:
         """Foreground QR pairing: connect, wait for scan, then shut the client down.

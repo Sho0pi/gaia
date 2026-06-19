@@ -293,9 +293,10 @@ async def _pair(session_db: object, timeout_s: int) -> bool:
     from pathlib import Path
 
     from gaia.connectors import WhatsAppWebConnector
+    from gaia.connectors.base import Inbound
 
     async def _noop_dispatch(
-        _sender_id: str, _name: str, _text: str, _send: object
+        _sender_id: str, _name: str, _inbound: Inbound, _send: object
     ) -> None:  # pragma: no cover
         return None
 

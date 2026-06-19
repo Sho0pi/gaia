@@ -14,7 +14,7 @@ from typing import Any, ClassVar, cast
 
 from gaia import constants
 from gaia.cli._console import console
-from gaia.connectors.base import Dispatch, Reply, as_text
+from gaia.connectors.base import Dispatch, Inbound, Reply, as_text
 
 InputFunc = Callable[[str], Awaitable[str]]
 
@@ -81,7 +81,7 @@ class CLIConnector:
             print_reply("")
             print_reply(f"[bold magenta]Gaia[/] [dim]>[/] {as_text(reply)}")
 
-        await self._dispatch(self.SENDER, "operator", text, send)
+        await self._dispatch(self.SENDER, "operator", Inbound(text=text), send)
 
     def run(self) -> None:
         """Launch the inline chat on its own fresh loop. Blocks until the user quits."""

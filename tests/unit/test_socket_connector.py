@@ -6,15 +6,15 @@ from pathlib import Path
 
 import pytest
 
-from gaia.connectors.base import Send
+from gaia.connectors.base import Inbound, Send
 from gaia.connectors.socket import DaemonNotRunningError, SocketChatClient, SocketConnector
 
 
 async def test_socket_connector_dispatches_replies(tmp_path: Path) -> None:
     seen: list[tuple[str, str, str]] = []
 
-    async def dispatch(sender: str, name: str, text: str, send: Send) -> None:
-        seen.append((sender, name, text))
+    async def dispatch(sender: str, name: str, inbound: Inbound, send: Send) -> None:
+        seen.append((sender, name, inbound.text))
         await send("one")
         await send("two")
 
@@ -32,7 +32,9 @@ async def test_socket_connector_dispatches_replies(tmp_path: Path) -> None:
             async def send(reply: object) -> None:
                 replies.append(str(reply))
 
-            await SocketChatClient(socket_path).dispatch("ignored", "ignored", "hi", send)
+            await SocketChatClient(socket_path).dispatch(
+                "ignored", "ignored", Inbound(text="hi"), send
+            )
 
             assert seen == [("local", "operator", "hi")]
             assert replies == ["one", "two"]

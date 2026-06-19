@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Protocol
 
-from gaia.connectors.base import Reply, as_text
+from gaia.connectors.base import Inbound, Reply, as_text
 from gaia.cron.store import CronJob
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -60,7 +60,7 @@ def make_runner(gaia: Gaia) -> Any:  # Runner (Callable[[CronJob], Awaitable[Non
             f"[scheduled task — fired by your cron schedule, not the user] {job.message}\n"
             "Carry the task out now and reply with the result for the user."
         )
-        await handler(prompt, send)
+        await handler(Inbound(text=prompt), send)
 
     return run
 

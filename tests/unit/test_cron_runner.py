@@ -34,8 +34,8 @@ def fake_handler(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     prompts: list[str] = []
 
     def build(gaia: Any, **kw: Any) -> Any:
-        async def handler(text: str, send: Any) -> None:
-            prompts.append(text)
+        async def handler(inbound: Any, send: Any) -> None:
+            prompts.append(inbound.text)
             await send("the result")
 
         return handler

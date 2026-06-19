@@ -20,7 +20,7 @@ import logging
 from functools import partial
 from typing import TYPE_CHECKING
 
-from gaia.connectors.base import Dispatch, Send
+from gaia.connectors.base import Dispatch, Inbound, Send
 from gaia.core.handler import GaiaHandler, build_handler
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -47,7 +47,7 @@ class Dispatcher:
             await handler.flush()
 
     async def _dispatch(
-        self, channel: str, sender_id: str, name: str, text: str, send: Send
+        self, channel: str, sender_id: str, name: str, inbound: Inbound, send: Send
     ) -> None:
         users = self._gaia.users
         user = users.resolve(channel, sender_id)
@@ -69,7 +69,7 @@ class Dispatcher:
             )
             return
 
-        await self._handler_for(user, channel)(text, send)
+        await self._handler_for(user, channel)(inbound, send)
 
     def _handler_for(self, user: User, channel: str) -> GaiaHandler:
         """The cached handler for this person on this channel (built on first use).

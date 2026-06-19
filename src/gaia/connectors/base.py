@@ -34,21 +34,43 @@ class Media:
     caption: str = ""
 
 
+@dataclass(frozen=True)
+class InboundMedia:
+    """An inbound attachment a connector downloaded to disk (e.g. a WhatsApp image)."""
+
+    path: Path
+    mime: str  # e.g. "image/jpeg"
+    kind: str = "image"  # image | audio | video | document — only "image" is consumed today
+
+
+@dataclass(frozen=True)
+class Inbound:
+    """One inbound message: its text and/or its attachments.
+
+    The inbound counterpart to the outbound :data:`Reply` union — a message can carry text,
+    media, or both (an image with a caption). Connectors build it; the handler turns it into
+    a model turn. Text-only connectors just set ``text``.
+    """
+
+    text: str = ""
+    media: tuple[InboundMedia, ...] = ()
+
+
 # What the handler may hand a connector to send back: plain text or a media file.
 Reply = str | Media
 
 # Sink a connector provides; the handler calls it once per reply (text or media).
 Send = Callable[[Reply], Awaitable[None]]
 
-# Receives inbound text + the sink, streams replies through it, returns nothing.
-Handler = Callable[[str, Send], Awaitable[None]]
+# Receives an inbound message + the sink, streams replies through it, returns nothing.
+Handler = Callable[["Inbound", Send], Awaitable[None]]
 
-# What a connector calls per inbound message: it identifies the *sender*
-# (``sender_id`` = the channel-specific id, ``name`` = a display name from the channel)
-# and the text, plus the reply sink. The channel is bound when the connector is built,
-# so the connector only supplies who-and-what; the dispatcher resolves the sender to a
-# canonical user + role, gates guests, and routes to that user's handler.
-Dispatch = Callable[[str, str, str, Send], Awaitable[None]]
+# What a connector calls per inbound message: it identifies the *sender* (``sender_id`` =
+# the channel-specific id, ``name`` = a display name from the channel) and the message, plus
+# the reply sink. The channel is bound when the connector is built, so the connector only
+# supplies who-and-what; the dispatcher resolves the sender to a canonical user + role, gates
+# guests, and routes to that user's handler.
+Dispatch = Callable[[str, str, "Inbound", Send], Awaitable[None]]
 
 
 def as_text(reply: Reply) -> str:

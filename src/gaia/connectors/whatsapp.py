@@ -5,7 +5,7 @@ Deferred import keeps the module importable without the pywa dep installed.
 
 from __future__ import annotations
 
-from gaia.connectors.base import Dispatch, Reply, as_text
+from gaia.connectors.base import Dispatch, Inbound, Reply, as_text
 
 
 class WhatsAppConnector:
@@ -45,7 +45,10 @@ class WhatsAppConnector:
 
                 sender = message.from_user
                 await self._dispatch(
-                    sender.wa_id, getattr(sender, "name", "") or "", message.text, send
+                    sender.wa_id,
+                    getattr(sender, "name", "") or "",
+                    Inbound(text=message.text or ""),
+                    send,
                 )
 
         return wa

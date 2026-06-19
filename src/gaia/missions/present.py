@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from gaia.connectors.base import Reply, current_chat
+from gaia.connectors.base import Inbound, Reply, current_chat
 from gaia.missions.notify import _target
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -74,6 +74,6 @@ async def present_result(gaia: Gaia, task: Task, run: SoulRun) -> None:
     # owner gets a public_url; a local one stays private) — same contextvar message_user reads.
     current_chat.set(target)
     try:
-        await handler(_prompt(task, run), send)
+        await handler(Inbound(text=_prompt(task, run)), send)
     except Exception:  # pragma: no cover - presentation is best-effort
         logger.warning("mission %s: present turn failed", task.id, exc_info=True)
