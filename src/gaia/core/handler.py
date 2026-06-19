@@ -69,12 +69,26 @@ class GaiaHandler:
         # critical path so mem0's extraction LLM call never delays the next reply.
         self._flush_task: asyncio.Task[None] | None = None
 
-    def _build_runner(self) -> Any:
+    async def _profile_block(self) -> str | None:
+        """The user's distilled profile to bake into the prompt, or None.
+
+        One LLM call per runner build (session start / config reload) — see
+        :func:`gaia.memory.profile.distill_profile`. Gated on ``memory.preload``; the
+        distiller itself returns None (no model call) when memory is off or the user has
+        nothing stored, so a fresh store never triggers one.
+        """
+        if not self._gaia.config.memory.preload:
+            return None
+        from gaia.memory.profile import distill_profile
+
+        return await distill_profile(self._gaia, self._user_id)
+
+    def _build_runner(self, profile: str | None) -> Any:
         """Build a Runner over the (reused) session service against the live config.
 
-        Re-reads ``build_root_agent`` (model/instruction) and ``memory_service`` each call,
-        so a rebuild picks up every gaia.yaml change. The session service is shared, so the
-        conversation continues across rebuilds.
+        Re-reads ``build_root_agent`` (model/instruction/profile) and ``memory_service``
+        each call, so a rebuild picks up every gaia.yaml change. The session service is
+        shared, so the conversation continues across rebuilds.
         """
         from google.adk.runners import Runner
 
@@ -82,7 +96,7 @@ class GaiaHandler:
 
         return Runner(
             app_name=constants.APP_NAME,
-            agent=self._gaia.build_root_agent(self),
+            agent=self._gaia.build_root_agent(self, profile=profile),
             session_service=self._session_service,
             memory_service=self._gaia.memory_service,
             plugins=[ToolPermissionPlugin(self._gaia), ToolLoggingPlugin()],
@@ -97,14 +111,14 @@ class GaiaHandler:
                 app_name=constants.APP_NAME, user_id=self._user_id, session_id=self._session_id
             )
             self._runner_config = self._gaia.config
-            self._runner = self._build_runner()
+            self._runner = self._build_runner(await self._profile_block())
         elif self._runner_config is not None and self._gaia.config is not self._runner_config:
             # gaia.yaml changed on disk (ConfigSupplier returns a new object): rebuild the
             # agent so the live conversation picks up the new model/instruction/memory. The
             # shared session service keeps this session's history intact.
             log_event("config_reloaded", user=self._user_id, session=self._session_id)
             self._runner_config = self._gaia.config
-            self._runner = self._build_runner()
+            self._runner = self._build_runner(await self._profile_block())
         return self._runner
 
     async def __call__(self, text: str, send: Send) -> None:
@@ -123,14 +137,27 @@ class GaiaHandler:
         turn_events: list[Any] = []
         texts: list[str] = []
         try:
+            # yield_user_message=True so the user's own turn is in the event stream we
+            # buffer — otherwise auto-ingest only ever sees Gaia's replies and mem0
+            # extracts facts from the wrong half of the conversation.
             async for event in runner.run_async(
-                user_id=self._user_id, session_id=self._session_id, new_message=content
+                user_id=self._user_id,
+                session_id=self._session_id,
+                new_message=content,
+                yield_user_message=True,
             ):
                 turn_events.append(event)
                 # Collect the final answer's text parts; they're emitted after the loop so
                 # a screenshot taken this turn can carry the reply as its caption (one
                 # message) rather than arriving as a separate "screenshot" image + text.
-                if event.is_final_response() and event.content and event.content.parts:
+                # Skip the echoed user event (role "user") — it's in the stream only so
+                # auto-ingest sees the user's side; it must not be sent back as a reply.
+                if (
+                    event.is_final_response()
+                    and event.content
+                    and event.content.parts
+                    and getattr(event.content, "role", None) != "user"
+                ):
                     texts.extend(part.text for part in event.content.parts if part.text)
         except Exception as exc:
             # A model error (rate limit, outage) or tool fault must not surface as a raw
