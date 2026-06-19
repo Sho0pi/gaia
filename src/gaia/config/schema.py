@@ -502,10 +502,31 @@ class AgentBinding(BaseModel):
     )
 
 
+class CoalesceConfig(BaseModel):
+    """Merge rapid back-to-back messages into one turn (debounce inbound)."""
+
+    enabled: bool = Field(
+        default=True,
+        description="Wait briefly and merge messages sent in quick succession into a single "
+        "turn (so a typo fix / forgotten detail joins the first message). Off = each message "
+        "is its own turn immediately.",
+    )
+    quiet_seconds: float = Field(
+        default=1.5,
+        description="How long to wait for another message after the last one before running "
+        "the merged turn (a channel that reports 'typing' extends this until you stop).",
+    )
+    max_seconds: float = Field(
+        default=8.0,
+        description="Hard cap on how long a batch is held — fires even if you keep typing.",
+    )
+
+
 class GaiaConfig(BaseModel):
     """Root of ``gaia.yaml``."""
 
     llm: LLMConfig = Field(default_factory=LLMConfig)
+    coalesce: CoalesceConfig = Field(default_factory=CoalesceConfig)
     admin: list[str] = Field(
         default_factory=list,
         description="Channel-qualified sender ids seeded as admins, e.g. "

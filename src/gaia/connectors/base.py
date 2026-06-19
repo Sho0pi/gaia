@@ -50,6 +50,11 @@ Handler = Callable[[str, Send], Awaitable[None]]
 # canonical user + role, gates guests, and routes to that user's handler.
 Dispatch = Callable[[str, str, str, Send], Awaitable[None]]
 
+# Optional inbound "user is composing" signal: ``(sender_id, active)``. A connector that can
+# observe the other party typing (e.g. WhatsApp) calls it so the dispatcher can hold a batch
+# of rapid messages open until the user stops. Connectors that can't just never call it.
+Typing = Callable[[str, bool], Awaitable[None]]
+
 
 def as_text(reply: Reply) -> str:
     """Best-effort text form of a reply, for connectors that can't send media.

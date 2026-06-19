@@ -56,9 +56,12 @@ def _gaia(tmp_path: Path) -> Any:
         telegram=SimpleNamespace(default_role="guest"),
         cli=SimpleNamespace(default_role="admin"),
     )
+    # coalesce off by default here so the routing tests run a turn per message immediately;
+    # the merge behaviour has its own test (and full coverage in test_coalesce.py).
+    coalesce = SimpleNamespace(enabled=False, quiet_seconds=0.05, max_seconds=1.0)
     return SimpleNamespace(
         users=UserStore(tmp_path / "users.json"),
-        config=SimpleNamespace(connectors=connectors),
+        config=SimpleNamespace(connectors=connectors, coalesce=coalesce),
     )
 
 
@@ -114,6 +117,29 @@ async def test_handler_cached_per_user_channel(tmp_path: Path, built: list[_Fake
 
     assert len(built) == 1  # same handler reused
     assert built[0].calls == ["one", "two"]
+
+
+async def test_rapid_messages_coalesce_into_one_turn(
+    tmp_path: Path, built: list[_FakeHandler]
+) -> None:
+    import asyncio
+
+    gaia = _gaia(tmp_path)
+    gaia.config.coalesce.enabled = True  # turn the debounce on for this test
+    gaia.users.register("whatsapp", "972@s.whatsapp.net", "Grace", role="user")
+    d = Dispatcher(gaia)
+    out: list[str] = []
+    send = await _send_collect(out)
+    wa = d.for_channel("whatsapp")
+
+    async def second() -> None:
+        await asyncio.sleep(0.01)  # arrives within the quiet window
+        await wa("972@s.whatsapp.net", "Grace", "fix typo: red", send)
+
+    await asyncio.gather(wa("972@s.whatsapp.net", "Grace", "make it blue", send), second())
+
+    assert len(built) == 1
+    assert built[0].calls == ["make it blue\nfix typo: red"]  # one merged turn
 
 
 async def test_same_person_two_channels_shares_user_id(

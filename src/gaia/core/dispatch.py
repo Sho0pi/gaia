@@ -20,7 +20,8 @@ import logging
 from functools import partial
 from typing import TYPE_CHECKING
 
-from gaia.connectors.base import Dispatch, Send
+from gaia.connectors.base import Dispatch, Send, Typing, current_chat
+from gaia.core.coalesce import MessageCoalescer
 from gaia.core.handler import GaiaHandler, build_handler
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -30,19 +31,37 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 logger = logging.getLogger(__name__)
 
 
+def _is_command(text: str) -> bool:
+    from gaia.commands import parse
+
+    return parse(text) is not None
+
+
 class Dispatcher:
     """Routes inbound messages to per-user handlers, gating unapproved guests."""
 
     def __init__(self, gaia: Gaia) -> None:
         self._gaia = gaia
         self._handlers: dict[tuple[str, str], GaiaHandler] = {}
+        # Merge rapid back-to-back messages into one turn (knobs read live for hot-reload).
+        self._coalescer = MessageCoalescer(
+            enabled=lambda: gaia.config.coalesce.enabled,
+            quiet_seconds=lambda: gaia.config.coalesce.quiet_seconds,
+            max_seconds=lambda: gaia.config.coalesce.max_seconds,
+            is_command=_is_command,
+        )
 
     def for_channel(self, channel: str) -> Dispatch:
         """A :data:`Dispatch` bound to ``channel`` for one connector to call per message."""
         return partial(self._dispatch, channel)
 
+    def typing_for(self, channel: str) -> Typing:
+        """A :data:`Typing` hook bound to ``channel`` (a connector calls it on composing)."""
+        return partial(self._typing, channel)
+
     async def flush_all(self) -> None:
-        """Drain every live per-user handler's memory buffer (best-effort, on shutdown)."""
+        """Fire pending batches, then drain every handler's memory buffer (on shutdown)."""
+        await self._coalescer.flush_all()
         for handler in list(self._handlers.values()):
             await handler.flush()
 
@@ -69,7 +88,19 @@ class Dispatcher:
             )
             return
 
-        await self._handler_for(user, channel)(text, send)
+        # Buffer + debounce: rapid messages from this person merge into one turn. The await
+        # only returns once the merged turn has run, so the connector's "typing" bracket
+        # spans the whole batch. ``run`` is bound to this message's reply sink.
+        handler = self._handler_for(user, channel)
+        key = (user.id, channel)
+        chat = current_chat.get()
+        await self._coalescer.submit(key, text, chat, send, lambda merged: handler(merged, send))
+
+    async def _typing(self, channel: str, sender_id: str, active: bool) -> None:
+        """Forward an inbound 'user is composing' signal to the coalescer (extends the wait)."""
+        user = self._gaia.users.resolve(channel, sender_id)
+        if user is not None:
+            self._coalescer.typing((user.id, channel), active)
 
     def _handler_for(self, user: User, channel: str) -> GaiaHandler:
         """The cached handler for this person on this channel (built on first use).
