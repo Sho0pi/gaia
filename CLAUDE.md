@@ -45,7 +45,9 @@ unsure which library, delegate to `lib-researcher` subagent.
 - `commands/` — in-chat slash commands (`/help`, `/reset`, …): one class per file,
   handled out-of-band, never reach model. → `new-command` skill.
 - `memory/` — `backend.py` builds mem0, `service.py` adapts it to ADK's
-  `BaseMemoryService` (auto-ingest batching + `remember`/`load_memory` tools).
+  `BaseMemoryService` (auto-ingest batching + `remember`/`load_memory` tools);
+  `profile.py` distils the session-start `<USER_PROFILE>`. Full design:
+  `docs/memory-design.md`.
 - `missions/` — task board + engine. `store.py` (stdlib sqlite3/WAL, `~/.gaia/tasks.db`):
   `Task` rows + `TaskStore` CRUD/`ready_tasks`. Per-user `owner` (≠ `created_by` agent).
   `dispatcher.py` `MissionDispatcher` (P2) runs in daemon: polls ready tasks → runs each
