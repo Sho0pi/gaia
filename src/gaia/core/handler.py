@@ -207,19 +207,18 @@ class GaiaHandler:
         so either way the user gets the words attached to the picture, not a bare path.
         """
         from gaia.connectors.base import Media
-        from gaia.core.screenshots import media_for_screenshots
+        from gaia.core.screenshots import media_for_outputs
 
-        media = media_for_screenshots(events)
+        media = media_for_outputs(events)
         if media:
-            # The reply text becomes the first image's caption — one combined message.
-            # Extra screenshots (rare) follow without a caption.
+            # The reply text rides as the caption of the first attachment (one combined
+            # message); each file keeps its own caption otherwise (a share_file carries the
+            # model's words, screenshots their "screenshot" label).
             caption = "\n".join(t.strip() for t in texts if t.strip())
-            first = media[0]
-            log_event("media_out", user=self._user_id, tool="screenshot", chars=len(caption))
-            await send(Media(first.path, caption=caption or first.caption))
-            for extra in media[1:]:
-                log_event("media_out", user=self._user_id, tool="screenshot")
-                await send(Media(extra.path, caption=""))
+            for i, item in enumerate(media):
+                cap = (caption if i == 0 else "") or item.caption
+                log_event("media_out", user=self._user_id, tool=item.kind, chars=len(cap))
+                await send(Media(item.path, caption=cap, kind=item.kind))
             return
 
         # No media: stream each non-empty text part as its own reply (one inbound can fan out

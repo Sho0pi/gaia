@@ -212,6 +212,7 @@ class Gaia:
         from gaia.tools.command import make_run_command
         from gaia.tools.message import make_message_user
         from gaia.tools.permission import make_manage_permission
+        from gaia.tools.share import make_share_file
         from gaia.tools.task import make_task_plan
 
         # delegate_to_soul and message_user are attached to the root only — souls (built
@@ -235,6 +236,7 @@ class Gaia:
                 make_run_command(self, handler),
                 make_message_user(self.users, self.connectors, lambda: self.memory_service),
                 make_manage_permission(self),
+                make_share_file(),
                 make_task_plan(self.tasks, max_tasks=self.config.missions.max_tasks),
                 *self.container.mcp_toolsets(),
                 *self.container.skill_toolsets(),
