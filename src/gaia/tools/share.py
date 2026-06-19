@@ -35,10 +35,12 @@ def make_share_file() -> Callable[..., Awaitable[dict[str, Any]]]:
         """Send a file on disk to the user (image, video, audio, or document).
 
         Use this to deliver an actual file — an image you generated, a document a soul wrote,
-        a file the user sent you — instead of just describing it or pasting a path. Put your
-        message in ``caption`` (it rides with the file); don't also send it as a separate text
-        reply. The file type is detected from the path, so the user gets a real photo/video/
-        document, not a link.
+        a file the user sent you — instead of just describing it, pasting a path, or serving a
+        link (``serve`` is only for previewing a website, never for handing over a file). Put
+        your message in ``caption`` (it rides with the file); don't also send it as a separate
+        text reply. The file type is detected from the path, so the user gets a real
+        photo/video/document in the chat. Sends ONE file per call — for several, zip them
+        (exec) and share the zip, or call share_file once per file.
 
         Args:
             path: path to the file to send (a deliverable in a soul's workspace, an uploaded
