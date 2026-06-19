@@ -171,11 +171,25 @@ async def test_serve_auto_public_by_channel(monkeypatch: pytest.MonkeyPatch) -> 
     current_chat.set(("", ""))
 
 
-async def test_serve_explicit_false_overrides_remote(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_remote_user_always_gets_public_even_with_public_false(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A remote user can't open a 127.0.0.1 link, so public=False must NOT strand them — the
+    # model has no reason to keep a phone user local-only.
     from gaia.connectors.base import current_chat
 
     serve = make_serve(_FakeServer(), _FakeTunnel(), tunnel_enabled=True)  # type: ignore[arg-type]
     current_chat.set(("whatsapp", "972..."))
+    out = await serve("/ws", public=False)
+    assert "public_url" in out
+    current_chat.set(("", ""))
+
+
+async def test_local_user_public_false_stays_local(monkeypatch: pytest.MonkeyPatch) -> None:
+    from gaia.connectors.base import current_chat
+
+    serve = make_serve(_FakeServer(), _FakeTunnel(), tunnel_enabled=True)  # type: ignore[arg-type]
+    current_chat.set(("cli", "local"))
     out = await serve("/ws", public=False)
     assert "public_url" not in out
     current_chat.set(("", ""))
