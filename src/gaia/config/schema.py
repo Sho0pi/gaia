@@ -425,6 +425,11 @@ class MemoryConfig(BaseModel):
         default=3600,
         description="Also flush if this many seconds have passed since the first buffered turn.",
     )
+    extraction_instructions: str = Field(
+        default="",
+        description="Override what long-term memory extracts (mem0 custom_instructions); "
+        "empty = the built-in default (durable user facts only, no assistant action logs).",
+    )
     recall_limit: int = Field(
         default=5, description="How many memories load_memory returns per search."
     )

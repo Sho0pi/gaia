@@ -230,7 +230,7 @@ class Gaia:
                 AclToolset(self),
                 make_delegate(self),
                 make_run_command(self, handler),
-                make_message_user(self.users, self.connectors),
+                make_message_user(self.users, self.connectors, lambda: self.memory_service),
                 make_manage_permission(self),
                 make_task_plan(self.tasks, max_tasks=self.config.missions.max_tasks),
                 *self.container.mcp_toolsets(),
