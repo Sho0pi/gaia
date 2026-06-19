@@ -267,6 +267,10 @@ class ChatGptOAuthLlm(BaseLlm):
         text_parts: list[str] = []
         calls: list[types.Part] = []
         reasoning: list[types.Part] = []
+        # Whether any text was delivered incrementally as partial deltas. When the backend
+        # sends the answer only as a completed message item (seen with reasoning effort on) we
+        # recover it below, and it must still be put in the final response.
+        streamed = False
         async with client.stream(
             "POST", RESPONSES_URL, headers=self._headers(creds, session_id), json=body
         ) as response:
@@ -287,13 +291,24 @@ class ChatGptOAuthLlm(BaseLlm):
                     delta = event.get("delta", "")
                     text_parts.append(delta)
                     if stream and delta:
+                        streamed = True
                         yield LlmResponse(
                             content=types.Content(role="model", parts=[types.Part(text=delta)]),
                             partial=True,
                         )
                 elif kind == "response.output_item.done":
                     item = event.get("item", {})
-                    if item.get("type") == "function_call":
+                    if item.get("type") == "message" and not text_parts:
+                        # The assistant message arrived as a completed item, not as
+                        # output_text.delta events (the backend does this with reasoning effort
+                        # on). Recover its text so the turn isn't empty. Guarded on no deltas so
+                        # a normal streamed turn isn't double-counted.
+                        text_parts.extend(
+                            c.get("text", "")
+                            for c in item.get("content") or []
+                            if c.get("type") in ("output_text", "text") and c.get("text")
+                        )
+                    elif item.get("type") == "function_call":
                         calls.append(
                             types.Part(
                                 function_call=types.FunctionCall(
@@ -315,7 +330,9 @@ class ChatGptOAuthLlm(BaseLlm):
         # backend expects when these items are replayed next turn.
         parts: list[types.Part] = [*reasoning]
         full = "".join(text_parts)
-        if full and not stream:
+        # Add the text unless it was already delivered as partial deltas (stream mode). Text
+        # recovered from a message item was never streamed, so it still needs to go out here.
+        if full and not streamed:
             parts.append(types.Part(text=full))
         parts.extend(calls)
         if parts or not stream:

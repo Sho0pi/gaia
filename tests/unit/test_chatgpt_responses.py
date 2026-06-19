@@ -231,6 +231,30 @@ async def test_streams_text_and_function_call(
     assert any(p.function_call and p.function_call.name == "web_search" for p in parts)
 
 
+async def test_recovers_text_from_a_completed_message_item(
+    monkeypatch: pytest.MonkeyPatch, fresh_creds: None
+) -> None:
+    # With reasoning effort on, the backend delivers the answer as a completed message item
+    # instead of output_text.delta events. The turn must still carry that text (not be empty).
+    lines = [
+        'data: {"type":"response.output_item.done","item":{"type":"message",'
+        '"role":"assistant","content":[{"type":"output_text","text":"Recovered answer"}]}}',
+        "data: [DONE]",
+    ]
+
+    class _MsgClient(_FakeClient):
+        def stream(self, *a: Any, **k: Any) -> _FakeStream:
+            return _FakeStream(lines)
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda *a, **k: _MsgClient())
+
+    out = [r async for r in ChatGptOAuthLlm(model="gpt-5").generate_content_async(_request())]
+
+    assert any(p.text == "Recovered answer" for p in out[-1].content.parts)
+
+
 async def test_missing_credentials_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(rl, "load_credentials", lambda *a, **k: None)
 
