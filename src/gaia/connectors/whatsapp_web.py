@@ -263,6 +263,26 @@ def _media_message(message: Any) -> tuple[Any, str] | None:
     return None
 
 
+#: Outbound ``Media.kind`` → the neonize client method that sends that file type.
+_MEDIA_SENDERS = {
+    "image": "send_image",
+    "video": "send_video",
+    "audio": "send_audio",
+    "document": "send_document",
+}
+
+
+async def _send_media(client: Any, to: Any, media: Media) -> None:
+    """Send ``media`` to a neonize JID with the method matching its kind (document as default)."""
+    name = _MEDIA_SENDERS.get(media.kind, "send_document")
+    method = getattr(client, name)
+    if name == "send_document":
+        # send_document needs the filename, else WhatsApp shows the file as "Untitled".
+        await method(to, str(media.path), caption=media.caption or None, filename=media.path.name)
+    else:
+        await method(to, str(media.path), caption=media.caption or None)
+
+
 class WhatsAppWebConnector:
     """Bridges regular-account WhatsApp messages to the dispatcher (per-sender identity).
 
@@ -379,12 +399,10 @@ class WhatsAppWebConnector:
                 current_chat.set((self.NAME, _deliverable_chat(source)))
 
                 async def send(reply: Reply) -> None:
-                    # An image reply goes out as a real WhatsApp image; text replies
-                    # quote the inbound message as before.
+                    # A media reply goes out as the real file (image/video/audio/document);
+                    # text replies quote the inbound message as before.
                     if isinstance(reply, Media):
-                        await client.send_image(
-                            chat, str(reply.path), caption=reply.caption or None
-                        )
+                        await _send_media(client, chat, reply)
                     else:
                         await client.reply_message(reply, message)
 
@@ -618,7 +636,7 @@ class WhatsAppWebConnector:
         user, _, server = chat.partition("@")
         jid = build_jid(user, server or "s.whatsapp.net")
         if isinstance(reply, Media):
-            await self._client.send_image(jid, str(reply.path), caption=reply.caption or None)
+            await _send_media(self._client, jid, reply)
         else:
             await self._client.send_message(jid, reply)
 

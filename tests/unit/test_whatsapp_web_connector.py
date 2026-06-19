@@ -72,6 +72,8 @@ class _FakeClient:
         self.handlers: dict[Any, Any] = {}
         self.replies: list[tuple[str, Any]] = []
         self.images: list[tuple[Any, str, str | None]] = []
+        self.media_sends: list[tuple[str, Any, str, str | None]] = []
+        self.doc_filenames: list[str | None] = []
         self.connected = False
         self.stopped = False
         self.reads: list[tuple[str, Any, Any, Any]] = []
@@ -99,6 +101,19 @@ class _FakeClient:
 
     async def send_image(self, to: Any, file: str, caption: str | None = None) -> None:
         self.images.append((to, file, caption))
+        self.media_sends.append(("send_image", to, file, caption))
+
+    async def send_video(self, to: Any, file: str, caption: str | None = None) -> None:
+        self.media_sends.append(("send_video", to, file, caption))
+
+    async def send_audio(self, to: Any, file: str, caption: str | None = None) -> None:
+        self.media_sends.append(("send_audio", to, file, caption))
+
+    async def send_document(
+        self, to: Any, file: str, caption: str | None = None, filename: str | None = None
+    ) -> None:
+        self.media_sends.append(("send_document", to, file, caption))
+        self.doc_filenames.append(filename)
 
     async def get_me(self) -> SimpleNamespace:
         # Device carries both the phone JID and the @lid identity.
@@ -216,6 +231,31 @@ async def test_media_reply_sent_as_image(fake_neonize: dict[str, Any], tmp_path:
 
     assert [text for text, _ in client.replies] == ["here:"]  # text reply still sent
     assert client.images == [("chat-jid", "/tmp/shot.png", "screenshot")]  # image via send_image
+
+
+@pytest.mark.parametrize(
+    ("name", "method"),
+    [
+        ("clip.mp4", "send_video"),
+        ("song.mp3", "send_audio"),
+        ("report.pdf", "send_document"),
+        ("data.csv", "send_document"),  # unknown-ish type → document
+    ],
+)
+async def test_media_reply_sent_by_kind(
+    name: str, method: str, fake_neonize: dict[str, Any], tmp_path: Path
+) -> None:
+    from gaia.connectors.base import Media
+
+    async def dispatch(_sender_id: str, _name: str, _inbound: Inbound, send: Send) -> None:
+        await send(Media(Path("/tmp") / name, caption="here"))
+
+    client = WhatsAppWebConnector(tmp_path / "wa.db", dispatch).build_client()
+    await client.handlers[fake_neonize["MessageEv"]](client, _msg(conversation="x"))
+
+    assert client.media_sends == [(method, "chat-jid", f"/tmp/{name}", "here")]
+    if method == "send_document":
+        assert client.doc_filenames == [name]  # filename set, else WhatsApp shows "Untitled"
 
 
 async def test_empty_message_is_ignored(fake_neonize: dict[str, Any], tmp_path: Path) -> None:

@@ -14,10 +14,24 @@ actual attachment. A connector that can't send media falls back to the path as t
 
 from __future__ import annotations
 
+import mimetypes
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
+
+
+def media_kind(path: Path) -> str:
+    """Classify a file for outbound sending: ``image|video|audio|document`` (from its mime).
+
+    Drives which connector send method is used (send_image vs send_video vs …). Anything not
+    clearly image/video/audio — PDFs, csv, zips, unknown — is a ``document`` (the safe default
+    every channel can deliver as a file).
+    """
+    mime, _ = mimetypes.guess_type(str(path))
+    top = mime.split("/", 1)[0] if mime else ""
+    return top if top in ("image", "video", "audio") else "document"
+
 
 #: Which (channel, chat id) the handler is currently serving. Connectors set this just
 #: before invoking the handler, so a tool that schedules a *later* reply (the cron
@@ -34,10 +48,19 @@ inbound_attachments: ContextVar[tuple[Path, ...]] = ContextVar("inbound_attachme
 
 @dataclass(frozen=True)
 class Media:
-    """A non-text reply: a file on disk (e.g. a screenshot PNG) plus a caption."""
+    """A non-text reply: a file on disk (e.g. a screenshot PNG) plus a caption.
+
+    ``kind`` (``image|video|audio|document``) tells a connector which send method to use; it's
+    inferred from the file when left blank, so callers usually just pass ``path``/``caption``.
+    """
 
     path: Path
     caption: str = ""
+    kind: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.kind:
+            object.__setattr__(self, "kind", media_kind(self.path))
 
 
 @dataclass(frozen=True)
