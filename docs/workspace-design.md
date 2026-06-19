@@ -144,6 +144,32 @@ Code: everyone); gaia currently gives it to no one.
    - A future `workspaceAccess`-style config knob (`agents.gaia.workspace_access:
      rw|ro`) if a locked-down profile is ever needed.
 
+## 4b. Project sub-directories (per soul run)
+
+The hierarchy above isolates *souls* from each other; it does **not** isolate one soul's
+runs from each other. The same soul reuses one workspace, so asking `frontend_developer` to
+build two sites makes both write `index.html` into the same dir — the second clobbers the
+first. So the workspace gains a **project** layer:
+
+```
+~/.gaia/agents/<soul>/workspace/<project>/   # one project = one unit of work
+```
+
+- A `current_project` ContextVar (`tools/fs/base.py`) carries the active project slug.
+  `execute_decision` sets it around the soul's nested `Runner` and resets on exit; every
+  writing tool reads it at call time via `sandbox_for` (one chokepoint — fs/exec/screenshot
+  all nest automatically). The root agent leaves it unset, so its own flat workspace is
+  unchanged.
+- `delegate_to_soul(task, project=…)` names it: reuse a slug to continue a project (edit its
+  files), pass a new one to start fresh, omit it for a unique fresh slug. The returned
+  `workspace` is the project dir, so `serve` gets the right tree.
+- Bonus: the before/after diff is now project-scoped, so a reused soul's old, unrelated
+  deliverables stop showing up as this run's files.
+- This goes beyond the prior art: openclaw/picoclaw have no per-project concept (one flat
+  workspace per agent); per-project subdirs are an open, unbuilt FR there (openclaw
+  [#45225](https://github.com/openclaw/openclaw/issues/45225)). Cross-soul shared projects
+  (`~/.gaia/projects/<p>`, multiple souls in one project) remain a separate follow-up.
+
 ## 5. Bottom line
 
 Your instinct is the right call and is *cheap*: gaia already built the expensive half

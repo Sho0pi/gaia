@@ -103,6 +103,44 @@ async def test_execute_decision_copies_attachments_into_workspace(
     assert (Path(run.workspace) / "logo.png").read_bytes() == b"img-bytes"
 
 
+async def test_execute_decision_scopes_runs_to_separate_project_dirs(
+    gaia: Gaia, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Two named projects -> two dirs (no overwrite); same name -> same dir (continue editing);
+    # omitted -> a fresh unique dir each time.
+    _install(monkeypatch, FakeLlm(responses=[_text("ok")] * 4))
+
+    a = await execute_decision(gaia, _FORGE, "build site", user_id="i", project="plant-shop")
+    b = await execute_decision(gaia, _FORGE, "build site", user_id="i", project="bakery")
+    a2 = await execute_decision(gaia, _FORGE, "edit site", user_id="i", project="plant-shop")
+    assert a.workspace.endswith("/plant-shop") and b.workspace.endswith("/bakery")
+    assert a.workspace != b.workspace  # separate projects, separate dirs
+    assert a2.workspace == a.workspace  # same slug reuses the project dir
+
+    u1 = await execute_decision(gaia, _FORGE, "build site", user_id="i")
+    u2 = await execute_decision(gaia, _FORGE, "build site", user_id="i")
+    assert u1.workspace != u2.workspace  # omitted project -> unique each run
+
+
+async def test_execute_decision_attachment_lands_in_the_project_dir(
+    gaia: Gaia, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from gaia.connectors.base import inbound_attachments
+
+    upload = tmp_path / "logo.png"
+    upload.write_bytes(b"img")
+    _install(monkeypatch, FakeLlm(responses=[_text("ok")]))
+
+    token = inbound_attachments.set((upload,))
+    try:
+        run = await execute_decision(gaia, _FORGE, "use logo", user_id="i", project="shop")
+    finally:
+        inbound_attachments.reset(token)
+
+    assert run.workspace.endswith("/shop")
+    assert (Path(run.workspace) / "logo.png").read_bytes() == b"img"
+
+
 async def test_execute_decision_reuse_uses_stored_soul(
     gaia: Gaia, monkeypatch: pytest.MonkeyPatch
 ) -> None:

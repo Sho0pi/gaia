@@ -14,10 +14,18 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+from contextvars import ContextVar
 from pathlib import Path
 
 from gaia import constants
 from gaia.tools._helpers import err as err  # re-export for gaia.tools.fs.* importers
+
+#: The project a soul run is scoped to, as a slug. When set, every agent workspace nests
+#: under ``workspace/<project>`` so separate projects (e.g. two different websites the same
+#: soul builds) don't overwrite each other. ``execute_decision`` sets it around the soul's
+#: nested Runner; the fs/exec/screenshot tools read it at call time (they all go through
+#: :func:`sandbox_for`). Empty outside a soul run — the root agent stays at its flat workspace.
+current_project: ContextVar[str] = ContextVar("current_project", default="")
 
 #: Per-read byte cap and result caps for the search tools.
 MAX_READ_BYTES = 10_000_000
@@ -86,7 +94,13 @@ def sandbox_for(agents_dir: Path, agent_name: str) -> Sandbox:
     extra: tuple[Path, ...] = (Path("/tmp/gaia") / name, constants.UPLOADS_DIR)
     if name == constants.APP_NAME:  # the root agent ("gaia") owns the whole agents tree
         extra = (*extra, agents_dir)
-    return Sandbox(agents_dir / name / "workspace", extra)
+    # A soul run nests its workspace under the current project, so two projects the same soul
+    # builds (e.g. two websites) stay separate. Unset (root agent / no run) -> flat workspace.
+    primary = agents_dir / name / "workspace"
+    project = current_project.get()
+    if project:
+        primary = primary / _safe_dir(project)
+    return Sandbox(primary, extra)
 
 
 def is_denied(path: Path) -> bool:

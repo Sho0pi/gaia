@@ -93,8 +93,23 @@ async def test_forge_path_persists_runs_and_lists_only_new_files(
     assert out["created"] is True
     assert out["soul"] == "Web Designer"
     assert out["files"] == ["index.html"]  # only this run's file; old_site.html excluded
-    assert out["workspace"].endswith("web_designer/workspace")
+    # No project given -> a fresh project dir under the soul's workspace.
+    assert "web_designer/workspace/" in out["workspace"]
     assert gaia.souls.get("web_designer") is not None  # persisted for reuse
+
+
+async def test_project_arg_scopes_the_workspace(
+    env: tuple[Any, list[Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gaia, _ = env
+    _stub_decision(monkeypatch, SoulDecision(action="forge", reason="r", spec=_SPEC))
+    _stub_run_writing(monkeypatch, "index.html")
+
+    out = await make_delegate(gaia)("build it", "plant-shop", tool_context=_CTX)
+
+    assert out["status"] == "success"
+    assert out["project"] == "plant-shop"
+    assert out["workspace"].endswith("web_designer/workspace/plant-shop")
 
 
 async def test_passes_invocation_user_id_to_the_soul(
