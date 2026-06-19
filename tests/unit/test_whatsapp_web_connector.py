@@ -498,6 +498,68 @@ async def test_inbound_contact_becomes_text(fake_neonize: dict[str, Any], tmp_pa
     assert "Dana" in captured[0].text and "+972 50-123-4567" in captured[0].text
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "expect"),
+    [
+        ("buttonsResponseMessage", SimpleNamespace(selectedDisplayText="Yes"), "[Selected: Yes]"),
+        (
+            "templateButtonReplyMessage",
+            SimpleNamespace(selectedDisplayText="Option B"),
+            "[Selected: Option B]",
+        ),
+        ("listResponseMessage", SimpleNamespace(title="Large"), "[Selected: Large]"),
+        ("reactionMessage", SimpleNamespace(text="👍"), "[Reacted 👍 to a message]"),
+    ],
+)
+async def test_inbound_interactive_replies_become_text(
+    field: str, value: Any, expect: str, fake_neonize: dict[str, Any], tmp_path: Path
+) -> None:
+    captured: list[Inbound] = []
+
+    async def dispatch(_sender_id: str, _name: str, inbound: Inbound, _send: Send) -> None:
+        captured.append(inbound)
+
+    msg = _msg()
+    setattr(msg.Message, field, value)
+    client = WhatsAppWebConnector(tmp_path / "wa.db", dispatch).build_client()
+    await client.handlers[fake_neonize["MessageEv"]](client, msg)
+
+    assert len(captured) == 1 and captured[0].text == expect
+
+
+async def test_inbound_poll_creation_becomes_text(
+    fake_neonize: dict[str, Any], tmp_path: Path
+) -> None:
+    captured: list[Inbound] = []
+
+    async def dispatch(_sender_id: str, _name: str, inbound: Inbound, _send: Send) -> None:
+        captured.append(inbound)
+
+    msg = _msg()
+    msg.Message.pollCreationMessage = SimpleNamespace(
+        name="Lunch?",
+        options=[SimpleNamespace(optionName="Pizza"), SimpleNamespace(optionName="Sushi")],
+    )
+    client = WhatsAppWebConnector(tmp_path / "wa.db", dispatch).build_client()
+    await client.handlers[fake_neonize["MessageEv"]](client, msg)
+
+    assert len(captured) == 1
+    assert "Lunch?" in captured[0].text and "Pizza" in captured[0].text
+
+
+async def test_unsupported_type_is_dropped(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
+    # A message with no text, file, voice, or known special type produces nothing → not dispatched.
+    captured: list[Inbound] = []
+
+    async def dispatch(_sender_id: str, _name: str, inbound: Inbound, _send: Send) -> None:
+        captured.append(inbound)
+
+    client = WhatsAppWebConnector(tmp_path / "wa.db", dispatch).build_client()
+    await client.handlers[fake_neonize["MessageEv"]](client, _msg())  # empty message
+
+    assert captured == []
+
+
 async def test_start_stops_client_on_cancel(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
     # The shutdown hang: a cancelled start() must call stop() — disconnect() alone leaves
     # neonize's blocking Go call parked in a non-daemon thread that wedges interpreter exit.
