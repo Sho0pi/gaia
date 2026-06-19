@@ -73,6 +73,7 @@ class _FakeClient:
         self.replies: list[tuple[str, Any]] = []
         self.images: list[tuple[Any, str, str | None]] = []
         self.media_sends: list[tuple[str, Any, str, str | None]] = []
+        self.doc_filenames: list[str | None] = []
         self.connected = False
         self.stopped = False
         self.reads: list[tuple[str, Any, Any, Any]] = []
@@ -108,8 +109,11 @@ class _FakeClient:
     async def send_audio(self, to: Any, file: str, caption: str | None = None) -> None:
         self.media_sends.append(("send_audio", to, file, caption))
 
-    async def send_document(self, to: Any, file: str, caption: str | None = None) -> None:
+    async def send_document(
+        self, to: Any, file: str, caption: str | None = None, filename: str | None = None
+    ) -> None:
         self.media_sends.append(("send_document", to, file, caption))
+        self.doc_filenames.append(filename)
 
     async def get_me(self) -> SimpleNamespace:
         # Device carries both the phone JID and the @lid identity.
@@ -250,6 +254,8 @@ async def test_media_reply_sent_by_kind(
     await client.handlers[fake_neonize["MessageEv"]](client, _msg(conversation="x"))
 
     assert client.media_sends == [(method, "chat-jid", f"/tmp/{name}", "here")]
+    if method == "send_document":
+        assert client.doc_filenames == [name]  # filename set, else WhatsApp shows "Untitled"
 
 
 async def test_empty_message_is_ignored(fake_neonize: dict[str, Any], tmp_path: Path) -> None:

@@ -274,8 +274,13 @@ _MEDIA_SENDERS = {
 
 async def _send_media(client: Any, to: Any, media: Media) -> None:
     """Send ``media`` to a neonize JID with the method matching its kind (document as default)."""
-    method = getattr(client, _MEDIA_SENDERS.get(media.kind, "send_document"))
-    await method(to, str(media.path), caption=media.caption or None)
+    name = _MEDIA_SENDERS.get(media.kind, "send_document")
+    method = getattr(client, name)
+    if name == "send_document":
+        # send_document needs the filename, else WhatsApp shows the file as "Untitled".
+        await method(to, str(media.path), caption=media.caption or None, filename=media.path.name)
+    else:
+        await method(to, str(media.path), caption=media.caption or None)
 
 
 class WhatsAppWebConnector:
