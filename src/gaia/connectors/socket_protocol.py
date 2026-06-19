@@ -16,6 +16,7 @@ class Frame(TypedDict, total=False):
     text: str
     path: str
     caption: str
+    kind: str
     message: str
 
 
@@ -56,8 +57,8 @@ def reply_frame(text: str) -> Frame:
     return {"type": "reply", "text": text}
 
 
-def media_frame(path: str, caption: str) -> Frame:
-    return {"type": "media", "path": path, "caption": caption}
+def media_frame(path: str, caption: str, kind: str = "") -> Frame:
+    return {"type": "media", "path": path, "caption": caption, "kind": kind}
 
 
 def done_frame() -> Frame:

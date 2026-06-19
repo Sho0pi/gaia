@@ -98,7 +98,7 @@ class SocketConnector:
     async def _dispatch_message(self, text: str, writer: asyncio.StreamWriter) -> None:
         async def send(reply: Reply) -> None:
             if isinstance(reply, Media):
-                writer.write(encode_frame(media_frame(str(reply.path), reply.caption)))
+                writer.write(encode_frame(media_frame(str(reply.path), reply.caption, reply.kind)))
             else:
                 writer.write(encode_frame(reply_frame(reply)))
             await writer.drain()
