@@ -59,6 +59,17 @@ async def test_streams_each_text_part_of_final_response() -> None:
     assert sent == ["hello", "world"]
 
 
+async def test_empty_turn_sends_a_fallback_not_silence() -> None:
+    # A reasoning model can emit only (hidden) thoughts and no message -> texts empty. The
+    # turn must not ghost the user; a short acknowledgement goes out instead.
+    handler = GaiaHandler(SimpleNamespace(memory_service=None))
+    handler._runner = _FakeRunner([_event("")])  # final response, no text, no media
+
+    sent = await _collect(handler, "thank you")
+
+    assert len(sent) == 1 and "didn't have anything to add" in sent[0]
+
+
 async def test_ignores_non_final_events() -> None:
     handler = GaiaHandler(SimpleNamespace(memory_service=None))
     handler._runner = _FakeRunner([_event("interim", final=False), _event("done")])

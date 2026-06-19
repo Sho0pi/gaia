@@ -222,10 +222,21 @@ class GaiaHandler:
                 await send(Media(extra.path, caption=""))
             return
 
-        # No media: stream each text part as its own reply (one inbound can fan out to many).
+        # No media: stream each non-empty text part as its own reply (one inbound can fan out
+        # to many).
+        sent = False
         for text in texts:
+            if not text.strip():
+                continue
             log_event("message_out", user=self._user_id, chars=len(text))
             await send(text)
+            sent = True
+        if not sent:
+            # The turn ran but produced no text and no media — e.g. a reasoning model that put
+            # everything in its (hidden) thoughts and emitted no message. Never ghost the user:
+            # log it for visibility and send a short acknowledgement.
+            log_event("turn_empty", user=self._user_id, session=self._session_id)
+            await send("(Done — I didn't have anything to add there.)")
 
     def reset_session(self) -> None:
         """Drop the live ADK session and pending memory buffer (used by ``/reset``).
