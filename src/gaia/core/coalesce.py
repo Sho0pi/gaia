@@ -23,12 +23,17 @@ Design notes:
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from gaia.logs import log_event
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from gaia.connectors.base import Send
+
+logger = logging.getLogger(__name__)
 
 #: Run one turn over the merged text (a closure that already holds the reply ``send``).
 Run = Callable[[str], Awaitable[None]]
@@ -148,6 +153,8 @@ class MessageCoalescer:
         if self._pending.get(key) is batch:
             del self._pending[key]
         merged = "\n".join(batch.parts)
+        if len(batch.parts) > 1:  # observable signal that messages were actually merged
+            log_event("messages_coalesced", user=key[0], channel=key[1], count=len(batch.parts))
         try:
             async with self._lock(key):  # serialise turns per conversation
                 await self._invoke(batch.chat, batch.run, merged)
