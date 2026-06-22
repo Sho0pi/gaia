@@ -173,6 +173,18 @@ async def test_workdir_escape_rejected() -> None:
     assert result["status"] == "error" and "escapes" in result["error_message"]
 
 
+async def test_root_cannot_exec_in_a_souls_workspace(tmp_path: Path) -> None:
+    # exec can mutate, so the root can't cd into a soul's tree to change it — re-delegate.
+    soul_ws = tmp_path / "agents" / "web_designer" / "workspace"
+    soul_ws.mkdir(parents=True)
+    proc = _FakeProc(communicate_out=b"")
+    tool = shell.make_exec(ProcessManager(_spawner(proc)), _spawner(proc), security="off")
+
+    result = await tool("ls", workdir=str(soul_ws), tool_context=_Ctx("gaia"))
+
+    assert result["status"] == "error" and "re-delegate" in result["error_message"]
+
+
 # --- background exec + poll / kill / list -----------------------------------------
 
 

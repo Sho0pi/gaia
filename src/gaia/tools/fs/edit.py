@@ -43,7 +43,7 @@ def make_fs_edit(agents_dir: Path) -> Callable[..., dict[str, Any]]:
         if not old_string:
             return err("old_string must not be empty")
         try:
-            target = sandbox.resolve(path)
+            target = sandbox.resolve(path, write=True)
         except SandboxError as exc:
             return err(str(exc))
         if not target.is_file():

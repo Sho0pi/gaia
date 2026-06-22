@@ -290,15 +290,38 @@ def test_root_agent_reads_a_souls_workspace(tmp_path: Path) -> None:
     assert "<h1>hi</h1>" in out["content"]
 
 
-def test_root_agent_writes_into_a_souls_workspace(tmp_path: Path) -> None:
-    # rw, not ro: Gaia must be able to clean up / move / combine deliverables.
-    (tmp_path / "web_designer" / "workspace").mkdir(parents=True)  # the soul has run before
-    target = tmp_path / "web_designer" / "workspace" / "note.txt"
+def test_root_agent_cannot_write_into_a_souls_workspace(tmp_path: Path) -> None:
+    # Read-only over the tree: the root reads/relays deliverables but must not edit a soul's
+    # work — changing it is the soul's job (re-delegate). Stops Gaia overstepping a worker.
+    make_fs_write(tmp_path)("index.html", "<h1>hi</h1>", tool_context=_Ctx("web_designer"))
+    target = tmp_path / "web_designer" / "workspace" / "index.html"
 
-    out = make_fs_write(tmp_path)(str(target), "curated", tool_context=_Ctx("gaia"))
+    out = make_fs_write(tmp_path)(str(target), "hacked", tool_context=_Ctx("gaia"))
+
+    assert out["status"] == "error"
+    assert "re-delegate" in out["error_message"]  # message steers the model to the soul
+    assert target.read_text() == "<h1>hi</h1>"  # untouched
+
+
+def test_root_agent_writes_its_own_workspace(tmp_path: Path) -> None:
+    # The boundary is other agents' trees only — the root keeps full write on its own scratch
+    # (it needs this to e.g. zip files for send_file).
+    out = make_fs_write(tmp_path)("scratch.txt", "mine", tool_context=_Ctx("gaia"))
 
     assert out["status"] == "success"
-    assert target.read_text() == "curated"
+    assert (tmp_path / "gaia" / "workspace" / "scratch.txt").read_text() == "mine"
+
+
+def test_root_agent_cannot_edit_a_souls_file(tmp_path: Path) -> None:
+    make_fs_write(tmp_path)("a.txt", "light theme", tool_context=_Ctx("web_designer"))
+    target = tmp_path / "web_designer" / "workspace" / "a.txt"
+
+    out = make_fs_edit(tmp_path)(
+        str(target), old_string="light theme", new_string="dark theme", tool_context=_Ctx("gaia")
+    )
+
+    assert out["status"] == "error" and "re-delegate" in out["error_message"]
+    assert target.read_text() == "light theme"
 
 
 def test_soul_cannot_read_sibling_or_agents_root(tmp_path: Path) -> None:
