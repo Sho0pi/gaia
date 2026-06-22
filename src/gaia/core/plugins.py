@@ -22,11 +22,13 @@ least predictable secret surface (page contents, file bodies, recalled memories)
 from __future__ import annotations
 
 import re
+import time
 from typing import TYPE_CHECKING, Any
 
 from google.adk.plugins.base_plugin import BasePlugin
 
 from gaia.logs import log_event
+from gaia.tools.fs.base import current_project
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from google.adk.tools.base_tool import BaseTool
@@ -73,11 +75,19 @@ def _sanitize(tool_name: str, args: Any) -> dict[str, Any]:
 
 
 def _base_fields(name: str, tool_context: ToolContext | None) -> dict[str, Any]:
-    """The fields logged for every tool: its id and the calling agent (when known)."""
+    """The fields logged for every tool: its id, the calling agent, and the soul's project.
+
+    ``project`` is read from the ``current_project`` contextvar, which ``execute_decision``
+    sets around a soul's nested run — so a soul's tool calls are tagged with the project it's
+    building, while the root (Gaia) agent's calls carry none.
+    """
     fields: dict[str, Any] = {"tool": name}
     agent = getattr(tool_context, "agent_name", None)
     if agent:
         fields["agent"] = agent
+    project = current_project.get()
+    if project:
+        fields["project"] = project
     return fields
 
 
@@ -131,10 +141,39 @@ class ToolPermissionPlugin(BasePlugin):
 
 
 class ToolLoggingPlugin(BasePlugin):
-    """Emit exactly one ``tool_used`` event per tool call, for every tool."""
+    """Log each tool call as a span: a ``tool_call`` when it starts, a ``tool_used`` when it
+    finishes (or errors).
+
+    Finish-only logging (the old behaviour) hides a call that is in flight or that hangs and
+    never returns — the failure mode is invisible exactly when it matters most. So, like
+    OpenTelemetry spans, we emit a start event and a completion event correlated by the ADK
+    ``function_call_id``, and stamp the completion with ``duration_ms``. Still the single place
+    tool calls are logged — tools never hand-roll their own.
+    """
 
     def __init__(self) -> None:
         super().__init__(name="tool_logging")
+        #: function_call_id -> monotonic start time, set in before_ and consumed in after_/error_.
+        self._started: dict[str, float] = {}
+
+    async def before_tool_callback(
+        self,
+        *,
+        tool: BaseTool,
+        tool_args: dict[str, Any],
+        tool_context: ToolContext,
+    ) -> None:
+        name = getattr(tool, "name", type(tool).__name__)
+        fields = _base_fields(name, tool_context)
+        call_id = getattr(tool_context, "function_call_id", None)
+        if call_id:
+            fields["call_id"] = call_id
+            self._started[call_id] = time.monotonic()
+        args = _safe_args(name, tool_args)
+        if args:
+            fields["args"] = args
+        log_event("tool_call", **fields)
+        return None
 
     async def after_tool_callback(
         self,
@@ -145,15 +184,8 @@ class ToolLoggingPlugin(BasePlugin):
         result: dict[str, Any],
     ) -> None:
         name = getattr(tool, "name", type(tool).__name__)
-        fields = _base_fields(name, tool_context)
-        fields["status"] = result.get("status", "ok") if isinstance(result, dict) else "ok"
-        try:
-            args = _sanitize(name, tool_args)
-        except Exception:  # pragma: no cover - defensive; never break a tool over logging
-            args = {}
-        if args:
-            fields["args"] = args
-        log_event("tool_used", **fields)
+        status = result.get("status", "ok") if isinstance(result, dict) else "ok"
+        self._log_finish(name, tool_context, status)
         return None
 
     async def on_tool_error_callback(
@@ -165,14 +197,29 @@ class ToolLoggingPlugin(BasePlugin):
         error: Exception,
     ) -> None:
         name = getattr(tool, "name", type(tool).__name__)
-        fields = _base_fields(name, tool_context)
-        fields["status"] = "error"
-        fields["error"] = type(error).__name__
-        try:
-            args = _sanitize(name, tool_args)
-        except Exception:  # pragma: no cover - defensive; never break a tool over logging
-            args = {}
-        if args:
-            fields["args"] = args
-        log_event("tool_used", **fields)
+        self._log_finish(name, tool_context, "error", error=type(error).__name__)
         return None
+
+    def _log_finish(
+        self, name: str, tool_context: ToolContext, status: str, *, error: str | None = None
+    ) -> None:
+        """Emit the ``tool_used`` completion event, correlated to its start with a duration."""
+        fields = _base_fields(name, tool_context)
+        fields["status"] = status
+        if error is not None:
+            fields["error"] = error
+        call_id = getattr(tool_context, "function_call_id", None)
+        if call_id:
+            fields["call_id"] = call_id
+            started = self._started.pop(call_id, None)
+            if started is not None:
+                fields["duration_ms"] = round((time.monotonic() - started) * 1000)
+        log_event("tool_used", **fields)
+
+
+def _safe_args(name: str, tool_args: dict[str, Any]) -> dict[str, Any]:
+    """``_sanitize`` that never raises — logging must never break a tool call."""
+    try:
+        return _sanitize(name, tool_args)
+    except Exception:  # pragma: no cover - defensive
+        return {}

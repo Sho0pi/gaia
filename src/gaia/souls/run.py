@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from gaia import constants
-from gaia.connectors.base import inbound_attachments
+from gaia.connectors.base import inbound_attachments, media_kind
 from gaia.souls.smith import SoulDecision, build_soul_smith
 from gaia.tools.fs.base import _safe_dir, current_project, sandbox_for
 
@@ -53,6 +53,11 @@ class SoulRun:
     workspace: str = ""
     project: str = ""
     files: list[str] = field(default_factory=list)
+    #: Absolute paths of media the soul produced for the user (screenshots it took, files it
+    #: sent, and media deliverables written to its workspace) — auto-delivered by the handler
+    #: so the root never re-serves/re-screenshots to show them. See the delegate→media bridge
+    #: in :func:`gaia.core.screenshots.media_for_outputs`.
+    media: list[str] = field(default_factory=list)
     error: str = ""
 
 
@@ -103,10 +108,32 @@ def _changed(before: dict[str, float], after: dict[str, float]) -> list[str]:
     return sorted(rel for rel, mtime in after.items() if before.get(rel) != mtime)[:MAX_FILES]
 
 
+def _deliverable_media(primary: Path, files: list[str], run_media: list[str]) -> list[str]:
+    """Absolute paths of media the soul produced for the user (de-duped, order-stable).
+
+    Two sources: ``run_media`` (screenshots it took / files it sent, pulled from its event
+    stream) and the workspace files it wrote whose type reads as a deliverable — real
+    image/video/audio, or a PDF. Web-source files a site is made of (``.html``/``.css``/``.js``)
+    are *not* media, so they're left out; the user gets the screenshot preview, not the source.
+    """
+    # ponytail: extension heuristic. A site asset (a logo.png the soul generated) could slip in;
+    # if that gets noisy, mark true deliverables explicitly (e.g. a soul-set output list).
+    workspace = [
+        str(primary / rel)
+        for rel in files
+        if media_kind(primary / rel) in ("image", "video", "audio")
+        or (primary / rel).suffix.lower() == ".pdf"
+    ]
+    seen: dict[str, str] = {}
+    for path in (*run_media, *workspace):
+        seen.setdefault(str(Path(path).resolve()), path)
+    return list(seen.values())
+
+
 async def run_soul_agent(
     gaia: Gaia, soul: Any, key: str, task: str, user_id: str, *, state: dict[str, Any] | None = None
-) -> str:
-    """Run ``soul`` on ``task`` in a fresh nested Runner; return its final text.
+) -> tuple[str, list[str]]:
+    """Run ``soul`` on ``task`` in a fresh nested Runner; return its final text and any media.
 
     The runner is given Gaia's ``memory_service`` and the caller's ``user_id`` so the soul's
     ``load_memory``/``remember`` tools read and write the *same* user's long-term memory.
@@ -114,12 +141,17 @@ async def run_soul_agent(
     ``state`` seeds the soul's ADK session state — the seam the soul's tools read to learn
     which task they're running (so ``task_create`` files a subtask of it) and the consult
     depth/chain that bounds in-turn recursion. ``None`` means a bare session (e.g. the smith).
+
+    The media list is the paths of any files the soul produced for the user this run — the
+    screenshots it took and the files it sent — extracted from its event stream with the same
+    scanner the handler uses, so the root can deliver them instead of re-doing the work.
     """
     from google.adk.runners import Runner
     from google.adk.sessions import InMemorySessionService
     from google.genai import types
 
     from gaia.core.plugins import ToolLoggingPlugin, ToolPermissionPlugin
+    from gaia.core.screenshots import media_for_outputs
 
     session_service = InMemorySessionService()  # type: ignore[no-untyped-call]
     session_id = f"soul-{key}"
@@ -135,15 +167,21 @@ async def run_soul_agent(
     )
     content = types.Content(role="user", parts=[types.Part(text=task)])
     parts: list[str] = []
-    try:
-        async for event in runner.run_async(
-            user_id=user_id, session_id=session_id, new_message=content
-        ):
-            if event.is_final_response() and event.content and event.content.parts:
-                parts.extend(p.text for p in event.content.parts if p.text)
-    finally:
-        await runner.close()  # type: ignore[no-untyped-call]
-    return "\n".join(parts)
+    events: list[Any] = []
+    # NB: we never call ``runner.close()`` here. The soul's tools include the *shared* MCP and
+    # Skills toolsets (the same singleton objects on the root agent — see AgentFactory), and
+    # ADK's Runner.close() closes every toolset on its agent. Closing this nested runner would
+    # therefore tear those down for the root mid-conversation — after which the root's turns
+    # make no model call and the chat goes silent. Their cleanup is Gaia.close()'s job; the
+    # soul owns no exclusive runner resources, so there is nothing here for us to close.
+    async for event in runner.run_async(
+        user_id=user_id, session_id=session_id, new_message=content
+    ):
+        events.append(event)
+        if event.is_final_response() and event.content and event.content.parts:
+            parts.extend(p.text for p in event.content.parts if p.text)
+    media = [str(m.path) for m in media_for_outputs(events)]
+    return "\n".join(parts), media
 
 
 async def decide_soul(gaia: Gaia, task: str) -> SoulDecision:
@@ -158,7 +196,7 @@ async def decide_soul(gaia: Gaia, task: str) -> SoulDecision:
     model = gaia.config.llm.model or gaia.settings.model
     smith = build_soul_smith(model, gaia.config.llm.provider, gaia.config.llm.openai.use_oauth)
     request = f"TASK:\n{task}\n\nEXISTING SOULS:\n{existing_souls(gaia)}"
-    raw = await run_soul_agent(gaia, smith, "smith", request, user_id="gaia")
+    raw, _ = await run_soul_agent(gaia, smith, "smith", request, user_id="gaia")
     return SoulDecision.model_validate(json.loads(raw))
 
 
@@ -236,7 +274,7 @@ async def execute_decision(
         timeout = gaia.config.souls.timeout_seconds  # read per call so yaml edits hot-reload
         run_state = {**(state or {}), "created_by": spec.key}
         try:
-            summary = await asyncio.wait_for(
+            summary, run_media = await asyncio.wait_for(
                 run_soul_agent(gaia, soul, spec.key, task, user_id, state=run_state),
                 timeout=timeout,
             )
@@ -248,6 +286,7 @@ async def execute_decision(
             return SoulRun(False, spec.key, spec.name, created, error=f"soul run failed: {exc}")
 
         files = _changed(before, _snapshot(primary))
+        media = _deliverable_media(primary, files, run_media)
     finally:
         current_project.reset(token)
     return SoulRun(
@@ -260,4 +299,5 @@ async def execute_decision(
         workspace=str(primary),
         project=slug,
         files=files,
+        media=media,
     )

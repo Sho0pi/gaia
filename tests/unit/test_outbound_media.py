@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 from gaia.connectors.base import Media, media_kind
 from gaia.connectors.telegram import _tg_reply_media, _tg_send_media
+from gaia.core.screenshots import media_for_outputs
+from gaia.souls.delegate import NAME as DELEGATE
 
 
 @pytest.mark.parametrize(
@@ -32,6 +35,36 @@ def test_media_infers_kind_when_blank() -> None:
     assert Media(Path("/tmp/a.pdf")).kind == "document"
     assert Media(Path("/tmp/a.png")).kind == "image"
     assert Media(Path("/tmp/a.png"), kind="document").kind == "document"  # explicit wins
+
+
+def _event_with_response(name: str, response: dict[str, Any]) -> Any:
+    """A fake ADK event exposing one function response (what media_for_outputs scans)."""
+    resp = SimpleNamespace(name=name, response=response)
+    return SimpleNamespace(get_function_responses=lambda: [resp])
+
+
+def test_delegate_media_becomes_outbound_media() -> None:
+    # A soul's deliverable media rides back in the delegate_to_soul result; the handler turns
+    # each path into a Media (kind re-inferred) so the root needn't re-serve/re-screenshot.
+    event = _event_with_response(
+        DELEGATE,
+        {"status": "success", "media": ["/ws/shot.png", "/ws/meal-plan.pdf"]},
+    )
+    out = media_for_outputs([event])
+    assert [(m.path, m.kind) for m in out] == [
+        (Path("/ws/shot.png"), "image"),
+        (Path("/ws/meal-plan.pdf"), "document"),
+    ]
+
+
+def test_delegate_without_media_yields_nothing() -> None:
+    event = _event_with_response(DELEGATE, {"status": "success", "files": ["index.html"]})
+    assert media_for_outputs([event]) == []
+
+
+def test_failed_delegate_yields_no_media() -> None:
+    event = _event_with_response(DELEGATE, {"status": "error", "media": ["/ws/shot.png"]})
+    assert media_for_outputs([event]) == []
 
 
 class _FakeMessage:

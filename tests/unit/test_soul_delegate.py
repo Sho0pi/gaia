@@ -70,9 +70,9 @@ def _stub_decision(monkeypatch: pytest.MonkeyPatch, decision: SoulDecision) -> N
 def _stub_run_writing(monkeypatch: pytest.MonkeyPatch, filename: str) -> None:
     async def fake_run(
         gaia: Any, soul: Any, key: str, task: str, user_id: str, *, state: Any = None
-    ) -> str:
+    ) -> tuple[str, list[str]]:
         (sandbox_for(constants.AGENTS_DIR, key).primary / filename).write_text("<html>")
-        return "built it"
+        return "built it", []
 
     monkeypatch.setattr("gaia.souls.run.run_soul_agent", fake_run)
 
@@ -112,6 +112,34 @@ async def test_project_arg_scopes_the_workspace(
     assert out["workspace"].endswith("web_designer/workspace/plant-shop")
 
 
+async def test_media_deliverables_come_back_in_the_result(
+    env: tuple[Any, list[Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The soul writes a PDF deliverable + the site source, and took a screenshot mid-run. The
+    # PDF (a media file) and the screenshot (from the soul's event stream) come back as media;
+    # the .html source does not — so the root can deliver them without re-doing the work.
+    gaia, _ = env
+    _stub_decision(monkeypatch, SoulDecision(action="forge", reason="r", spec=_SPEC))
+
+    async def fake_run(
+        gaia: Any, soul: Any, key: str, task: str, user_id: str, *, state: Any = None
+    ) -> tuple[str, list[str]]:
+        primary = sandbox_for(constants.AGENTS_DIR, key).primary
+        (primary / "plan.pdf").write_text("%PDF")
+        (primary / "index.html").write_text("<html>")
+        return "done", ["/tmp/screenshot.png"]  # a screenshot the soul took this run
+
+    monkeypatch.setattr("gaia.souls.run.run_soul_agent", fake_run)
+
+    out = await make_delegate(gaia)("build it", tool_context=_CTX)
+
+    assert out["status"] == "success"
+    media = out["media"]
+    assert "/tmp/screenshot.png" in media  # screenshot from the soul's events
+    assert any(p.endswith("plan.pdf") for p in media)  # PDF deliverable from the workspace
+    assert not any(p.endswith("index.html") for p in media)  # site source is not media
+
+
 async def test_passes_invocation_user_id_to_the_soul(
     env: tuple[Any, list[Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -121,9 +149,9 @@ async def test_passes_invocation_user_id_to_the_soul(
 
     async def fake_run(
         gaia: Any, soul: Any, key: str, task: str, user_id: str, *, state: Any = None
-    ) -> str:
+    ) -> tuple[str, list[str]]:
         seen["user_id"] = user_id
-        return "ok"
+        return "ok", []
 
     monkeypatch.setattr("gaia.souls.run.run_soul_agent", fake_run)
     ctx = SimpleNamespace(user_id="alice")  # ADK public ToolContext.user_id
@@ -187,11 +215,11 @@ async def test_honors_configured_soul_timeout(
 
     async def slow_run(
         gaia: Any, soul: Any, key: str, task: str, user_id: str, *, state: Any = None
-    ) -> str:
+    ) -> tuple[str, list[str]]:
         import asyncio
 
         await asyncio.sleep(1.0)
-        return "too late"
+        return "too late", []
 
     monkeypatch.setattr("gaia.souls.run.run_soul_agent", slow_run)
 

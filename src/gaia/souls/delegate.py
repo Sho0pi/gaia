@@ -34,15 +34,16 @@ def make_delegate(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any]]]:
     ) -> dict[str, Any]:
         """Hand a complex or specialized task to a specialist soul (found or newly
         forged); it writes its deliverables as files in its own workspace. Use for
-        build/creation tasks (e.g. "design a website"), not for things you can
-        answer yourself.
+        build/creation tasks (e.g. "design a website"), not things you answer yourself.
+
+        Media the soul made (a screenshot, a generated image or PDF) returns in ``media``
+        and is auto-sent to the user — do NOT re-read, re-serve, or re-screenshot to show it.
 
         Args:
             task: the full task to carry out, in plain language.
-            project: a short slug for the project this belongs to (e.g. "plant-shop"). Reuse
-                the same slug to keep working on that project (edit its files); use a new one
-                to start fresh. Omit it and a fresh project is created. Keeps separate projects
-                from overwriting each other. The returned ``workspace`` is the project's dir.
+            project: a short slug for this project (e.g. "plant-shop"). Reuse a slug to keep
+                editing it; use a new one (or omit) to start fresh — keeps projects from
+                overwriting each other. ``workspace`` is the project's dir.
         """
 
         model = gaia.config.llm.model or gaia.settings.model
@@ -73,6 +74,7 @@ def make_delegate(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any]]]:
             "workspace": run.workspace,
             "project": run.project,
             "files": run.files,
+            "media": run.media,
             "summary": run.summary,
         }
 
