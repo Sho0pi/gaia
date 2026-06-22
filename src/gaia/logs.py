@@ -139,25 +139,12 @@ class RedactingJsonFormatter(_RedactMixin, JsonFormatter):
     """JSON-lines formatter with redaction (for events.jsonl)."""
 
 
-def _supports_color(stream: Any) -> bool:
-    """True when ``stream`` is an interactive terminal that should get ANSI colour."""
-    from gaia.logfmt import supports_color
-
-    return supports_color(stream)
-
-
 class ConsoleFormatter(logging.Formatter):
-    """gocat-style console output for both the system and event streams (see :mod:`gaia.logfmt`).
+    """gocat-style console output for the system and event streams (rendered by :mod:`gaia.logfmt`).
 
-    System:  ``HH:MM:SS  <badge>  <logger-name>  message`` — dim time, colour-filled level badge,
-    colour-per-name tag, message in the level colour.
-    Event:   ``HH:MM:SS  <badge>  <agent[/project]>  action  key=value …`` — the acting agent is
-    the colour-per-source tag, the action is the body, the rest are dim fields; a tool failure
-    (``status=error``) tints the line red.
-
-    Colour is applied only on a real terminal; otherwise the same layout is emitted plain. The
-    actor tag shows on every line. Redaction runs last, on the final string, as the file
-    formatters do.
+    The actor tag is the soul ``agent[/project]`` (run-scoped contextvars for system logs, the
+    explicit field for events) so every line shows who it belongs to; the module is the logger
+    name (system) or the action (events). Redaction runs last, on the final string.
     """
 
     def __init__(
@@ -240,7 +227,9 @@ def setup_logging(
     text_fmt = RedactingFormatter(
         "%(asctime)s %(levelname)s %(name)s: %(message)s", redactor=redactor
     )
-    color = _supports_color(sys.stdout)
+    from gaia.logfmt import supports_color
+
+    color = supports_color(sys.stdout)
 
     # Own the ROOT logger so third-party libraries (google_adk, google_genai, …) flow
     # into our files + console with our format + redaction, instead of only hitting the

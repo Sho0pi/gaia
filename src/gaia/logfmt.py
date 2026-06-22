@@ -1,14 +1,11 @@
-"""gocat-style console rendering for gaia's logs (shared by the live formatter + ``gaia logs``).
+"""gocat-style console rendering for gaia's logs.
 
-Modelled on the user's Go project ``sho0pi/gocat`` (an ADB logcat viewer): a right-aligned,
-colour-per-source **tag**, a colour-filled **level badge** (`` X ``), then the message in the
-level's colour — consecutive lines from the same tag have their tag blanked so a run reads as one
-block. Truecolor (24-bit) ANSI, degrading to a plain (uncoloured) but identically-aligned layout
-when colour is off (``NO_COLOR``/``TERM=dumb``/not a tty).
-
-Pure stdlib and import-light on purpose: both the logging ``ConsoleFormatter`` (live stdout) and
-the ``gaia logs`` CLI viewer call :func:`render_line`, so the two surfaces never drift. Operates on
-plain primitives, not ``LogRecord``, because the CLI renders raw JSON / text lines.
+One renderer (:func:`render_line`) shared by the live logging formatter (:mod:`gaia.logs`) and
+the ``gaia logs`` viewer (:mod:`gaia.cli.logs`) so the two never drift. A line is
+``<ts>  <badge>  <tag>  ·<module>  <body>  <k=v …>``: a colour-per-actor tag, a colour-filled
+level badge, a bold module (the tool/action or logger name), then default-white text. Truecolor
+ANSI, degrading to the same plain layout when colour is off. Stdlib only and operates on plain
+primitives (not ``LogRecord``) because the viewer renders raw JSON / text lines.
 """
 
 from __future__ import annotations
@@ -16,18 +13,17 @@ from __future__ import annotations
 import os
 from typing import Any
 
-#: Tag column width. Wide enough for ``agent/project`` and most ``gaia.*`` logger names; longer
-#: tags truncate with ``…`` (gocat used 25 for bare Android tags).
+#: Tag column width; longer tags truncate with ``…`` (gocat used 25 for bare Android tags).
 TAG_WIDTH = 28
-#: Continuation lines (wrapped messages, tracebacks) indent to the body column.
-_BODY_INDENT = " " * (10 + 3 + TAG_WIDTH + 2)  # "HH:MM:SS  " + badge(" X ") + tag + "  "
+#: Continuation lines (wrapped text, tracebacks) indent to the body column.
+_BODY_INDENT = " " * (10 + 3 + TAG_WIDTH + 2)  # "HH:MM:SS  " + badge " X " + tag + "  "
 
 _RESET = "\033[0m"
 _BOLD = "\033[1m"
 _DIM = "\033[2m"
 _ITALIC = "\033[3m"
 
-#: gocat's tag palette (hex), picked by ``len(tag) % len(palette)`` so a name keeps its colour.
+#: gocat's tag palette, picked by ``len(tag) % len(palette)`` so a name keeps its colour.
 _TAG_PALETTE: tuple[tuple[int, int, int], ...] = (
     (0xFF, 0xFF, 0xFF),
     (0xFF, 0x78, 0x5F),
@@ -41,12 +37,10 @@ _TAG_PALETTE: tuple[tuple[int, int, int], ...] = (
 
 _WHITE = (0xFD, 0xF8, 0xDC)
 _BLACK = (0x00, 0x00, 0x00)
-
 _BLUE = (0x4A, 0xA6, 0xEF)
 _GREEN = (0x5C, 0xD0, 0xA7)
 
-#: level -> (letter, foreground rgb [message colour], badge fg, badge bg). gocat's palette, with
-#: INFO blue and DEBUG green (everyday INFO reads blue; the quieter DEBUG is green).
+#: level -> (letter, message rgb, badge fg, badge bg). INFO blue, DEBUG green (the rest gocat's).
 _LEVELS: dict[str, tuple[str, tuple[int, int, int], tuple[int, int, int], tuple[int, int, int]]] = {
     "DEBUG": ("D", _GREEN, _BLACK, _GREEN),
     "INFO": ("I", _BLUE, _WHITE, _BLUE),
@@ -59,10 +53,7 @@ _ERROR_RGB = _LEVELS["ERROR"][1]
 
 
 def supports_color(stream: Any) -> bool:
-    """True when ``stream`` is an interactive tty that should get ANSI colour.
-
-    Honours ``NO_COLOR`` and ``TERM=dumb`` so piped/redirected output (and tests) stay plain.
-    """
+    """True when ``stream`` is a tty that should get colour (honours ``NO_COLOR``/``TERM=dumb``)."""
     if os.environ.get("NO_COLOR") is not None or os.environ.get("TERM") == "dumb":
         return False
     return bool(getattr(stream, "isatty", None) and stream.isatty())
@@ -82,7 +73,7 @@ def tag_color(tag: str) -> tuple[int, int, int]:
 
 
 def level_badge(level: str, *, color: bool) -> str:
-    """The `` X `` level block — bold-italic letter on the level's colour (or plain ``X``)."""
+    """The `` X `` level block: bold-italic letter on the level's colour (or the bare letter)."""
     letter, _msg, fg, bg = _LEVELS.get(level.upper(), _DEFAULT_LEVEL)
     if not color:
         return letter
@@ -90,28 +81,22 @@ def level_badge(level: str, *, color: bool) -> str:
 
 
 def _render_tag(tag: str, *, color: bool) -> str:
-    """Right-align ``tag`` in :data:`TAG_WIDTH`, truncate with ``…``, colour it per-tag.
-
-    A ``parent/child`` tag (agent/project) keeps the parent in its colour and dims the ``/child``.
-    """
+    """Right-align ``tag`` in :data:`TAG_WIDTH`; colour per-name, dimming any ``/project`` tail."""
     shown = tag if len(tag) <= TAG_WIDTH else tag[: TAG_WIDTH - 1] + "…"
     pad = " " * (TAG_WIDTH - len(shown))
     if not color:
         return pad + shown
     if "/" in shown:
         head, _, tail = shown.partition("/")
-        body = f"{_fg(tag_color(tag))}{head}{_RESET}{_DIM}/{tail}{_RESET}"
-    else:
-        body = f"{_fg(tag_color(tag))}{shown}{_RESET}"
-    return pad + body
+        return f"{pad}{_fg(tag_color(tag))}{head}{_RESET}{_DIM}/{tail}{_RESET}"
+    return f"{pad}{_fg(tag_color(tag))}{shown}{_RESET}"
 
 
 def _render_fields(fields: dict[str, Any], *, color: bool) -> str:
-    """``key=value …`` — dim keys, plain values (or plain text when colour is off)."""
-    parts = []
-    for k, v in fields.items():
-        parts.append(f"{_DIM}{k}={_RESET}{v}" if color else f"{k}={v}")
-    return " ".join(parts)
+    """``key=value …`` with dim keys (plain when colour is off)."""
+    return " ".join(
+        f"{_DIM}{k}={_RESET}{v}" if color else f"{k}={v}" for k, v in fields.items()
+    )
 
 
 def render_line(
@@ -125,77 +110,48 @@ def render_line(
     color: bool,
     error: bool = False,
 ) -> str:
-    """One gocat-style line: ``<ts>  <badge>  <tag>  ·<module>  <body>  <k=v …>``.
-
-    ``tag`` is the actor (``agent``/``agent/project``), coloured per-name and shown on **every**
-    line so you always see which agent a log belongs to. ``module`` (dim, ``·``-prefixed) is the
-    source: the action for events, the logger name for system logs. ``body`` is the message
-    (system) — events leave it empty and carry only ``fields``. ``error`` tints body + fields red
-    (event tool failures, whose level is still INFO). Continuation lines indent to the body column.
-    """
-    # The message text stays default (white) for readability; only an error tints it red. The
-    # level is already signalled by the coloured badge, so the body needn't repeat it.
+    """Render one log line. ``tag`` is the actor (shown every line), ``module`` the source
+    (bold), ``body`` the message (default white). ``error`` (or an ERROR level) tints it red."""
     is_err = error or level.upper() in ("ERROR", "CRITICAL")
     time_col = f"{_DIM}{ts}{_RESET}" if color else ts
-    badge = level_badge(level, color=color)
     tag_col = _render_tag(tag, color=color)
 
-    def paint_body(text: str) -> str:
-        if not color or not text:
-            return text
-        return f"{_fg(_ERROR_RGB)}{text}{_RESET}" if is_err else text
+    def paint(text: str) -> str:
+        return f"{_fg(_ERROR_RGB)}{text}{_RESET}" if color and text and is_err else text
 
-    body_lines = body.split("\n")
-    head, *rest = body_lines
+    head, *rest = body.split("\n")
     segs: list[str] = []
-    if module:  # the action/tool (events) or logger name (system) — bold so it stands out
-        if color:
-            mod_fg = _fg(_ERROR_RGB) if is_err else ""  # red on a failure so it's obvious
-            segs.append(f"·{mod_fg}{_BOLD}{module}{_RESET}")
-        else:
-            segs.append(f"·{module}")
+    if module:
+        mod_fg = _fg(_ERROR_RGB) if (color and is_err) else ""
+        segs.append(f"·{mod_fg}{_BOLD}{module}{_RESET}" if color else f"·{module}")
     if head:
-        segs.append(paint_body(head))
+        segs.append(paint(head))
     if fields:
         segs.append(_render_fields(fields, color=color))
-    line = f"{time_col}  {badge}  {tag_col}  {'  '.join(segs)}".rstrip()
 
-    for extra in rest:  # wrapped message / traceback lines align under the body
-        line = f"{line}\n{_BODY_INDENT}{paint_body(extra)}"
+    line = f"{time_col}  {level_badge(level, color=color)}  {tag_col}  {'  '.join(segs)}".rstrip()
+    for extra in rest:  # wrapped text / traceback lines align under the body column
+        line = f"{line}\n{_BODY_INDENT}{paint(extra)}"
     return line
 
 
-def demo() -> None:  # pragma: no cover - manual eyeball
-    """Print a few sample lines (``python -m gaia.logfmt``)."""
-    color = supports_color_stdout()
-    rows = [
-        ("12:01:03", "frontend_developer/pasta-site", "INFO", "tool_used", {"tool": "fs_write"}),
-        ("12:01:07", "frontend_developer/pasta-site", "INFO", "tool_used", {"tool": "serve"}),
-        ("12:01:41", "gaia", "INFO", "delegate_to_soul", {"status": "success"}),
-        ("12:02:10", "frontend_developer/pasta-site", "INFO", "tool_used", {"status": "error"}),
-        ("12:02:14", "connectors.whatsapp", "WARNING", "reconnecting", None),
-    ]
-    for ts, tag, level, body, fields in rows:
-        err = bool(fields and fields.get("status") == "error")
-        action = body if level == "INFO" else None
-        line = render_line(
-            ts=ts,
-            tag=tag,
-            level=level,
-            body="" if action else body,
-            module=action,
-            fields=fields,
-            color=color,
-            error=err,
-        )
-        print(line)
-
-
-def supports_color_stdout() -> bool:
-    """Convenience: :func:`supports_color` for ``sys.stdout``."""
+def demo() -> None:  # pragma: no cover - manual colour eyeball: ``python -m gaia.logfmt``
+    """Print sample lines so the colours can be checked by eye (tests can't)."""
     import sys
 
-    return supports_color(sys.stdout)
+    color = supports_color(sys.stdout)
+    rows = [
+        ("12:01:03", "frontend_developer/pasta", "INFO", "tool_used", {"tool": "fs_write"}),
+        ("12:01:41", "gaia", "INFO", "delegate_to_soul", {"status": "success"}),
+        ("12:02:10", "frontend_developer/pasta", "INFO", "tool_used", {"status": "error"}),
+        ("12:02:14", "gaia", "WARNING", "connectors.whatsapp", None),
+    ]
+    for ts, tag, level, mod, fields in rows:
+        err = bool(fields and fields.get("status") == "error")
+        line = render_line(
+            ts=ts, tag=tag, level=level, body="", module=mod, fields=fields, color=color, error=err
+        )
+        print(line)
 
 
 if __name__ == "__main__":  # pragma: no cover

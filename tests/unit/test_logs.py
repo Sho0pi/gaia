@@ -6,13 +6,12 @@ import json
 import logging
 from collections.abc import Iterator
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
 from gaia.config import Settings
 from gaia.config.schema import LoggingConfig
-from gaia.logs import ConsoleFormatter, _supports_color, log_event, setup_logging
+from gaia.logs import ConsoleFormatter, log_event, setup_logging
 
 
 def _record(name: str, level: str, msg: str, **fields: object) -> logging.LogRecord:
@@ -207,21 +206,6 @@ def test_event_formatter_shows_agent_on_every_line() -> None:
     second = fmt.format(_record("gaia.events", "INFO", "tool_used", agent="gaia"))
 
     assert "gaia" in first and "gaia" in second  # agent shown on every line, never blanked
-
-
-def test_supports_color_honours_no_color(monkeypatch: pytest.MonkeyPatch) -> None:
-    tty = SimpleNamespace(isatty=lambda: True)
-    monkeypatch.delenv("NO_COLOR", raising=False)
-    monkeypatch.delenv("TERM", raising=False)
-    assert _supports_color(tty) is True
-
-    monkeypatch.setenv("NO_COLOR", "1")
-    assert _supports_color(tty) is False
-
-
-def test_supports_color_false_for_non_tty(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("NO_COLOR", raising=False)
-    assert _supports_color(SimpleNamespace(isatty=lambda: False)) is False
 
 
 def test_setup_is_idempotent(tmp_path: Path) -> None:

@@ -2,7 +2,26 @@
 
 from __future__ import annotations
 
-from gaia.logfmt import TAG_WIDTH, level_badge, render_line, tag_color
+from types import SimpleNamespace
+
+import pytest
+
+from gaia.logfmt import TAG_WIDTH, level_badge, render_line, supports_color, tag_color
+
+
+def test_supports_color_honours_no_color(monkeypatch: pytest.MonkeyPatch) -> None:
+    tty = SimpleNamespace(isatty=lambda: True)
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.delenv("TERM", raising=False)
+    assert supports_color(tty) is True
+
+    monkeypatch.setenv("NO_COLOR", "1")
+    assert supports_color(tty) is False
+
+
+def test_supports_color_false_for_non_tty(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    assert supports_color(SimpleNamespace(isatty=lambda: False)) is False
 
 
 def _plain(*, ts: str = "12:00:00", tag: str = "gaia", level: str = "INFO", **kw: object) -> str:
