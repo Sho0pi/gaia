@@ -16,7 +16,7 @@ from gaia import constants
 from gaia.agents import AgentSpec
 from gaia.config import Settings
 from gaia.core import Gaia
-from gaia.souls.run import decide_soul, execute_decision
+from gaia.souls.run import decide_soul, execute_decision, run_soul_agent
 from gaia.souls.smith import SoulDecision
 
 
@@ -164,9 +164,9 @@ async def test_execute_decision_seeds_session_state(
 
     async def spy(
         g: Any, soul: Any, key: str, task: str, user_id: str, *, state: Any = None
-    ) -> str:
+    ) -> tuple[str, list[str]]:
         seen["state"] = state
-        return "done"
+        return "done", []
 
     monkeypatch.setattr("gaia.souls.run.run_soul_agent", spy)
 
@@ -177,6 +177,51 @@ async def test_execute_decision_seeds_session_state(
     assert run.ok
     assert seen["state"]["task_id"] == "t1"
     assert seen["state"]["created_by"] == "writer"  # stamped with the soul's own key
+
+
+def test_deliverable_media_includes_artifacts_excludes_source(tmp_path: Path) -> None:
+    from gaia.souls.run import _deliverable_media
+
+    primary = tmp_path / "ws"
+    primary.mkdir()
+    names = ["report.pdf", "plan.docx", "data.xlsx", "bundle.zip", "shot.png", "clip.mp4"]
+    source = ["index.html", "style.css", "app.js", "manifest.json"]
+    for n in (*names, *source):
+        (primary / n).write_text("x")
+
+    out = _deliverable_media(primary, [*names, *source], run_media=["/tmp/preview.png"])
+
+    got = {Path(p).name for p in out}
+    assert got == {*names, "preview.png"}  # artifacts + the screenshot; no web source
+    assert out[0] == "/tmp/preview.png"  # run_media first, order-stable
+
+
+async def test_run_soul_agent_never_closes_shared_toolsets(
+    gaia: Gaia, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A soul's tools include the *shared* MCP/Skills toolset singletons (same objects on the
+    # root). ADK's Runner.close() would close every toolset on the agent — so the nested soul
+    # runner must NOT close, or it tears the root's browser/skills down mid-conversation and
+    # the chat goes silent. Guard: a toolset on the soul survives the run.
+    from google.adk.agents import LlmAgent
+    from google.adk.tools.base_toolset import BaseToolset
+
+    closed: list[bool] = []
+
+    class TrackingToolset(BaseToolset):
+        async def get_tools(self, readonly_context: Any = None) -> list[Any]:
+            return []
+
+        async def close(self) -> None:
+            closed.append(True)
+
+    soul = LlmAgent(
+        name="writer", model=FakeLlm(responses=[_text("done")]), tools=[TrackingToolset()]
+    )
+    text, media = await run_soul_agent(gaia, soul, "writer", "do it", user_id="i")
+
+    assert text == "done" and media == []
+    assert closed == []  # shared toolset survived — bug 4 regression guard
 
 
 async def test_decide_soul_roundtrips_through_json(
