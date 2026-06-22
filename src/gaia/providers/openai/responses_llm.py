@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import uuid
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any
@@ -33,7 +34,19 @@ from gaia.providers.openai.store import Credentials, load_credentials
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from google.adk.models.llm_request import LlmRequest
 
+logger = logging.getLogger(__name__)
+
 RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses"
+
+#: Cap on any single string inside a replayed tool result, and on the whole serialized output.
+#: A tool like ``browser_take_screenshot`` returns the image inline (a base64 block); replaying
+#: that blob into every later turn's history bloats the request until the model returns nothing
+#: (a reasoning-only, message-less completion -> a dead chat). The image is already delivered to
+#: the user from the live turn, so the model never needs the bytes in history.
+_MAX_STR = 2000
+_MAX_TOOL_OUTPUT = 16000
+#: Keys whose value is a binary payload to drop wholesale (mcp image block ``data``, etc.).
+_BINARY_KEYS = frozenset({"data", "image", "image_url", "b64_json", "bytes", "blob"})
 
 
 class ChatGptNotAuthenticatedError(RuntimeError):
@@ -54,6 +67,35 @@ def _jsonable(obj: Any) -> Any:
 def _dumps(value: Any) -> str:
     """``json.dumps`` that never raises on a tool's pydantic/odd return value."""
     return json.dumps(value, default=_jsonable)
+
+
+def _shrink(value: Any) -> Any:
+    """Drop/truncate heavy bits of a tool result so the replayed history stays small.
+
+    Binary payloads (a screenshot's inline base64) are dropped to a placeholder; any long
+    string is truncated. Keeps the structure so the model still sees what the tool returned.
+    """
+    if isinstance(value, dict):
+        out: dict[str, Any] = {}
+        for k, v in value.items():
+            if k in _BINARY_KEYS and isinstance(v, str) and len(v) > _MAX_STR:
+                out[k] = f"[{len(v)} chars omitted]"
+            else:
+                out[k] = _shrink(v)
+        return out
+    if isinstance(value, list):
+        return [_shrink(v) for v in value]
+    if isinstance(value, str) and len(value) > _MAX_STR:
+        return value[:_MAX_STR] + f"…[{len(value) - _MAX_STR} more chars omitted]"
+    return value
+
+
+def _tool_output(response: Any) -> str:
+    """Serialize a tool result for replay, shrunk + capped so it can't bloat history."""
+    text = _dumps(_shrink(response or {}))
+    if len(text) > _MAX_TOOL_OUTPUT:
+        text = text[:_MAX_TOOL_OUTPUT] + "…[truncated]"
+    return text
 
 
 def _content_to_input(contents: list[types.Content]) -> list[dict[str, Any]]:
@@ -131,7 +173,7 @@ def _content_to_input(contents: list[types.Content]) -> list[dict[str, Any]]:
                     {
                         "type": "function_call_output",
                         "call_id": call_id,
-                        "output": _dumps(part.function_response.response or {}),
+                        "output": _tool_output(part.function_response.response),
                     }
                 )
     # Heal orphaned calls (interrupted turns) so the backend doesn't 400 the session.
@@ -340,6 +382,16 @@ class ChatGptOAuthLlm(BaseLlm):
         if full and not streamed:
             parts.append(types.Part(text=full))
         parts.extend(calls)
+        # A turn with neither a message nor a tool call (reasoning only) reaches the user as an
+        # empty "(Done — nothing to add)" — the dead-chat symptom. Usually a sign history has
+        # grown too big (see _tool_output). Log it so the failure is visible if it recurs.
+        if not full and not calls:
+            logger.warning(
+                "openai turn produced no message or tool call (reasoning-only) — "
+                "model=%s, reasoning_items=%d",
+                self._model_id(),
+                len(reasoning),
+            )
         if parts or not stream:
             yield LlmResponse(
                 content=types.Content(role="model", parts=parts or [types.Part(text=full)]),
