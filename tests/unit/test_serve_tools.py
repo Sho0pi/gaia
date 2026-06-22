@@ -105,3 +105,35 @@ async def test_serve_tool_errors_never_raise(
     _workspace(tmp_path, monkeypatch)
     out = await make_serve(StaticServerManager(ServedPorts()))("/etc")
     assert out["status"] == "error"
+
+
+async def test_serve_flags_unviewable_for_remote_user_without_tunnel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A remote (whatsapp) user can't open 127.0.0.1 and tunneling is off — serve must flag the
+    # url unviewable so the model screenshots instead of pasting it.
+    from gaia.connectors.base import current_chat
+
+    ws = _workspace(tmp_path, monkeypatch)
+    mgr = StaticServerManager(ServedPorts(), idle_seconds=999)
+    token = current_chat.set(("whatsapp", "972@x"))
+    try:
+        out = await make_serve(mgr)(str(ws))
+        assert out["viewable_by_user"] is False
+        assert "screenshot" in out["note"] and "public_url" not in out
+    finally:
+        current_chat.reset(token)
+        await mgr.close_all()
+
+
+async def test_serve_local_cli_user_gets_no_unviewable_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A local cli user can open 127.0.0.1 directly — no flag, no screenshot nudge.
+    ws = _workspace(tmp_path, monkeypatch)  # default current_chat is ("", "") = local
+    mgr = StaticServerManager(ServedPorts(), idle_seconds=999)
+    try:
+        out = await make_serve(mgr)(str(ws))
+        assert "viewable_by_user" not in out
+    finally:
+        await mgr.close_all()

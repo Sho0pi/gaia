@@ -94,6 +94,15 @@ def make_serve(
                 result["public_url_error"] = (
                     "public tunneling is disabled — set tools.serve.tunnel.enabled in gaia.yaml"
                 )
+        # A remote user needs a public_url; if we couldn't make one, the only thing they can
+        # actually see is a screenshot. Flag it so the model screenshots instead of pasting the
+        # useless 127.0.0.1 url. (A local cli user — want_public false — can open it directly.)
+        if want_public and "public_url" not in result:
+            result["viewable_by_user"] = False
+            result["note"] = (
+                "127.0.0.1 is local-only — the user can't open it. Show them by taking a "
+                "screenshot (browser_navigate + browser_take_screenshot); do not paste this url."
+            )
         return result
 
     return serve

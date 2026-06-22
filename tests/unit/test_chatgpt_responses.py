@@ -76,6 +76,54 @@ def test_function_response_with_pydantic_payload_is_serializable() -> None:
     assert json.loads(item["output"]) == {"r": {"memories": ["x"]}}
 
 
+def test_screenshot_base64_is_dropped_from_replayed_history() -> None:
+    # A browser_take_screenshot result carries the image inline (base64). Replaying that blob
+    # every turn bloats history until the model returns nothing (dead chat). It must be dropped
+    # to a placeholder — the image already reached the user from the live turn.
+
+    big = "A" * 50000  # a base64 image payload
+    contents = [
+        types.Content(
+            role="user",
+            parts=[
+                types.Part(
+                    function_response=types.FunctionResponse(
+                        id="c1",
+                        name="browser_take_screenshot",
+                        response={"content": [{"type": "image", "data": big, "mime": "image/png"}]},
+                    )
+                )
+            ],
+        )
+    ]
+
+    item = _content_to_input(contents)[0]
+
+    assert item["type"] == "function_call_output"
+    assert big not in item["output"]  # the blob is gone
+    assert "omitted" in item["output"]  # replaced by a placeholder
+    assert len(item["output"]) < 1000  # history stays small
+
+
+def test_huge_tool_output_is_capped() -> None:
+    contents = [
+        types.Content(
+            role="user",
+            parts=[
+                types.Part(
+                    function_response=types.FunctionResponse(
+                        id="c1", name="t", response={"text": "Z" * 100000}
+                    )
+                )
+            ],
+        )
+    ]
+
+    item = _content_to_input(contents)[0]
+
+    assert len(item["output"]) < 20000  # capped, not the full 100k
+
+
 def test_reasoning_part_is_replayed_as_a_reasoning_item() -> None:
     import json
 
