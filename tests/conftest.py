@@ -14,15 +14,50 @@ from gaia.agents import AgentSpec, SoulRegistry
 load_dotenv(constants.ENV_FILE)
 
 
-@pytest.fixture(autouse=True)
-def _isolate_user_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Never let a test write the real ``~/.gaia/users.json``.
+#: HOME_DIR-derived path constants to redirect into a per-test tmp home. Stores/Settings read
+#: these at construction/call time, so patching them isolates every store a test builds (directly
+#: or via ``Gaia``) — tasks.db, mem0's chroma, the whatsapp session db, users.json, logs, agents.
+_HOME_PATHS = {
+    "USERS_FILE": "users.json",
+    "TASKS_DB": "tasks.db",
+    "SESSION_DB": "whatsapp.db",
+    "CRON_FILE": "cron.json",
+    "CONFIG_PATH": "gaia.yaml",
+    "LOG_DIR": "logs",
+    "AGENT_REGISTRY_DIR": "agent_registry",
+    "AGENTS_DIR": "agents",
+    "UPLOADS_DIR": "uploads",
+    "CACHE_DIR": "cache",
+    "SKILLS_DIR": "skills",
+}
 
-    ``Settings.users_file`` and ``UserStore()`` both read ``constants.USERS_FILE`` at
-    construction, so redirecting it to a per-test tmp file isolates every store a test
-    builds (directly or via ``Gaia``). Guards against test users leaking into real data.
+
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line(
+        "markers", "realhome: opt out of the tmp-home isolation (tests that assert the real paths)"
+    )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_home(
+    request: pytest.FixtureRequest, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Never let a test write the real ``~/.gaia``.
+
+    Several stores default to a ``constants`` path under the operator's home and read it at
+    construction (``TaskStore`` → ``TASKS_DB``) or call time (mem0's chroma → ``HOME_DIR``), so a
+    test that builds a ``Gaia`` would write live data. Redirect the whole home (and each derived
+    path) into a per-test tmp dir. ``Settings`` path fields read these constants via
+    ``default_factory`` (see ``config/settings.py``), so a ``Settings()`` built in a test picks up
+    the tmp home too. One knob isolates everything; a test may still override a single path, or
+    opt out entirely with ``@pytest.mark.realhome`` (the few tests asserting the real wiring).
     """
-    monkeypatch.setattr(constants, "USERS_FILE", tmp_path / "users.json")
+    if request.node.get_closest_marker("realhome"):
+        return
+    home = tmp_path / "home"
+    monkeypatch.setattr(constants, "HOME_DIR", home)  # mem0 chroma reads this at call time
+    for name, leaf in _HOME_PATHS.items():
+        monkeypatch.setattr(constants, name, home / leaf)
 
 
 @pytest.fixture
