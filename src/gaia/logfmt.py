@@ -92,9 +92,14 @@ def _render_tag(tag: str, *, color: bool) -> str:
     return f"{pad}{_fg(tag_color(tag))}{shown}{_RESET}"
 
 
-def _render_fields(fields: dict[str, Any], *, color: bool) -> str:
-    """``key=value …`` with dim keys (plain when colour is off)."""
-    return " ".join(f"{_DIM}{k}={_RESET}{v}" if color else f"{k}={v}" for k, v in fields.items())
+def _render_fields(fields: dict[str, Any], *, color: bool, error: bool = False) -> str:
+    """``key=value …`` — dim keys normally, all-red on an error (plain when colour is off)."""
+    plain = " ".join(f"{k}={v}" for k, v in fields.items())
+    if not color:
+        return plain
+    if error:  # a failed call: show the command/args in red so the whole line reads as the error
+        return f"{_fg(_ERROR_RGB)}{plain}{_RESET}"
+    return " ".join(f"{_DIM}{k}={_RESET}{v}" for k, v in fields.items())
 
 
 def render_line(
@@ -125,7 +130,7 @@ def render_line(
     if head:
         segs.append(paint(head))
     if fields:
-        segs.append(_render_fields(fields, color=color))
+        segs.append(_render_fields(fields, color=color, error=is_err))
 
     line = f"{time_col}  {level_badge(level, color=color)}  {tag_col}  {'  '.join(segs)}".rstrip()
     for extra in rest:  # wrapped text / traceback lines align under the body column

@@ -296,6 +296,68 @@ async def test_streams_text_and_function_call(
     assert any(p.function_call and p.function_call.name == "web_search" for p in parts)
 
 
+class _RaisingStream(_FakeStream):
+    """A stream that drops (httpx.ReadError) before emitting any line."""
+
+    def __init__(self) -> None:
+        super().__init__([])
+
+    async def aiter_lines(self) -> Any:
+        import httpx
+
+        raise httpx.ReadError("connection reset")
+        yield ""  # pragma: no cover - unreachable; makes this an async generator
+
+
+async def test_retries_once_on_transient_stream_drop(
+    monkeypatch: pytest.MonkeyPatch, fresh_creds: None
+) -> None:
+    import httpx
+
+    class _FlakyClient(_FakeClient):
+        calls = 0
+
+        def stream(self, method: str, url: str, *, headers: Any, json: dict[str, Any]) -> Any:
+            self.body = json
+            type(self).calls += 1
+            return _RaisingStream() if type(self).calls == 1 else _FakeStream(_SSE)
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda *a, **k: _FlakyClient())
+
+    out = [r async for r in ChatGptOAuthLlm(model="gpt-5").generate_content_async(_request())]
+
+    assert _FlakyClient.calls == 2  # dropped once, retried, then succeeded
+    assert any(p.text == "Hello world" for p in out[-1].content.parts)  # recovered output
+
+
+async def test_no_retry_after_partial_output(
+    monkeypatch: pytest.MonkeyPatch, fresh_creds: None
+) -> None:
+    import httpx
+
+    class _PartialThenDrop(_FakeStream):
+        def __init__(self) -> None:
+            super().__init__([])
+
+        async def aiter_lines(self) -> Any:
+            yield 'data: {"type":"response.output_text.delta","delta":"Hi"}'
+            raise httpx.ReadError("reset mid-stream")
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda *a, **k: _make_client(_PartialThenDrop()))
+
+    # stream=True so the delta is yielded before the drop → already produced output → no retry.
+    llm = ChatGptOAuthLlm(model="gpt-5")
+    with pytest.raises(httpx.ReadError):
+        async for _ in llm.generate_content_async(_request(), stream=True):
+            pass
+
+
+def _make_client(stream_obj: Any) -> Any:
+    client = _FakeClient()
+    client.stream = lambda *a, **k: stream_obj  # type: ignore[method-assign]
+    return client
+
+
 async def test_recovers_text_from_a_completed_message_item(
     monkeypatch: pytest.MonkeyPatch, fresh_creds: None
 ) -> None:

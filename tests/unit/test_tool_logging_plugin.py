@@ -1,4 +1,4 @@
-"""ToolLoggingPlugin is the single place tool calls are logged — as a start+finish span."""
+"""ToolLoggingPlugin is the single place tool calls are logged — one ``tool_used`` line per call."""
 
 from __future__ import annotations
 
@@ -26,44 +26,28 @@ def _ctx(agent: str | None = None, call_id: str | None = None) -> Any:
     return SimpleNamespace(agent_name=agent, function_call_id=call_id)
 
 
-async def test_start_event_logs_tool_call_with_args(
+async def test_one_line_per_call_with_args_and_status(
     logged: list[tuple[str, dict[str, Any]]],
 ) -> None:
     plugin = ToolLoggingPlugin()
+    ctx = _ctx("gaia")
 
-    await plugin.before_tool_callback(
-        tool=_tool("github_search_repositories"),
-        tool_args={"query": "adk agents", "per_page": 5},
-        tool_context=_ctx("gaia", call_id="fc-1"),
-    )
-
-    name, fields = logged[0]
-    assert name == "tool_call"
-    assert fields["tool"] == "github_search_repositories" and fields["agent"] == "gaia"
-    assert fields["call_id"] == "fc-1"
-    assert fields["args"] == {"query": "adk agents", "per_page": 5}
-
-
-async def test_finish_event_logs_tool_used_with_status_and_duration(
-    logged: list[tuple[str, dict[str, Any]]],
-) -> None:
-    plugin = ToolLoggingPlugin()
-    ctx = _ctx("gaia", call_id="fc-2")
-
-    await plugin.before_tool_callback(tool=_tool("some_tool"), tool_args={}, tool_context=ctx)
     await plugin.after_tool_callback(
-        tool=_tool("some_tool"), tool_args={}, tool_context=ctx, result={"status": "success"}
+        tool=_tool("gh_search"),
+        tool_args={"query": "adk", "per_page": 5},
+        tool_context=ctx,
+        result={"status": "x"},
     )
 
-    assert [a for a, _ in logged] == ["tool_call", "tool_used"]
-    finish = logged[1][1]
-    assert finish["status"] == "success"
-    assert finish["call_id"] == "fc-2"
-    assert isinstance(finish["duration_ms"], int) and finish["duration_ms"] >= 0
-    assert "args" not in finish  # args ride on the start event, not the finish
+    # exactly one tool_used line carries everything.
+    assert [a for a, _ in logged] == ["tool_used"]
+    fields = logged[0][1]
+    assert fields["tool"] == "gh_search" and fields["agent"] == "gaia"
+    assert fields["status"] == "x"
+    assert fields["args"] == {"query": "adk", "per_page": 5}
 
 
-async def test_finish_status_defaults_to_ok_and_omits_unknown_agent(
+async def test_status_defaults_to_ok_and_omits_unknown_agent(
     logged: list[tuple[str, dict[str, Any]]],
 ) -> None:
     plugin = ToolLoggingPlugin()
@@ -75,17 +59,19 @@ async def test_finish_status_defaults_to_ok_and_omits_unknown_agent(
     name, fields = logged[0]
     assert name == "tool_used" and fields["status"] == "ok"
     assert "agent" not in fields  # omitted when unknown
-    assert "duration_ms" not in fields  # no start was recorded (no call_id), so no span
 
 
-async def test_base_fields_carry_project_during_a_soul_run(
+async def test_carries_project_during_a_soul_run(
     logged: list[tuple[str, dict[str, Any]]],
 ) -> None:
     plugin = ToolLoggingPlugin()
     token = current_project.set("plant-shop")
     try:
-        await plugin.before_tool_callback(
-            tool=_tool("fs_write"), tool_args={}, tool_context=_ctx("frontend_developer")
+        await plugin.after_tool_callback(
+            tool=_tool("fs_write"),
+            tool_args={},
+            tool_context=_ctx("frontend_developer"),
+            result={"status": "success"},
         )
     finally:
         current_project.reset(token)
@@ -95,17 +81,16 @@ async def test_base_fields_carry_project_during_a_soul_run(
 
 async def test_no_project_field_for_root_agent(logged: list[tuple[str, dict[str, Any]]]) -> None:
     plugin = ToolLoggingPlugin()
-    # No soul run in progress (contextvar at its default ""): root tool calls carry no project.
-    await plugin.before_tool_callback(
-        tool=_tool("send_file"), tool_args={}, tool_context=_ctx("gaia")
+    await plugin.after_tool_callback(
+        tool=_tool("send_file"), tool_args={}, tool_context=_ctx("gaia"), result={"status": "ok"}
     )
     assert "project" not in logged[0][1]
 
 
-async def test_args_on_start_are_sanitized(logged: list[tuple[str, dict[str, Any]]]) -> None:
+async def test_args_are_sanitized(logged: list[tuple[str, dict[str, Any]]]) -> None:
     plugin = ToolLoggingPlugin()
 
-    await plugin.before_tool_callback(
+    await plugin.after_tool_callback(
         tool=_tool("some_api_tool"),
         tool_args={
             "url": "https://api.example.com",
@@ -115,6 +100,7 @@ async def test_args_on_start_are_sanitized(logged: list[tuple[str, dict[str, Any
             "client_secret": "shhh",
         },
         tool_context=_ctx("gaia"),
+        result={"status": "success"},
     )
 
     args = logged[0][1]["args"]
@@ -132,17 +118,17 @@ async def test_drop_list_filters_unnameable_secrets(
 ) -> None:
     plugin = ToolLoggingPlugin()
 
-    # browser_type: the typed text may be a password — must not appear.
-    await plugin.before_tool_callback(
+    await plugin.after_tool_callback(
         tool=_tool("browser_type"),
         tool_args={"ref": "e2", "text": "hunter2-secret", "submit": True},
         tool_context=_ctx("gaia"),
+        result={"status": "ok"},
     )
-    # remember: the fact is private by definition.
-    await plugin.before_tool_callback(
+    await plugin.after_tool_callback(
         tool=_tool("remember"),
         tool_args={"fact": "the user's bank pin is 1234"},
         tool_context=_ctx("gaia"),
+        result={"status": "ok"},
     )
 
     assert logged[0][1]["args"] == {"ref": "e2", "text": "[filtered]", "submit": True}
@@ -154,10 +140,11 @@ async def test_drop_list_filters_unnameable_secrets(
 async def test_long_values_are_truncated(logged: list[tuple[str, dict[str, Any]]]) -> None:
     plugin = ToolLoggingPlugin()
 
-    await plugin.before_tool_callback(
+    await plugin.after_tool_callback(
         tool=_tool("exec"),
         tool_args={"command": "x" * 500, "background": False},
         tool_context=_ctx("gaia"),
+        result={"status": "ok"},
     )
 
     args = logged[0][1]["args"]
@@ -166,30 +153,11 @@ async def test_long_values_are_truncated(logged: list[tuple[str, dict[str, Any]]
     assert "x" * 500 not in str(logged)
 
 
-async def test_non_string_values_are_stringified(logged: list[tuple[str, dict[str, Any]]]) -> None:
-    plugin = ToolLoggingPlugin()
-
-    await plugin.before_tool_callback(
-        tool=_tool("fs_edit"),
-        tool_args={"edits": [{"line": 3, "text": "new"}], "count": 2, "ratio": 0.5, "opt": None},
-        tool_context=_ctx("gaia"),
-    )
-
-    args = logged[0][1]["args"]
-    assert isinstance(args["edits"], str)  # nested structures become (truncated) text
-    assert args["count"] == 2 and args["ratio"] == 0.5 and args["opt"] is None
-
-
 async def test_non_dict_args_and_result_never_break(
     logged: list[tuple[str, dict[str, Any]]],
 ) -> None:
     plugin = ToolLoggingPlugin()
 
-    await plugin.before_tool_callback(
-        tool=_tool("weird"),
-        tool_args="not a dict",  # type: ignore[arg-type]
-        tool_context=_ctx(),
-    )
     await plugin.after_tool_callback(
         tool=_tool("weird"),
         tool_args="not a dict",  # type: ignore[arg-type]
@@ -197,30 +165,38 @@ async def test_non_dict_args_and_result_never_break(
         result="not a dict",  # type: ignore[arg-type]
     )
 
-    assert logged[0] == ("tool_call", {"tool": "weird"})  # no args, no agent
-    assert logged[1][1]["status"] == "ok"
+    assert logged[0] == ("tool_used", {"tool": "weird", "status": "ok"})  # no args, no agent
 
 
-async def test_error_finish_logs_tool_used_error(
-    logged: list[tuple[str, dict[str, Any]]],
-) -> None:
+async def test_error_line_carries_the_command(logged: list[tuple[str, dict[str, Any]]]) -> None:
     plugin = ToolLoggingPlugin()
-    ctx = _ctx("gaia", call_id="fc-err")
 
-    await plugin.before_tool_callback(
-        tool=_tool("exec"), tool_args={"command": "rm -rf /tmp/x"}, tool_context=ctx
-    )
     await plugin.on_tool_error_callback(
         tool=_tool("exec"),
         tool_args={"command": "rm -rf /tmp/x"},
-        tool_context=ctx,
+        tool_context=_ctx("gaia"),
         error=ValueError("nope"),
     )
 
-    name, fields = logged[1]
+    name, fields = logged[0]
     assert name == "tool_used" and fields["status"] == "error"
-    assert fields["error"] == "ValueError" and fields["call_id"] == "fc-err"
-    assert "duration_ms" in fields
+    assert fields["error"] == "ValueError"
+    assert fields["args"] == {"command": "rm -rf /tmp/x"}  # the failing command is on the line
+
+
+async def test_error_result_also_carries_args(logged: list[tuple[str, dict[str, Any]]]) -> None:
+    # Most tool failures are a {"status": "error"} result (not an exception) — still show the args.
+    plugin = ToolLoggingPlugin()
+
+    await plugin.after_tool_callback(
+        tool=_tool("fs_write"),
+        tool_args={"path": "/nope"},
+        tool_context=_ctx("gaia"),
+        result={"status": "error", "error_message": "denied"},
+    )
+
+    fields = logged[0][1]
+    assert fields["status"] == "error" and fields["args"] == {"path": "/nope"}
 
 
 def test_no_tool_self_logs_anymore() -> None:

@@ -23,12 +23,16 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 
 def _friendly_error(exc: Exception) -> str:
-    """A short, user-facing message for a failed turn (rate limit / outage / other)."""
+    """A short, user-facing message for a failed turn (rate limit / outage / network / other)."""
     text = str(exc)
     if "429" in text or "RESOURCE_EXHAUSTED" in text:
         return "I'm being rate-limited right now (model quota). Please try again in a minute."
     if "503" in text or "UNAVAILABLE" in text or "overloaded" in text.lower():
         return "The model is busy at the moment. Please try again shortly."
+    # A dropped connection to the model (httpx/httpcore TransportError) — usually a transient
+    # network blip; the backend already retried once before this surfaced.
+    if type(exc).__module__.split(".")[0] in ("httpx", "httpcore"):
+        return "I had a network hiccup reaching the model. Please try again."
     return "Sorry — something went wrong handling that. Please try again."
 
 

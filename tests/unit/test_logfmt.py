@@ -97,6 +97,32 @@ def test_error_tint_only_adds_color_when_enabled() -> None:
     assert "\033[" in colored
 
 
+def test_error_fields_are_red() -> None:
+    # A failed tool call (status=error) shows the command/args in red so the line reads as an error.
+    red = render_line(
+        ts="12:00:00",
+        tag="gaia",
+        level="INFO",
+        body="",
+        module="exec",
+        fields={"command": "rm x"},
+        color=True,
+        error=True,
+    )
+    ok = render_line(
+        ts="12:00:00",
+        tag="gaia",
+        level="INFO",
+        body="",
+        module="exec",
+        fields={"command": "rm x"},
+        color=True,
+        error=False,
+    )
+    assert "\033[38;2;236;102;101m" in red  # error red fg around the fields
+    assert "\033[38;2;236;102;101m" not in ok  # normal line: dim keys, no red
+
+
 def test_multiline_body_indents_continuation() -> None:
     line = render_line(
         ts="12:00:00", tag="gaia", level="ERROR", body="oops\nTraceback line", color=False

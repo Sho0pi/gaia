@@ -284,8 +284,23 @@ class ChatGptOAuthLlm(BaseLlm):
 
         async with httpx.AsyncClient(timeout=httpx.Timeout(600.0)) as client:
             creds = await self._ensure_fresh(creds, client)
-            async for resp in self._stream(client, creds, body, session_id, stream):
-                yield resp
+            # Retry once on a transient stream drop (httpx TransportError: ReadError/ConnectError/
+            # protocol/timeout) — but only if nothing was emitted yet, so a mid-stream drop can't
+            # duplicate already-delivered text. A clean blip recovers without the user seeing it.
+            for attempt in range(2):
+                produced = False
+                try:
+                    async for resp in self._stream(client, creds, body, session_id, stream):
+                        produced = True
+                        yield resp
+                    return
+                except httpx.TransportError as exc:
+                    if produced or attempt == 1:
+                        raise
+                    logger.warning(
+                        "ChatGPT stream dropped (%s) before any output — retrying once",
+                        type(exc).__name__,
+                    )
 
     async def _ensure_fresh(self, creds: Credentials, client: Any) -> Credentials:
         if creds.is_expired():
