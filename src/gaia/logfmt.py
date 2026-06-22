@@ -123,14 +123,13 @@ def render_line(
     module: str | None = None,
     fields: dict[str, Any] | None = None,
     color: bool,
-    prev_tag: str | None = None,
     error: bool = False,
 ) -> str:
     """One gocat-style line: ``<ts>  <badge>  <tag>  ·<module>  <body>  <k=v …>``.
 
-    ``tag`` is the actor (``agent``/``agent/project``), coloured per-name and blanked when it
-    equals ``prev_tag`` so a run from one actor reads as a block. ``module`` (dim, ``·``-prefixed)
-    is the source: the action for events, the logger name for system logs. ``body`` is the message
+    ``tag`` is the actor (``agent``/``agent/project``), coloured per-name and shown on **every**
+    line so you always see which agent a log belongs to. ``module`` (dim, ``·``-prefixed) is the
+    source: the action for events, the logger name for system logs. ``body`` is the message
     (system) — events leave it empty and carry only ``fields``. ``error`` tints body + fields red
     (event tool failures, whose level is still INFO). Continuation lines indent to the body column.
     """
@@ -139,7 +138,7 @@ def render_line(
         msg_rgb = _ERROR_RGB
     time_col = f"{_DIM}{ts}{_RESET}" if color else ts
     badge = level_badge(level, color=color)
-    tag_col = " " * TAG_WIDTH if tag == prev_tag else _render_tag(tag, color=color)
+    tag_col = _render_tag(tag, color=color)
 
     body_lines = body.split("\n")
     head, *rest = body_lines
@@ -168,21 +167,20 @@ def demo() -> None:  # pragma: no cover - manual eyeball
         ("12:02:10", "frontend_developer/pasta-site", "INFO", "tool_used", {"status": "error"}),
         ("12:02:14", "connectors.whatsapp", "WARNING", "reconnecting", None),
     ]
-    prev = None
     for ts, tag, level, body, fields in rows:
         err = bool(fields and fields.get("status") == "error")
+        action = body if level == "INFO" else None
         line = render_line(
             ts=ts,
             tag=tag,
             level=level,
-            body=body,
+            body="" if action else body,
+            module=action,
             fields=fields,
             color=color,
-            prev_tag=prev,
             error=err,
         )
         print(line)
-        prev = tag
 
 
 def supports_color_stdout() -> bool:

@@ -200,14 +200,13 @@ def test_event_formatter_folds_project_into_the_tag() -> None:
     assert "frontend_developer/pasta" in line and "project=" not in line
 
 
-def test_event_formatter_dedupes_a_repeated_tag() -> None:
+def test_event_formatter_shows_agent_on_every_line() -> None:
     fmt = ConsoleFormatter(color=False, event=True)
 
     first = fmt.format(_record("gaia.events", "INFO", "tool_call", agent="gaia"))
     second = fmt.format(_record("gaia.events", "INFO", "tool_used", agent="gaia"))
 
-    assert "gaia" in first
-    assert "gaia" not in second  # the repeated tag is blanked on the consecutive line
+    assert "gaia" in first and "gaia" in second  # agent shown on every line, never blanked
 
 
 def test_supports_color_honours_no_color(monkeypatch: pytest.MonkeyPatch) -> None:

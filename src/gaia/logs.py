@@ -155,9 +155,9 @@ class ConsoleFormatter(logging.Formatter):
     the colour-per-source tag, the action is the body, the rest are dim fields; a tool failure
     (``status=error``) tints the line red.
 
-    Colour is applied only on a real terminal; otherwise the same layout is emitted plain. A
-    per-instance ``prev_tag`` blanks a repeated tag (consecutive lines from one source). Redaction
-    runs last, on the final string, exactly as the file formatters do.
+    Colour is applied only on a real terminal; otherwise the same layout is emitted plain. The
+    actor tag shows on every line. Redaction runs last, on the final string, as the file
+    formatters do.
     """
 
     def __init__(
@@ -167,7 +167,6 @@ class ConsoleFormatter(logging.Formatter):
         self._redactor = redactor
         self._color = color
         self._event = event
-        self._prev_tag: str | None = None
 
     def format(self, record: logging.LogRecord) -> str:
         from gaia.logfmt import render_line
@@ -203,10 +202,8 @@ class ConsoleFormatter(logging.Formatter):
             module=module,
             fields=str_fields,
             color=self._color,
-            prev_tag=self._prev_tag,
             error=error,
         )
-        self._prev_tag = tag
         return self._redactor(line) if self._redactor else line
 
 

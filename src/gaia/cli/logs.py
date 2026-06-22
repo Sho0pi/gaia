@@ -64,7 +64,7 @@ def tail_lines(path: Path, n: int) -> list[str]:
 class _Renderer:
     """gocat-style line renderer for the viewer — shares :mod:`gaia.logfmt` with the live console.
 
-    Stateful only for the tag-dedup (``prev_tag``). ``--json`` (``raw``) bypasses rendering.
+    ``--json`` (``raw``) bypasses rendering and prints the stored line verbatim.
     """
 
     def __init__(self, *, events: bool, raw: bool) -> None:
@@ -73,7 +73,6 @@ class _Renderer:
         self._events = events
         self._raw = raw
         self._color = supports_color(sys.stdout)
-        self._prev: str | None = None
 
     def render(self, line: str) -> str:
         if self._raw:
@@ -85,7 +84,7 @@ class _Renderer:
     ) -> str:
         from gaia.logfmt import render_line
 
-        out = render_line(
+        return render_line(
             ts=ts,
             tag=tag,
             level=level,
@@ -93,11 +92,8 @@ class _Renderer:
             module=module,
             fields=fields or None,
             color=self._color,
-            prev_tag=self._prev,
             error=error,
         )
-        self._prev = tag
-        return out
 
     def _event(self, raw: str) -> str:
         try:

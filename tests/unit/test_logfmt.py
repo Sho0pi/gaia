@@ -24,12 +24,11 @@ def test_colored_has_ansi() -> None:
     assert "\033[" in line and "boom" in line
 
 
-def test_repeated_tag_is_blanked() -> None:
-    line = render_line(
-        ts="12:00:00", tag="gaia", level="INFO", body="again", color=False, prev_tag="gaia"
-    )
-    assert "gaia" not in line  # blanked; only padding where the tag would be
-    assert "again" in line
+def test_tag_shown_on_every_line() -> None:
+    # The actor tag is never blanked — you always see which agent a log belongs to.
+    a = render_line(ts="12:00:00", tag="gaia", level="INFO", body="one", color=False)
+    b = render_line(ts="12:00:01", tag="gaia", level="INFO", body="two", color=False)
+    assert "gaia" in a and "gaia" in b
 
 
 def test_badge_letter_per_level() -> None:
