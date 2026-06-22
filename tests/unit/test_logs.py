@@ -165,7 +165,8 @@ def test_console_formatter_plain_when_color_off() -> None:
     line = fmt.format(_record("gaia.core.handler", "INFO", "built root agent"))
 
     assert "\033[" not in line  # no ANSI
-    assert "INFO" in line and "core.handler" in line and "built root agent" in line
+    # gocat-style: dim time, level badge ("I"), the gaia-stripped logger name as the tag, message.
+    assert "core.handler" in line and "built root agent" in line
 
 
 def test_console_formatter_colors_when_on() -> None:
@@ -177,13 +178,36 @@ def test_console_formatter_colors_when_on() -> None:
     assert "boom" in line
 
 
-def test_event_formatter_renders_action_and_fields() -> None:
+def test_event_formatter_tag_is_agent_with_action_and_fields() -> None:
     fmt = ConsoleFormatter(color=False, event=True)
 
-    line = fmt.format(_record("gaia.events", "INFO", "tool_used", tool="web_search", results=5))
+    line = fmt.format(
+        _record("gaia.events", "INFO", "tool_used", agent="frontend_developer", tool="fs_write")
+    )
 
-    assert "▸ tool_used" in line
-    assert "tool=web_search" in line and "results=5" in line
+    # The agent is the tag; the action is the body; agent is pulled out of the fields.
+    assert "frontend_developer" in line and "tool_used" in line
+    assert "tool=fs_write" in line and "agent=" not in line
+
+
+def test_event_formatter_folds_project_into_the_tag() -> None:
+    fmt = ConsoleFormatter(color=False, event=True)
+
+    line = fmt.format(
+        _record("gaia.events", "INFO", "tool_used", agent="frontend_developer", project="pasta")
+    )
+
+    assert "frontend_developer/pasta" in line and "project=" not in line
+
+
+def test_event_formatter_dedupes_a_repeated_tag() -> None:
+    fmt = ConsoleFormatter(color=False, event=True)
+
+    first = fmt.format(_record("gaia.events", "INFO", "tool_call", agent="gaia"))
+    second = fmt.format(_record("gaia.events", "INFO", "tool_used", agent="gaia"))
+
+    assert "gaia" in first
+    assert "gaia" not in second  # the repeated tag is blanked on the consecutive line
 
 
 def test_supports_color_honours_no_color(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -14,10 +14,12 @@ absolute imports keep them apart.
 from __future__ import annotations
 
 import json
+import re
+import sys
 import time
 from collections import deque
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
@@ -41,6 +43,11 @@ JsonRawOpt = Annotated[
 #: Seconds between stat/read polls while following (``-f``).
 _FOLLOW_POLL = 0.25
 
+#: A standard system/errors/daemon line: ``<date> <time>,<ms> <LEVEL> <name>: <message>``.
+_SYS_RE = re.compile(
+    r"^\S+ (?P<time>\d\d:\d\d:\d\d)\S* (?P<level>[A-Z]+) (?P<name>[\w.]+): (?P<msg>.*)$"
+)
+
 
 def tail_lines(path: Path, n: int) -> list[str]:
     """The last ``n`` lines of ``path`` (empty list when the file is missing)."""
@@ -51,34 +58,79 @@ def tail_lines(path: Path, n: int) -> list[str]:
         return []
 
 
-def _format_event(raw: str) -> str:
-    """Pretty-render one ``events.jsonl`` line as ``HH:MM:SS ▸ action  k=v …``.
+class _Renderer:
+    """gocat-style line renderer for the viewer — shares :mod:`gaia.logfmt` with the live console.
 
-    Mirrors the console event layout in :mod:`gaia.logs` without depending on a
-    ``LogRecord``. Lines that are not JSON are returned verbatim (defensive).
+    Stateful only for the tag-dedup (``prev_tag``). ``--json`` (``raw``) bypasses rendering.
     """
-    try:
-        obj = json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
-        return raw
-    if not isinstance(obj, dict):
-        return raw
-    ts = str(obj.get("asctime", "")).split(" ")[-1].split(",")[0]  # HH:MM:SS from asctime
-    action = str(obj.get("message", ""))
-    skip = {"asctime", "message", "levelname", "name", "taskName"}
-    fields = " ".join(f"{k}={v}" for k, v in obj.items() if k not in skip)
-    line = f"{ts} ▸ {action}".strip()
-    return f"{line}  {fields}" if fields else line
+
+    def __init__(self, *, events: bool, raw: bool) -> None:
+        from gaia.logfmt import supports_color
+
+        self._events = events
+        self._raw = raw
+        self._color = supports_color(sys.stdout)
+        self._prev: str | None = None
+
+    def render(self, line: str) -> str:
+        if self._raw:
+            return line
+        return self._event(line) if self._events else self._system(line)
+
+    def _emit(self, *, ts: str, tag: str, level: str, body: str, fields: Any, error: bool) -> str:
+        from gaia.logfmt import render_line
+
+        out = render_line(
+            ts=ts,
+            tag=tag,
+            level=level,
+            body=body,
+            fields=fields or None,
+            color=self._color,
+            prev_tag=self._prev,
+            error=error,
+        )
+        self._prev = tag
+        return out
+
+    def _event(self, raw: str) -> str:
+        try:
+            obj = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return raw
+        if not isinstance(obj, dict):
+            return raw
+        ts = str(obj.get("asctime", "")).split(" ")[-1].split(",")[0]  # HH:MM:SS
+        action = str(obj.get("message", ""))
+        agent, project = obj.get("agent"), obj.get("project")
+        tag = f"{agent}/{project}" if agent and project else (str(agent) if agent else action)
+        skip = {"asctime", "message", "levelname", "name", "taskName", "agent", "project"}
+        fields = {k: str(v) for k, v in obj.items() if k not in skip}
+        return self._emit(
+            ts=ts,
+            tag=tag,
+            level=str(obj.get("levelname", "INFO")),
+            body=action,
+            fields=fields,
+            error=obj.get("status") == "error",
+        )
+
+    def _system(self, raw: str) -> str:
+        m = _SYS_RE.match(raw)
+        if m is None:
+            return raw  # not a standard line (e.g. a wrapped traceback) — print verbatim
+        return self._emit(
+            ts=m["time"],
+            tag=m["name"].removeprefix("gaia."),
+            level=m["level"],
+            body=m["msg"],
+            fields=None,
+            error=False,
+        )
 
 
-def _render(line: str, *, events: bool, raw: bool) -> str:
-    """Render one stored line for output: pretty events unless ``--json`` (raw)."""
-    return _format_event(line) if events and not raw else line
-
-
-def _follow(path: Path, *, events: bool, raw: bool) -> None:
+def _follow(path: Path, renderer: _Renderer) -> None:
     """Print appended lines until interrupted, reopening across rotation/truncation."""
-    out = console()
     fh = path.open(encoding="utf-8", errors="replace")
     try:
         fh.seek(0, 2)  # start at EOF: the tail was already printed
@@ -86,7 +138,7 @@ def _follow(path: Path, *, events: bool, raw: bool) -> None:
         while True:
             line = fh.readline()
             if line:
-                out.print(_render(line.rstrip("\n"), events=events, raw=raw))
+                print(renderer.render(line.rstrip("\n")))
                 continue
             time.sleep(_FOLLOW_POLL)
             try:
@@ -132,10 +184,11 @@ def logs(
         out.print(f"no log file at {path} yet — run 'gaia chat' or 'gaia start' to create logs")
         raise typer.Exit(1)
 
+    renderer = _Renderer(events=events, raw=json_raw)
     for line in tail_lines(path, lines):
-        out.print(_render(line, events=events, raw=json_raw))
+        print(renderer.render(line))
     if follow:
         try:
-            _follow(path, events=events, raw=json_raw)
+            _follow(path, renderer)
         except KeyboardInterrupt:
             raise typer.Exit(0) from None

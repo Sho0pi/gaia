@@ -89,8 +89,9 @@ def test_events_pretty_vs_raw(log_dir: Path) -> None:
 
     pretty = runner.invoke(cli_app, ["logs", "--events"])
     assert pretty.exit_code == 0
-    assert "09:30:00 ▸ tool_used" in pretty.output
-    assert "tool=web_search" in pretty.output
+    # gocat-style: time + action body + the field; no raw JSON braces.
+    assert "09:30:00" in pretty.output and "tool_used" in pretty.output
+    assert "tool=web_search" in pretty.output and "{" not in pretty.output
 
     raw = runner.invoke(cli_app, ["logs", "--events", "--json"])
     # --json prints the raw event lines: the verbatim JSON survives round-trip
@@ -98,16 +99,43 @@ def test_events_pretty_vs_raw(log_dir: Path) -> None:
     assert '"tool_used"' in raw.output
 
 
+def test_events_agent_becomes_the_tag(log_dir: Path) -> None:
+    line = json.dumps(
+        {
+            "asctime": "2026-06-12 09:30:01,000",
+            "message": "tool_used",
+            "agent": "frontend_developer",
+            "project": "pasta",
+            "tool": "fs_write",
+        }
+    )
+    (log_dir / "events.jsonl").write_text(line + "\n")
+
+    out = runner.invoke(cli_app, ["logs", "--events"]).output
+
+    assert "frontend_developer/pasta" in out  # agent/project folded into the tag
+    assert "tool_used" in out and "agent=" not in out and "project=" not in out
+
+
+def test_system_line_is_reformatted(log_dir: Path) -> None:
+    (log_dir / "system.log").write_text(
+        "2026-06-12 09:30:02,500 INFO gaia.connectors.whatsapp: connected\n"
+    )
+
+    out = runner.invoke(cli_app, ["logs"]).output
+
+    assert "connectors.whatsapp" in out and "connected" in out
+    assert "09:30:02" in out and "INFO gaia." not in out  # reformatted, not the raw line
+
+
 # --- follow across rotation --------------------------------------------------------
 
 
-def test_follow_survives_rotation(log_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_follow_survives_rotation(
+    log_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     path = log_dir / "system.log"
     path.write_text("old\n")  # already tailed; follow starts at EOF
-    captured: list[str] = []
-    monkeypatch.setattr(
-        logs, "console", lambda: type("C", (), {"print": lambda self, m: captured.append(m)})()
-    )
 
     calls = {"n": 0}
 
@@ -124,8 +152,10 @@ def test_follow_survives_rotation(log_dir: Path, monkeypatch: pytest.MonkeyPatch
 
     monkeypatch.setattr(logs.time, "sleep", fake_sleep)
 
+    renderer = logs._Renderer(events=False, raw=True)  # raw: lines verbatim, easy to assert on
     with pytest.raises(KeyboardInterrupt):
-        logs._follow(path, events=False, raw=False)
+        logs._follow(path, renderer)
 
-    assert "appended" in captured  # read before rotation
-    assert "rotated" in captured  # picked up the new file after the inode changed
+    out = capsys.readouterr().out
+    assert "appended" in out  # read before rotation
+    assert "rotated" in out  # picked up the new file after the inode changed
