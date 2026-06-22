@@ -43,6 +43,9 @@ JsonRawOpt = Annotated[
 #: Seconds between stat/read polls while following (``-f``).
 _FOLLOW_POLL = 0.25
 
+#: Actor tag for a stored line with no agent of its own (system files; matches the live default).
+_DEFAULT_AGENT = "gaia"
+
 #: A standard system/errors/daemon line: ``<date> <time>,<ms> <LEVEL> <name>: <message>``.
 _SYS_RE = re.compile(
     r"^\S+ (?P<time>\d\d:\d\d:\d\d)\S* (?P<level>[A-Z]+) (?P<name>[\w.]+): (?P<msg>.*)$"
@@ -77,7 +80,9 @@ class _Renderer:
             return line
         return self._event(line) if self._events else self._system(line)
 
-    def _emit(self, *, ts: str, tag: str, level: str, body: str, fields: Any, error: bool) -> str:
+    def _emit(
+        self, *, ts: str, tag: str, level: str, body: str, module: str, fields: Any, error: bool
+    ) -> str:
         from gaia.logfmt import render_line
 
         out = render_line(
@@ -85,6 +90,7 @@ class _Renderer:
             tag=tag,
             level=level,
             body=body,
+            module=module,
             fields=fields or None,
             color=self._color,
             prev_tag=self._prev,
@@ -101,16 +107,18 @@ class _Renderer:
         if not isinstance(obj, dict):
             return raw
         ts = str(obj.get("asctime", "")).split(" ")[-1].split(",")[0]  # HH:MM:SS
-        action = str(obj.get("message", ""))
-        agent, project = obj.get("agent"), obj.get("project")
-        tag = f"{agent}/{project}" if agent and project else (str(agent) if agent else action)
+        action = str(obj.get("message", ""))  # the module (tool_used, message_in, …)
+        agent = obj.get("agent") or _DEFAULT_AGENT
+        project = obj.get("project")
+        tag = f"{agent}/{project}" if project else str(agent)
         skip = {"asctime", "message", "levelname", "name", "taskName", "agent", "project"}
         fields = {k: str(v) for k, v in obj.items() if k not in skip}
         return self._emit(
             ts=ts,
             tag=tag,
             level=str(obj.get("levelname", "INFO")),
-            body=action,
+            body="",
+            module=action,
             fields=fields,
             error=obj.get("status") == "error",
         )
@@ -119,11 +127,14 @@ class _Renderer:
         m = _SYS_RE.match(raw)
         if m is None:
             return raw  # not a standard line (e.g. a wrapped traceback) — print verbatim
+        # The stored text line doesn't carry the run's agent/project (only events.jsonl does), so
+        # the actor tag is the root default; the logger name is the module.
         return self._emit(
             ts=m["time"],
-            tag=m["name"].removeprefix("gaia."),
+            tag=_DEFAULT_AGENT,
             level=m["level"],
             body=m["msg"],
+            module=m["name"].removeprefix("gaia."),
             fields=None,
             error=False,
         )

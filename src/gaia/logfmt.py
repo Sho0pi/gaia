@@ -42,10 +42,14 @@ _TAG_PALETTE: tuple[tuple[int, int, int], ...] = (
 _WHITE = (0xFD, 0xF8, 0xDC)
 _BLACK = (0x00, 0x00, 0x00)
 
-#: level -> (letter, foreground rgb [message colour], badge fg, badge bg). gocat's palette.
+_BLUE = (0x4A, 0xA6, 0xEF)
+_GREEN = (0x5C, 0xD0, 0xA7)
+
+#: level -> (letter, foreground rgb [message colour], badge fg, badge bg). gocat's palette, with
+#: INFO blue and DEBUG green (everyday INFO reads blue; the quieter DEBUG is green).
 _LEVELS: dict[str, tuple[str, tuple[int, int, int], tuple[int, int, int], tuple[int, int, int]]] = {
-    "DEBUG": ("D", (0x4A, 0xA6, 0xEF), _WHITE, (0x4A, 0xA6, 0xEF)),
-    "INFO": ("I", (0x5C, 0xD0, 0xA7), _BLACK, (0x5C, 0xD0, 0xA7)),
+    "DEBUG": ("D", _GREEN, _BLACK, _GREEN),
+    "INFO": ("I", _BLUE, _WHITE, _BLUE),
     "WARNING": ("W", (0xFF, 0xD8, 0x66), _BLACK, (0xFF, 0xD8, 0x66)),
     "ERROR": ("E", (0xEC, 0x66, 0x65), _WHITE, (0xEC, 0x66, 0x65)),
     "CRITICAL": ("F", (0xEF, 0x2D, 0x24), (0xEF, 0x2D, 0x24), _BLACK),
@@ -116,17 +120,19 @@ def render_line(
     tag: str,
     level: str,
     body: str,
+    module: str | None = None,
     fields: dict[str, Any] | None = None,
     color: bool,
     prev_tag: str | None = None,
     error: bool = False,
 ) -> str:
-    """One gocat-style line: ``<ts>  <badge>  <tag>  <body>  <k=v …>``.
+    """One gocat-style line: ``<ts>  <badge>  <tag>  ·<module>  <body>  <k=v …>``.
 
-    ``tag`` is the source (logger name, or ``agent``/``agent/project`` for events); it's blanked
-    when it equals ``prev_tag`` so a run from one source reads as a block. ``body`` is the message
-    (system) or the bold action (events). ``error`` tints the body + fields red (event tool
-    failures, whose level is still INFO). Continuation lines indent to the body column.
+    ``tag`` is the actor (``agent``/``agent/project``), coloured per-name and blanked when it
+    equals ``prev_tag`` so a run from one actor reads as a block. ``module`` (dim, ``·``-prefixed)
+    is the source: the action for events, the logger name for system logs. ``body`` is the message
+    (system) — events leave it empty and carry only ``fields``. ``error`` tints body + fields red
+    (event tool failures, whose level is still INFO). Continuation lines indent to the body column.
     """
     _letter, msg_rgb, _bfg, _bbg = _LEVELS.get(level.upper(), _DEFAULT_LEVEL)
     if error:
@@ -137,12 +143,15 @@ def render_line(
 
     body_lines = body.split("\n")
     head, *rest = body_lines
-    if color and head:
-        head = f"{_fg(msg_rgb)}{head}{_RESET}"
-    line = f"{time_col}  {badge}  {tag_col}  {head}".rstrip()
-
+    segs: list[str] = []
+    if module:
+        segs.append(f"{_DIM}·{module}{_RESET}" if color else f"·{module}")
+    if head:
+        segs.append(f"{_fg(msg_rgb)}{head}{_RESET}" if color else head)
     if fields:
-        line = f"{line}  {_render_fields(fields, color=color)}"
+        segs.append(_render_fields(fields, color=color))
+    line = f"{time_col}  {badge}  {tag_col}  {'  '.join(segs)}".rstrip()
+
     for extra in rest:  # wrapped message / traceback lines align under the body
         painted = f"{_fg(msg_rgb)}{extra}{_RESET}" if color and extra else extra
         line = f"{line}\n{_BODY_INDENT}{painted}"

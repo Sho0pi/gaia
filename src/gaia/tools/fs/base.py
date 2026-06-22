@@ -27,6 +27,12 @@ from gaia.tools._helpers import err as err  # re-export for gaia.tools.fs.* impo
 #: :func:`sandbox_for`). Empty outside a soul run — the root agent stays at its flat workspace.
 current_project: ContextVar[str] = ContextVar("current_project", default="")
 
+#: The agent a run is scoped to (soul key during a soul run, else the root ``gaia``). Set by
+#: ``execute_decision`` alongside :data:`current_project`; read by the log formatter so every log
+#: line — operational ones included — can show which agent/project it belongs to. Default
+#: ``gaia`` (root/infra context, outside any soul run).
+current_agent: ContextVar[str] = ContextVar("current_agent", default=constants.APP_NAME)
+
 #: Per-read byte cap and result caps for the search tools.
 MAX_READ_BYTES = 10_000_000
 GLOB_MAX = 500

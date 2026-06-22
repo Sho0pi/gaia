@@ -171,43 +171,42 @@ class ConsoleFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         from gaia.logfmt import render_line
+        from gaia.tools.fs.base import current_agent, current_project
 
         ts = self.formatTime(record, self.datefmt)
+        # The actor tag (agent[/project]) on EVERY line: events carry it explicitly; system logs
+        # read the run-scoped contextvars (a soul run sets them; default is the root "gaia").
         if self._event:
             fields = _extra_fields(record)
-            agent = fields.pop("agent", None)
-            project = fields.pop("project", None)
+            agent = fields.pop("agent", None) or current_agent.get()
+            project = fields.pop("project", None) or (current_project.get() or None)
             error = fields.get("status") == "error"
-            tag = str(agent) if agent else record.getMessage()
-            if agent and project:
-                tag = f"{agent}/{project}"
-            body = record.getMessage()
-            str_fields = {k: str(v) for k, v in fields.items()}
-            line = render_line(
-                ts=ts,
-                tag=tag,
-                level=record.levelname,
-                body=body,
-                fields=str_fields or None,
-                color=self._color,
-                prev_tag=self._prev_tag,
-                error=error,
-            )
-            self._prev_tag = tag
+            module = record.getMessage()  # the action (tool_used, message_in, …)
+            body = ""
+            str_fields: dict[str, Any] | None = {k: str(v) for k, v in fields.items()} or None
         else:
-            tag = record.name.removeprefix("gaia.")
+            agent = current_agent.get()
+            project = current_project.get() or None
+            error = False
+            module = record.name.removeprefix("gaia.")
             body = record.getMessage()
             if record.exc_info:
                 body = f"{body}\n{self.formatException(record.exc_info)}"
-            line = render_line(
-                ts=ts,
-                tag=tag,
-                level=record.levelname,
-                body=body,
-                color=self._color,
-                prev_tag=self._prev_tag,
-            )
-            self._prev_tag = tag
+            str_fields = None
+
+        tag = f"{agent}/{project}" if project else str(agent)
+        line = render_line(
+            ts=ts,
+            tag=tag,
+            level=record.levelname,
+            body=body,
+            module=module,
+            fields=str_fields,
+            color=self._color,
+            prev_tag=self._prev_tag,
+            error=error,
+        )
+        self._prev_tag = tag
         return self._redactor(line) if self._redactor else line
 
 

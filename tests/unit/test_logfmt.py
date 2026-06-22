@@ -44,6 +44,21 @@ def test_long_tag_truncated_with_ellipsis() -> None:
     assert "…" in line and ("x" * (TAG_WIDTH + 10)) not in line
 
 
+def test_module_segment_follows_the_tag() -> None:
+    # agent/project is the colored tag; the module (action/logger) rides after it, ·-prefixed.
+    line = render_line(
+        ts="12:00:00",
+        tag="frontend_developer/pasta",
+        level="INFO",
+        body="",
+        module="tool_used",
+        fields={"tool": "fs_write"},
+        color=False,
+    )
+    assert "frontend_developer/pasta" in line
+    assert "·tool_used" in line and "tool=fs_write" in line
+
+
 def test_fields_rendered_as_key_value() -> None:
     line = render_line(
         ts="12:00:00",
