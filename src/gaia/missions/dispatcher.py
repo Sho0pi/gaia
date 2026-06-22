@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from gaia.logs import log_event
@@ -39,9 +40,22 @@ def _format_upstream(deps: list[Task]) -> str:
     for dep in deps:
         lines = [f"### {dep.title or dep.id} (task {dep.id})", dep.result or "(no result text)"]
         if dep.artifacts:
-            lines.append("Files: " + ", ".join(dep.artifacts))
+            # The files themselves are copied into this task's workspace (see _upstream_files),
+            # so the soul opens them as relative names — this just tells it they're there.
+            lines.append("Files (now in your workspace): " + ", ".join(dep.artifacts))
         blocks.append("\n".join(lines))
     return "Completed dependencies you can build on:\n\n" + "\n\n".join(blocks)
+
+
+def _upstream_files(deps: list[Task]) -> list[str]:
+    """Absolute paths of finished dependencies' artifacts, to copy into the dependent's workspace.
+
+    A dependency edge hands its files to the next step (the async twin of a delegation
+    attachment): resolve each dep's relative artifacts against the workspace it ran in.
+    """
+    return [
+        str(Path(dep.workspace) / name) for dep in deps if dep.workspace for name in dep.artifacts
+    ]
 
 
 class MissionDispatcher:
@@ -184,7 +198,12 @@ class MissionDispatcher:
         # Seed the soul's session so its task tools know which task they're running — a
         # subtask it files is linked to this task (P3 parent re-dispatch).
         state = {"task_id": task.id, "owner": task.owner, "mission_id": task.mission_id}
-        return await execute_decision(self._gaia, decision, soul_input, user_id, state=state)
+        # Carry the dependencies' files into this step's workspace (not just their paths as
+        # text — the soul is sandboxed and couldn't read another step's dir).
+        attachments = _upstream_files(deps)
+        return await execute_decision(
+            self._gaia, decision, soul_input, user_id, attachments=attachments, state=state
+        )
 
     def _finish(self, task: Task, run: SoulRun) -> None:
         if run.ok:
@@ -202,7 +221,8 @@ class MissionDispatcher:
                 return  # re-dispatched (re-run-with-results) when the subtasks complete
             task.assignee = run.soul_key
             self._store.update(task)  # persist assignee
-            self._store.post_result(task.id, run.summary, run.files)  # → done
+            # Persist the workspace too, so a dependent can resolve + copy these artifacts in.
+            self._store.post_result(task.id, run.summary, run.files, run.workspace)  # → done
             log_event("task_completed", task=task.id, soul=run.soul_key)
         else:
             task.notes = (task.notes + f"\n[failed] {run.error}").strip()

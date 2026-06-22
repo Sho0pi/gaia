@@ -43,7 +43,14 @@ def _fake_run(monkeypatch: pytest.MonkeyPatch, fn: Any) -> list[str]:
         return SimpleNamespace(action="forge", reason="", soul_key=None, spec=None)
 
     async def fake_execute(
-        _gaia: Any, _decision: Any, task: str, _user: str, *, state: Any = None
+        _gaia: Any,
+        _decision: Any,
+        task: str,
+        _user: str,
+        *,
+        project: str = "",
+        attachments: Any = None,
+        state: Any = None,
     ) -> SoulRun:
         inputs.append(task)
         return fn(task)
@@ -97,6 +104,48 @@ async def test_dependency_handoff_feeds_upstream_result(
     # T2's soul input carried T1's result + artifact path (the hand-off).
     t2_input = next(i for i in inputs if "write up" not in i and "T1 OUTPUT" in i)
     assert "T1 OUTPUT" in t2_input and "a.txt" in t2_input
+
+
+async def test_dependency_handoff_copies_upstream_files(
+    store: TaskStore, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The async twin of a delegation attachment: a dependency's files are handed to the
+    # dependent as attachments (absolute paths from the upstream's workspace + artifacts), so
+    # the downstream soul opens them as relative files — not a path string it can't read.
+    ws = str(tmp_path / "upstream_ws")
+    captured: dict[str, Any] = {}
+
+    async def fake_decide(_g: Any, _t: str) -> Any:
+        return SimpleNamespace(action="forge", reason="", soul_key=None, spec=None)
+
+    async def fake_execute(
+        _g: Any,
+        _d: Any,
+        task: str,
+        _u: str,
+        *,
+        project: str = "",
+        attachments: Any = None,
+        state: Any = None,
+    ) -> SoulRun:
+        if attachments:  # the dependent (T2) — it received the upstream's files
+            captured["attachments"] = attachments
+            return SoulRun(True, "s", "S", False, summary="built")
+        return SoulRun(True, "s", "S", False, summary="T1 OUTPUT", files=["a.txt"], workspace=ws)
+
+    monkeypatch.setattr(disp_mod, "decide_soul", fake_decide)
+    monkeypatch.setattr(disp_mod, "execute_decision", fake_execute)
+
+    t1 = store.create(Task(title="gather", owner="itay"))
+    t2 = store.create(Task(title="write up", owner="itay", blocked_by=[t1.id]))
+    d = MissionDispatcher(_gaia(store), store=store)
+
+    await _drain(d)  # T1 runs → records workspace + artifacts
+    await _drain(d)  # T2 ready → receives T1's file as an attachment
+
+    assert store.get(t1.id).workspace == ws  # type: ignore[union-attr]
+    assert captured["attachments"] == [str(Path(ws) / "a.txt")]
+    assert store.get(t2.id).status is TaskStatus.DONE  # type: ignore[union-attr]
 
 
 async def test_parent_blocks_on_filed_subtask_then_reruns_with_results(
