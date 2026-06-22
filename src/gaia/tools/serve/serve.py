@@ -41,7 +41,10 @@ def make_serve(
     """Return the ADK ``serve`` tool bound to ``manager`` (and an optional ``tunnel``)."""
 
     async def serve(path: str, public: bool | None = None) -> dict[str, Any]:
-        """Serve a built site from a workspace so you can open, screenshot, or share it.
+        """Serve a built *website* so you can open or screenshot it (or share a live preview).
+
+        This is for previewing a website. To hand the user a FILE (document, image, a zip of
+        files), use send_file — never serve a link for that.
 
         Pass a soul's workspace directory (or a specific .html file in it). Open the
         returned ``url`` with browser_navigate and browser_screenshot to render it — a real
