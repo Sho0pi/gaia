@@ -250,6 +250,17 @@ async def test_generic_error_yields_generic_message() -> None:
     assert sent == ["Sorry — something went wrong handling that. Please try again."]
 
 
+async def test_network_error_yields_hiccup_message() -> None:
+    import httpx
+
+    handler = GaiaHandler(SimpleNamespace(memory_service=None))
+    handler._runner = _BoomRunner(httpx.ReadError("connection reset"))
+
+    sent = await _collect(handler, "hi")
+
+    assert len(sent) == 1 and "network hiccup" in sent[0]
+
+
 def _gaia(*, batch_size: int = 2, interval: int = 3600, auto_ingest: bool = True) -> Any:
     """Fake Gaia whose memory service records each add_events_to_memory call."""
     calls: list[dict[str, Any]] = []
