@@ -179,6 +179,23 @@ async def test_execute_decision_seeds_session_state(
     assert seen["state"]["created_by"] == "writer"  # stamped with the soul's own key
 
 
+def test_deliverable_media_includes_artifacts_excludes_source(tmp_path: Path) -> None:
+    from gaia.souls.run import _deliverable_media
+
+    primary = tmp_path / "ws"
+    primary.mkdir()
+    names = ["report.pdf", "plan.docx", "data.xlsx", "bundle.zip", "shot.png", "clip.mp4"]
+    source = ["index.html", "style.css", "app.js", "manifest.json"]
+    for n in (*names, *source):
+        (primary / n).write_text("x")
+
+    out = _deliverable_media(primary, [*names, *source], run_media=["/tmp/preview.png"])
+
+    got = {Path(p).name for p in out}
+    assert got == {*names, "preview.png"}  # artifacts + the screenshot; no web source
+    assert out[0] == "/tmp/preview.png"  # run_media first, order-stable
+
+
 async def test_run_soul_agent_never_closes_shared_toolsets(
     gaia: Gaia, monkeypatch: pytest.MonkeyPatch
 ) -> None:

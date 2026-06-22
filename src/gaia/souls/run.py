@@ -39,6 +39,15 @@ SOUL_TIMEOUT = 300.0
 #: Cap on the number of workspace files reported back.
 MAX_FILES = 500
 
+#: Workspace file types auto-delivered to the user as a soul's deliverable, on top of the real
+#: image/video/audio that ``media_kind`` already flags. These are the "document" artifacts worth
+#: sending as a file (a report, a sheet, a bundle); the web-source a site is built from
+#: (``.html``/``.css``/``.js``/``.json``…) is deliberately excluded so we send the screenshot
+#: preview, not the source. Add a suffix here as new deliverable kinds come up.
+DELIVERABLE_DOC_SUFFIXES = frozenset(
+    {".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".csv", ".zip", ".epub"}
+)
+
 
 @dataclass
 class SoulRun:
@@ -113,16 +122,18 @@ def _deliverable_media(primary: Path, files: list[str], run_media: list[str]) ->
 
     Two sources: ``run_media`` (screenshots it took / files it sent, pulled from its event
     stream) and the workspace files it wrote whose type reads as a deliverable — real
-    image/video/audio, or a PDF. Web-source files a site is made of (``.html``/``.css``/``.js``)
-    are *not* media, so they're left out; the user gets the screenshot preview, not the source.
+    image/video/audio, or one of :data:`DELIVERABLE_DOC_SUFFIXES` (pdf/docx/xlsx/zip/…).
+    Web-source files a site is made of (``.html``/``.css``/``.js``) are *not* media, so they're
+    left out; the user gets the screenshot preview, not the source.
     """
-    # ponytail: extension heuristic. A site asset (a logo.png the soul generated) could slip in;
-    # if that gets noisy, mark true deliverables explicitly (e.g. a soul-set output list).
+    # ponytail: extension heuristic — generic over deliverable kinds (add to the suffix set as
+    # they come up), but a site asset (a logo.png the soul generated) could still slip in. If
+    # that gets noisy, have souls mark true deliverables explicitly (a soul-set output list).
     workspace = [
         str(primary / rel)
         for rel in files
         if media_kind(primary / rel) in ("image", "video", "audio")
-        or (primary / rel).suffix.lower() == ".pdf"
+        or (primary / rel).suffix.lower() in DELIVERABLE_DOC_SUFFIXES
     ]
     seen: dict[str, str] = {}
     for path in (*run_media, *workspace):
@@ -168,12 +179,15 @@ async def run_soul_agent(
     content = types.Content(role="user", parts=[types.Part(text=task)])
     parts: list[str] = []
     events: list[Any] = []
-    # NB: we never call ``runner.close()`` here. The soul's tools include the *shared* MCP and
-    # Skills toolsets (the same singleton objects on the root agent — see AgentFactory), and
-    # ADK's Runner.close() closes every toolset on its agent. Closing this nested runner would
-    # therefore tear those down for the root mid-conversation — after which the root's turns
-    # make no model call and the chat goes silent. Their cleanup is Gaia.close()'s job; the
-    # soul owns no exclusive runner resources, so there is nothing here for us to close.
+    # NB: we deliberately never call ``runner.close()`` here. Runner.close() does three things:
+    # close the agent's toolsets, close the plugins, flush the session service. The soul's tools
+    # include the *shared* MCP and Skills toolsets (the same singleton objects on the root agent
+    # — see AgentFactory), and ADK closes every toolset on the agent; closing this nested runner
+    # would tear those down for the root mid-conversation, after which the root's turns make no
+    # model call and the chat goes silent. The other two are no-ops for us: our plugins are
+    # stateless, and the session service is a throwaway InMemory one created just above (GC'd
+    # when this returns). The shared toolsets are closed exactly once, by Gaia.close() at app
+    # shutdown — so there is nothing for this nested runner to clean up.
     async for event in runner.run_async(
         user_id=user_id, session_id=session_id, new_message=content
     ):
@@ -196,7 +210,8 @@ async def decide_soul(gaia: Gaia, task: str) -> SoulDecision:
     model = gaia.config.llm.model or gaia.settings.model
     smith = build_soul_smith(model, gaia.config.llm.provider, gaia.config.llm.openai.use_oauth)
     request = f"TASK:\n{task}\n\nEXISTING SOULS:\n{existing_souls(gaia)}"
-    raw, _ = await run_soul_agent(gaia, smith, "smith", request, user_id="gaia")
+    # The smith only emits a JSON decision (no screenshots/files), so its media is always empty.
+    raw, _media = await run_soul_agent(gaia, smith, "smith", request, user_id="gaia")
     return SoulDecision.model_validate(json.loads(raw))
 
 
