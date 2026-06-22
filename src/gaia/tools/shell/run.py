@@ -65,7 +65,9 @@ def make_exec(
 
         sandbox = sandbox_for(constants.AGENTS_DIR, agent)
         try:
-            cwd = sandbox.resolve(workdir) if workdir else sandbox.primary
+            # exec can mutate, so its cwd must be writable — the root can't cd into a soul's
+            # workspace to change it (re-delegate instead); no workdir stays in its own primary.
+            cwd = sandbox.resolve(workdir, write=True) if workdir else sandbox.primary
         except SandboxError as exc:
             return err(str(exc))
 
