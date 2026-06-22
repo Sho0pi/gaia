@@ -133,27 +133,35 @@ def render_line(
     (system) — events leave it empty and carry only ``fields``. ``error`` tints body + fields red
     (event tool failures, whose level is still INFO). Continuation lines indent to the body column.
     """
-    _letter, msg_rgb, _bfg, _bbg = _LEVELS.get(level.upper(), _DEFAULT_LEVEL)
-    if error:
-        msg_rgb = _ERROR_RGB
+    # The message text stays default (white) for readability; only an error tints it red. The
+    # level is already signalled by the coloured badge, so the body needn't repeat it.
+    is_err = error or level.upper() in ("ERROR", "CRITICAL")
     time_col = f"{_DIM}{ts}{_RESET}" if color else ts
     badge = level_badge(level, color=color)
     tag_col = _render_tag(tag, color=color)
 
+    def paint_body(text: str) -> str:
+        if not color or not text:
+            return text
+        return f"{_fg(_ERROR_RGB)}{text}{_RESET}" if is_err else text
+
     body_lines = body.split("\n")
     head, *rest = body_lines
     segs: list[str] = []
-    if module:
-        segs.append(f"{_DIM}·{module}{_RESET}" if color else f"·{module}")
+    if module:  # the action/tool (events) or logger name (system) — bold so it stands out
+        if color:
+            mod_fg = _fg(_ERROR_RGB) if is_err else ""  # red on a failure so it's obvious
+            segs.append(f"·{mod_fg}{_BOLD}{module}{_RESET}")
+        else:
+            segs.append(f"·{module}")
     if head:
-        segs.append(f"{_fg(msg_rgb)}{head}{_RESET}" if color else head)
+        segs.append(paint_body(head))
     if fields:
         segs.append(_render_fields(fields, color=color))
     line = f"{time_col}  {badge}  {tag_col}  {'  '.join(segs)}".rstrip()
 
     for extra in rest:  # wrapped message / traceback lines align under the body
-        painted = f"{_fg(msg_rgb)}{extra}{_RESET}" if color and extra else extra
-        line = f"{line}\n{_BODY_INDENT}{painted}"
+        line = f"{line}\n{_BODY_INDENT}{paint_body(extra)}"
     return line
 
 
