@@ -69,7 +69,14 @@ def _stub_decision(monkeypatch: pytest.MonkeyPatch, decision: SoulDecision) -> N
 
 def _stub_run_writing(monkeypatch: pytest.MonkeyPatch, filename: str) -> None:
     async def fake_run(
-        gaia: Any, soul: Any, key: str, task: str, user_id: str, *, state: Any = None
+        gaia: Any,
+        soul: Any,
+        key: str,
+        task: str,
+        user_id: str,
+        *,
+        state: Any = None,
+        warm_key: Any = None,
     ) -> tuple[str, list[str]]:
         (sandbox_for(constants.AGENTS_DIR, key).primary / filename).write_text("<html>")
         return "built it", []
@@ -122,7 +129,14 @@ async def test_media_deliverables_come_back_in_the_result(
     _stub_decision(monkeypatch, SoulDecision(action="forge", reason="r", spec=_SPEC))
 
     async def fake_run(
-        gaia: Any, soul: Any, key: str, task: str, user_id: str, *, state: Any = None
+        gaia: Any,
+        soul: Any,
+        key: str,
+        task: str,
+        user_id: str,
+        *,
+        state: Any = None,
+        warm_key: Any = None,
     ) -> tuple[str, list[str]]:
         primary = sandbox_for(constants.AGENTS_DIR, key).primary
         (primary / "plan.pdf").write_text("%PDF")
@@ -154,7 +168,14 @@ async def test_attachment_is_copied_into_the_soul_workspace(
     seen: dict[str, Path] = {}
 
     async def fake_run(
-        gaia: Any, soul: Any, key: str, task: str, user_id: str, *, state: Any = None
+        gaia: Any,
+        soul: Any,
+        key: str,
+        task: str,
+        user_id: str,
+        *,
+        state: Any = None,
+        warm_key: Any = None,
     ) -> tuple[str, list[str]]:
         seen["dest"] = sandbox_for(constants.AGENTS_DIR, key).primary / "plan.pdf"
         return "done", []
@@ -177,7 +198,14 @@ async def test_passes_invocation_user_id_to_the_soul(
     seen: dict[str, str] = {}
 
     async def fake_run(
-        gaia: Any, soul: Any, key: str, task: str, user_id: str, *, state: Any = None
+        gaia: Any,
+        soul: Any,
+        key: str,
+        task: str,
+        user_id: str,
+        *,
+        state: Any = None,
+        warm_key: Any = None,
     ) -> tuple[str, list[str]]:
         seen["user_id"] = user_id
         return "ok", []
@@ -243,7 +271,14 @@ async def test_honors_configured_soul_timeout(
     _stub_decision(monkeypatch, SoulDecision(action="forge", reason="r", spec=_SPEC))
 
     async def slow_run(
-        gaia: Any, soul: Any, key: str, task: str, user_id: str, *, state: Any = None
+        gaia: Any,
+        soul: Any,
+        key: str,
+        task: str,
+        user_id: str,
+        *,
+        state: Any = None,
+        warm_key: Any = None,
     ) -> tuple[str, list[str]]:
         import asyncio
 

@@ -150,6 +150,49 @@ async def test_execute_decision_rejects_denied_attachment(
     assert not (Path(run.workspace) / ".env").exists()
 
 
+async def test_same_project_reuses_a_warm_session(
+    gaia: Gaia, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Re-delegating to the same (soul, project) resumes one warm session — the soul keeps its
+    # history (so it doesn't re-read the workspace). A different project gets its own session.
+    _install(monkeypatch, FakeLlm(responses=[_text("a"), _text("b"), _text("c")]))
+
+    await execute_decision(gaia, _FORGE, "build", user_id="i", project="shop")
+    first = gaia.soul_sessions._sessions["writer/shop"]
+    events_after_1 = len(
+        (
+            await first.service.get_session(  # type: ignore[union-attr]
+                app_name=constants.APP_NAME, user_id="i", session_id=first.session_id
+            )
+        ).events
+    )
+
+    await execute_decision(gaia, _FORGE, "edit it", user_id="i", project="shop")
+    second = gaia.soul_sessions._sessions["writer/shop"]
+    events_after_2 = len(
+        (
+            await second.service.get_session(  # type: ignore[union-attr]
+                app_name=constants.APP_NAME, user_id="i", session_id=second.session_id
+            )
+        ).events
+    )
+
+    assert second is first  # same warm session reused, not rebuilt
+    assert events_after_2 > events_after_1  # the second turn appended to the same history
+
+    await execute_decision(gaia, _FORGE, "other", user_id="i", project="bakery")
+    assert set(gaia.soul_sessions._sessions) == {"writer/shop", "writer/bakery"}
+
+
+async def test_smith_path_is_not_warmed(gaia: Gaia, monkeypatch: pytest.MonkeyPatch) -> None:
+    # decide_soul runs the smith via run_soul_agent with no warm_key — a one-shot, never cached.
+    _install(monkeypatch, FakeLlm(responses=[_text(_FORGE.model_dump_json())]))
+
+    await decide_soul(gaia, "write me a poem")
+
+    assert gaia.soul_sessions._sessions == {}  # the smith left no warm session
+
+
 async def test_execute_decision_scopes_runs_to_separate_project_dirs(
     gaia: Gaia, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -210,7 +253,14 @@ async def test_execute_decision_seeds_session_state(
     seen: dict[str, Any] = {}
 
     async def spy(
-        g: Any, soul: Any, key: str, task: str, user_id: str, *, state: Any = None
+        g: Any,
+        soul: Any,
+        key: str,
+        task: str,
+        user_id: str,
+        *,
+        state: Any = None,
+        warm_key: Any = None,
     ) -> tuple[str, list[str]]:
         seen["state"] = state
         return "done", []
