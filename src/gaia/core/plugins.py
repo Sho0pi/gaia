@@ -22,7 +22,6 @@ least predictable secret surface (page contents, file bodies, recalled memories)
 from __future__ import annotations
 
 import re
-import time
 from typing import TYPE_CHECKING, Any
 
 from google.adk.plugins.base_plugin import BasePlugin
@@ -143,28 +142,13 @@ class ToolPermissionPlugin(BasePlugin):
 class ToolLoggingPlugin(BasePlugin):
     """Log one ``tool_used`` event per tool call — the single place tool calls are logged.
 
-    One line per call (not a start/finish pair): when the tool finishes we emit its name, the
-    calling agent, the call **args** (so a failure shows the command that failed), the status, and
-    ``duration_ms``. ``before_tool_callback`` only records the start time (no log) so the one line
-    can carry a duration. Tools never hand-roll their own logging.
+    One line per call, emitted when the tool finishes: its name, the calling agent, the call
+    **args** (so a failure shows the command that failed), and the status. Tools never hand-roll
+    their own logging.
     """
 
     def __init__(self) -> None:
         super().__init__(name="tool_logging")
-        #: function_call_id -> monotonic start time, recorded in before_ and consumed on finish.
-        self._started: dict[str, float] = {}
-
-    async def before_tool_callback(
-        self,
-        *,
-        tool: BaseTool,
-        tool_args: dict[str, Any],
-        tool_context: ToolContext,
-    ) -> None:
-        call_id = getattr(tool_context, "function_call_id", None)
-        if call_id:
-            self._started[call_id] = time.monotonic()
-        return None  # start time only — the single log line is emitted on finish
 
     async def after_tool_callback(
         self,
@@ -200,7 +184,7 @@ class ToolLoggingPlugin(BasePlugin):
         *,
         error: str | None = None,
     ) -> None:
-        """Emit the one ``tool_used`` line: base fields + args + status (+ error) + duration."""
+        """Emit the one ``tool_used`` line: base fields + args + status (+ error)."""
         fields = _base_fields(name, tool_context)
         args = _safe_args(name, tool_args)
         if args:
@@ -208,11 +192,6 @@ class ToolLoggingPlugin(BasePlugin):
         fields["status"] = status
         if error is not None:
             fields["error"] = error
-        call_id = getattr(tool_context, "function_call_id", None)
-        if call_id:
-            started = self._started.pop(call_id, None)
-            if started is not None:
-                fields["duration_ms"] = round((time.monotonic() - started) * 1000)
         log_event("tool_used", **fields)
 
 

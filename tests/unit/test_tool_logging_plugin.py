@@ -26,27 +26,25 @@ def _ctx(agent: str | None = None, call_id: str | None = None) -> Any:
     return SimpleNamespace(agent_name=agent, function_call_id=call_id)
 
 
-async def _run(plugin: ToolLoggingPlugin, tool: Any, args: Any, ctx: Any, result: Any) -> None:
-    """Drive a full call: start (records time, no log) then finish (the one log line)."""
-    await plugin.before_tool_callback(tool=tool, tool_args=args, tool_context=ctx)
-    await plugin.after_tool_callback(tool=tool, tool_args=args, tool_context=ctx, result=result)
-
-
-async def test_one_line_per_call_with_args_status_duration(
+async def test_one_line_per_call_with_args_and_status(
     logged: list[tuple[str, dict[str, Any]]],
 ) -> None:
     plugin = ToolLoggingPlugin()
-    ctx = _ctx("gaia", call_id="fc-1")
+    ctx = _ctx("gaia")
 
-    await _run(plugin, _tool("gh_search"), {"query": "adk", "per_page": 5}, ctx, {"status": "x"})
+    await plugin.after_tool_callback(
+        tool=_tool("gh_search"),
+        tool_args={"query": "adk", "per_page": 5},
+        tool_context=ctx,
+        result={"status": "x"},
+    )
 
-    # before_ logs nothing; exactly one tool_used line carries everything.
+    # exactly one tool_used line carries everything.
     assert [a for a, _ in logged] == ["tool_used"]
     fields = logged[0][1]
     assert fields["tool"] == "gh_search" and fields["agent"] == "gaia"
     assert fields["status"] == "x"
     assert fields["args"] == {"query": "adk", "per_page": 5}
-    assert isinstance(fields["duration_ms"], int) and fields["duration_ms"] >= 0
 
 
 async def test_status_defaults_to_ok_and_omits_unknown_agent(
@@ -61,7 +59,6 @@ async def test_status_defaults_to_ok_and_omits_unknown_agent(
     name, fields = logged[0]
     assert name == "tool_used" and fields["status"] == "ok"
     assert "agent" not in fields  # omitted when unknown
-    assert "duration_ms" not in fields  # no start recorded (no call_id) -> no duration
 
 
 async def test_carries_project_during_a_soul_run(
@@ -173,15 +170,11 @@ async def test_non_dict_args_and_result_never_break(
 
 async def test_error_line_carries_the_command(logged: list[tuple[str, dict[str, Any]]]) -> None:
     plugin = ToolLoggingPlugin()
-    ctx = _ctx("gaia", call_id="fc-err")
 
-    await plugin.before_tool_callback(
-        tool=_tool("exec"), tool_args={"command": "rm -rf /tmp/x"}, tool_context=ctx
-    )
     await plugin.on_tool_error_callback(
         tool=_tool("exec"),
         tool_args={"command": "rm -rf /tmp/x"},
-        tool_context=ctx,
+        tool_context=_ctx("gaia"),
         error=ValueError("nope"),
     )
 
@@ -189,7 +182,6 @@ async def test_error_line_carries_the_command(logged: list[tuple[str, dict[str, 
     assert name == "tool_used" and fields["status"] == "error"
     assert fields["error"] == "ValueError"
     assert fields["args"] == {"command": "rm -rf /tmp/x"}  # the failing command is on the line
-    assert "duration_ms" in fields
 
 
 async def test_error_result_also_carries_args(logged: list[tuple[str, dict[str, Any]]]) -> None:
