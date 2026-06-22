@@ -38,6 +38,7 @@ def test_migration_adds_notify_columns_to_old_db(tmp_path: Path) -> None:
     legacy = store.get("old1")
     assert legacy is not None and legacy.title == "legacy"  # row survived
     assert legacy.notify_channel == "" and legacy.notify_chat == ""  # new cols default empty
+    assert legacy.workspace == ""  # workspace column migrated in too
     # writes using the new columns work, and re-opening is a no-op
     store.create(Task(title="new", notify_channel="whatsapp", notify_chat="972@x"))
     assert TaskStore(db).get("old1") is not None  # second open doesn't break
@@ -80,11 +81,12 @@ def test_post_result_marks_done_and_roundtrips_json_cols(tmp_path: Path) -> None
     store = _store(tmp_path)
     t = store.create(Task(title="x", owner="itay", blocked_by=["dep1", "dep2"]))
 
-    done = store.post_result(t.id, "shipped", artifacts=["/w/a.html", "/w/b.css"])
+    done = store.post_result(t.id, "shipped", artifacts=["a.html", "b.css"], workspace="/w/site")
     assert done is not None and done.status is TaskStatus.DONE and done.result == "shipped"
     again = store.get(t.id)
     assert again is not None
-    assert again.artifacts == ["/w/a.html", "/w/b.css"]
+    assert again.artifacts == ["a.html", "b.css"]
+    assert again.workspace == "/w/site"  # workspace persists, so a dependent can resolve them
     assert again.blocked_by == ["dep1", "dep2"]  # list cols survive the sqlite roundtrip
 
 

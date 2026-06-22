@@ -140,6 +140,35 @@ async def test_media_deliverables_come_back_in_the_result(
     assert not any(p.endswith("index.html") for p in media)  # site source is not media
 
 
+async def test_attachment_is_copied_into_the_soul_workspace(
+    env: tuple[Any, list[Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # delegate_to_soul(attachments=[...]) hands a prior soul's file to the next one: it lands in
+    # the target's workspace before it runs (the copy happens in execute_decision, pre-run).
+    gaia, _ = env
+    _stub_decision(monkeypatch, SoulDecision(action="forge", reason="r", spec=_SPEC))
+    src = sandbox_for(constants.AGENTS_DIR, "gym_bro").primary / "plan.pdf"
+    src.parent.mkdir(parents=True, exist_ok=True)
+    src.write_bytes(b"%PDF")
+
+    seen: dict[str, Path] = {}
+
+    async def fake_run(
+        gaia: Any, soul: Any, key: str, task: str, user_id: str, *, state: Any = None
+    ) -> tuple[str, list[str]]:
+        seen["dest"] = sandbox_for(constants.AGENTS_DIR, key).primary / "plan.pdf"
+        return "done", []
+
+    monkeypatch.setattr("gaia.souls.run.run_soul_agent", fake_run)
+
+    out = await make_delegate(gaia)(
+        "build a site", "site", attachments=[str(src)], tool_context=_CTX
+    )
+
+    assert out["status"] == "success"
+    assert seen["dest"].read_bytes() == b"%PDF"  # present in the soul's workspace before it ran
+
+
 async def test_passes_invocation_user_id_to_the_soul(
     env: tuple[Any, list[Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:

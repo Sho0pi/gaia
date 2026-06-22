@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,7 +27,7 @@ from uuid import uuid4
 from gaia import constants
 from gaia.connectors.base import inbound_attachments, media_kind
 from gaia.souls.smith import SoulDecision, build_soul_smith
-from gaia.tools.fs.base import _safe_dir, current_project, sandbox_for
+from gaia.tools.fs.base import _safe_dir, current_project, is_denied, sandbox_for
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from gaia.core.agent import Gaia
@@ -87,6 +88,23 @@ def _snapshot(primary: Path) -> dict[str, float]:
     }
 
 
+def _copy_into(primary: Path, src: Path) -> str | None:
+    """Copy ``src`` into the workspace ``primary``; return its name, or ``None`` on failure.
+
+    Skips if a file of that name is already there (don't clobber the soul's own work).
+    Best-effort: a missing/unreadable source is logged and skipped, never fatal.
+    """
+    dest = primary / src.name
+    try:
+        primary.mkdir(parents=True, exist_ok=True)
+        if not dest.exists():
+            shutil.copy2(src, dest)
+        return src.name
+    except OSError as exc:
+        logger.warning("could not copy %s into %s: %s", src, primary, exc)
+        return None
+
+
 def _attach_uploads(primary: Path) -> list[str]:
     """Copy the turn's user attachments into the soul's workspace; return the relative names.
 
@@ -95,16 +113,44 @@ def _attach_uploads(primary: Path) -> list[str]:
     it in gives the soul a real, relative file it can embed (``<img src="logo.jpg">``) and
     that the server actually serves. No attachments (the dispatcher path) → no-op.
     """
+    return [name for src in inbound_attachments.get() if (name := _copy_into(primary, src))]
+
+
+def _safe_attachment(raw: str) -> Path | None:
+    """An input file path safe to copy into a soul's workspace, or ``None``.
+
+    The trust boundary for agent-to-agent attachments: a caller (the root, or the dispatcher
+    resolving an upstream task's artifacts) may name any path, so we accept it only if it is a
+    real file under the agents tree or the uploads dir, and not a denied/secret file — a path
+    arg can't pull arbitrary host files or secrets (``.env``/``.git``/keys) into a workspace.
+    """
+    resolved = Path(os.path.realpath(raw))
+    roots = (
+        Path(os.path.realpath(constants.AGENTS_DIR)),
+        Path(os.path.realpath(constants.UPLOADS_DIR)),
+    )
+    if not resolved.is_file() or is_denied(resolved):
+        return None
+    if not any(resolved == r or resolved.is_relative_to(r) for r in roots):
+        return None
+    return resolved
+
+
+def _attach_files(primary: Path, paths: list[str]) -> list[str]:
+    """Copy validated input files into the soul's workspace; return the relative names.
+
+    The agent-to-agent attachment path: files handed with a delegation (the root) or carried
+    across a board dependency edge (the dispatcher) land in the soul's workspace exactly like a
+    user's upload, so the soul reads/embeds them as relative files.
+    """
     copied: list[str] = []
-    for src in inbound_attachments.get():
-        dest = primary / src.name
-        try:
-            primary.mkdir(parents=True, exist_ok=True)
-            if not dest.exists():
-                shutil.copy2(src, dest)
-            copied.append(src.name)
-        except OSError as exc:  # best-effort; a missing/unreadable upload just isn't attached
-            logger.warning("could not attach upload %s to %s: %s", src, primary, exc)
+    for raw in paths:
+        src = _safe_attachment(raw)
+        if src is None:
+            logger.warning("skipped attachment (not a readable file in the agents tree): %s", raw)
+            continue
+        if name := _copy_into(primary, src):
+            copied.append(name)
     return copied
 
 
@@ -243,6 +289,7 @@ async def execute_decision(
     user_id: str,
     *,
     project: str = "",
+    attachments: list[str] | None = None,
     state: dict[str, Any] | None = None,
 ) -> SoulRun:
     """Build the chosen soul and run it on ``task``; capture the workspace diff as artifacts.
@@ -284,6 +331,15 @@ async def execute_decision(
                 f"{task}\n\n[The user's attached file(s) are in your workspace: "
                 f"{', '.join(attached)} — use these relative names directly (e.g. "
                 f'<img src="{attached[0]}">). Do not search the web for them or recreate them.]'
+            )
+        # Files sent with the delegation (the root) or carried across a board dependency edge
+        # (the dispatcher) — copied in like an attachment so the soul builds on them directly.
+        sent = _attach_files(primary, attachments or [])
+        if sent:
+            task = (
+                f"{task}\n\n[File(s) sent with this task are in your workspace: "
+                f"{', '.join(sent)} — use these relative names directly (read/embed them). "
+                "Do not search the web for them or recreate them.]"
             )
         before = _snapshot(primary)
         timeout = gaia.config.souls.timeout_seconds  # read per call so yaml edits hot-reload

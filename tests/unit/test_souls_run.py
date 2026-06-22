@@ -103,6 +103,53 @@ async def test_execute_decision_copies_attachments_into_workspace(
     assert (Path(run.workspace) / "logo.png").read_bytes() == b"img-bytes"
 
 
+async def test_execute_decision_copies_a_sent_attachment(
+    gaia: Gaia, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A file handed with the delegation (another soul's deliverable, under the agents tree) is
+    # copied into the target soul's workspace as a relative file — the agent-to-agent handoff.
+    _install(monkeypatch, FakeLlm(responses=[_text("done")]))
+    src = constants.AGENTS_DIR / "gym_bro" / "workspace" / "plan.pdf"
+    src.parent.mkdir(parents=True)
+    src.write_bytes(b"%PDF plan")
+
+    run = await execute_decision(gaia, _FORGE, "build a site", user_id="i", attachments=[str(src)])
+
+    assert run.ok
+    dest = Path(run.workspace) / "plan.pdf"
+    assert dest.read_bytes() == b"%PDF plan"
+    assert "plan.pdf" not in run.files  # copied pre-snapshot, not a deliverable of this run
+
+
+async def test_execute_decision_rejects_attachment_outside_the_tree(
+    gaia: Gaia, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The trust boundary: a path outside the agents/uploads tree is not pulled into a workspace.
+    _install(monkeypatch, FakeLlm(responses=[_text("done")]))
+    outside = tmp_path / "host-secret.txt"
+    outside.write_text("nope")
+
+    run = await execute_decision(gaia, _FORGE, "x", user_id="i", attachments=[str(outside)])
+
+    assert run.ok
+    assert not (Path(run.workspace) / "host-secret.txt").exists()
+
+
+async def test_execute_decision_rejects_denied_attachment(
+    gaia: Gaia, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Even inside the tree, a secret/denied file (.env) is refused.
+    _install(monkeypatch, FakeLlm(responses=[_text("done")]))
+    env = constants.AGENTS_DIR / "gym_bro" / "workspace" / ".env"
+    env.parent.mkdir(parents=True)
+    env.write_text("API_KEY=x")
+
+    run = await execute_decision(gaia, _FORGE, "x", user_id="i", attachments=[str(env)])
+
+    assert run.ok
+    assert not (Path(run.workspace) / ".env").exists()
+
+
 async def test_execute_decision_scopes_runs_to_separate_project_dirs(
     gaia: Gaia, monkeypatch: pytest.MonkeyPatch
 ) -> None:
