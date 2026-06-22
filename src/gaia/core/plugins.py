@@ -141,19 +141,17 @@ class ToolPermissionPlugin(BasePlugin):
 
 
 class ToolLoggingPlugin(BasePlugin):
-    """Log each tool call as a span: a ``tool_call`` when it starts, a ``tool_used`` when it
-    finishes (or errors).
+    """Log one ``tool_used`` event per tool call — the single place tool calls are logged.
 
-    Finish-only logging (the old behaviour) hides a call that is in flight or that hangs and
-    never returns — the failure mode is invisible exactly when it matters most. So, like
-    OpenTelemetry spans, we emit a start event and a completion event correlated by the ADK
-    ``function_call_id``, and stamp the completion with ``duration_ms``. Still the single place
-    tool calls are logged — tools never hand-roll their own.
+    One line per call (not a start/finish pair): when the tool finishes we emit its name, the
+    calling agent, the call **args** (so a failure shows the command that failed), the status, and
+    ``duration_ms``. ``before_tool_callback`` only records the start time (no log) so the one line
+    can carry a duration. Tools never hand-roll their own logging.
     """
 
     def __init__(self) -> None:
         super().__init__(name="tool_logging")
-        #: function_call_id -> monotonic start time, set in before_ and consumed in after_/error_.
+        #: function_call_id -> monotonic start time, recorded in before_ and consumed on finish.
         self._started: dict[str, float] = {}
 
     async def before_tool_callback(
@@ -163,17 +161,10 @@ class ToolLoggingPlugin(BasePlugin):
         tool_args: dict[str, Any],
         tool_context: ToolContext,
     ) -> None:
-        name = getattr(tool, "name", type(tool).__name__)
-        fields = _base_fields(name, tool_context)
         call_id = getattr(tool_context, "function_call_id", None)
         if call_id:
-            fields["call_id"] = call_id
             self._started[call_id] = time.monotonic()
-        args = _safe_args(name, tool_args)
-        if args:
-            fields["args"] = args
-        log_event("tool_call", **fields)
-        return None
+        return None  # start time only — the single log line is emitted on finish
 
     async def after_tool_callback(
         self,
@@ -185,7 +176,7 @@ class ToolLoggingPlugin(BasePlugin):
     ) -> None:
         name = getattr(tool, "name", type(tool).__name__)
         status = result.get("status", "ok") if isinstance(result, dict) else "ok"
-        self._log_finish(name, tool_context, status)
+        self._log_finish(name, tool_context, tool_args, status)
         return None
 
     async def on_tool_error_callback(
@@ -197,20 +188,28 @@ class ToolLoggingPlugin(BasePlugin):
         error: Exception,
     ) -> None:
         name = getattr(tool, "name", type(tool).__name__)
-        self._log_finish(name, tool_context, "error", error=type(error).__name__)
+        self._log_finish(name, tool_context, tool_args, "error", error=type(error).__name__)
         return None
 
     def _log_finish(
-        self, name: str, tool_context: ToolContext, status: str, *, error: str | None = None
+        self,
+        name: str,
+        tool_context: ToolContext,
+        tool_args: dict[str, Any],
+        status: str,
+        *,
+        error: str | None = None,
     ) -> None:
-        """Emit the ``tool_used`` completion event, correlated to its start with a duration."""
+        """Emit the one ``tool_used`` line: base fields + args + status (+ error) + duration."""
         fields = _base_fields(name, tool_context)
+        args = _safe_args(name, tool_args)
+        if args:
+            fields["args"] = args
         fields["status"] = status
         if error is not None:
             fields["error"] = error
         call_id = getattr(tool_context, "function_call_id", None)
         if call_id:
-            fields["call_id"] = call_id
             started = self._started.pop(call_id, None)
             if started is not None:
                 fields["duration_ms"] = round((time.monotonic() - started) * 1000)
