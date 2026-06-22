@@ -27,7 +27,7 @@ from uuid import uuid4
 from gaia import constants
 from gaia.connectors.base import inbound_attachments, media_kind
 from gaia.souls.smith import SoulDecision, build_soul_smith
-from gaia.tools.fs.base import _safe_dir, current_project, is_denied, sandbox_for
+from gaia.tools.fs.base import _safe_dir, current_agent, current_project, is_denied, sandbox_for
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from gaia.core.agent import Gaia
@@ -321,6 +321,7 @@ async def execute_decision(
     # target workspace/<project>. Reset on exit so the caller (root Gaia) isn't left scoped.
     slug = _project_slug(project, task)
     token = current_project.set(slug)
+    agent_token = current_agent.set(spec.key)  # so logs during this run are tagged with the soul
     try:
         primary = sandbox_for(constants.AGENTS_DIR, spec.key).primary
         # Bring the user's attachments into the workspace *before* the baseline snapshot, so
@@ -360,6 +361,7 @@ async def execute_decision(
         media = _deliverable_media(primary, files, run_media)
     finally:
         current_project.reset(token)
+        current_agent.reset(agent_token)
     return SoulRun(
         ok=True,
         soul_key=spec.key,
