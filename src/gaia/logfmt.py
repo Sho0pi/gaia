@@ -94,9 +94,7 @@ def _render_tag(tag: str, *, color: bool) -> str:
 
 def _render_fields(fields: dict[str, Any], *, color: bool) -> str:
     """``key=value …`` with dim keys (plain when colour is off)."""
-    return " ".join(
-        f"{_DIM}{k}={_RESET}{v}" if color else f"{k}={v}" for k, v in fields.items()
-    )
+    return " ".join(f"{_DIM}{k}={_RESET}{v}" if color else f"{k}={v}" for k, v in fields.items())
 
 
 def render_line(
