@@ -55,6 +55,7 @@ class Gaia:
         self.users = self.container.users()
         self.tasks = self.container.tasks()  # the shared missions board (TaskStore)
         self.tools = self.container.tools()
+        self.soul_sessions = self.container.soul_sessions()  # warm per-(soul, project) sessions
         self.factory = self.container.factory()
         # Live proactive senders (connector name → object with ``send_to``); the launcher
         # populates this same dict once connectors are running (empty outside the daemon).

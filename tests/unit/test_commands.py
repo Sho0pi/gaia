@@ -32,6 +32,7 @@ def _ctx(
     args: str = "",
     memory: Any = None,
     agents: list[str] | None = None,
+    sessions: list[tuple[str, float]] | None = None,
     handler: Any = None,
     missing: dict[str, str] | None = None,
 ) -> CommandContext:
@@ -40,6 +41,7 @@ def _ctx(
         settings=SimpleNamespace(model="gemini-test"),
         memory_service=memory,
         known_souls=lambda: agents or [],
+        soul_sessions=SimpleNamespace(active=lambda: sessions or []),
         tools=SimpleNamespace(names=lambda: ["web_fetch", "fs_read"], missing=missing or {}),
         users=SimpleNamespace(get=lambda _uid: None),
     )
@@ -128,6 +130,15 @@ async def test_whoami_shows_effort_only_when_set() -> None:
 async def test_souls_empty_and_populated() -> None:
     assert "No souls" in await _run("souls", _ctx())
     assert "- researcher" in await _run("souls", _ctx(agents=["researcher"]))
+
+
+async def test_souls_lists_live_warm_sessions() -> None:
+    out = await _run(
+        "souls",
+        _ctx(agents=["frontend_developer"], sessions=[("frontend_developer/pasta", 30.0)]),
+    )
+    assert "Live now (1)" in out
+    assert "frontend_developer/pasta" in out and "just now" in out
 
 
 async def test_status_reports_counts() -> None:

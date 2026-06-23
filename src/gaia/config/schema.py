@@ -494,6 +494,11 @@ class SoulsConfig(BaseModel):
         default=300.0,
         description="Max seconds a delegated soul may run before the delegation is abandoned.",
     )
+    session_idle_minutes: float = Field(
+        default=30.0,
+        description="Keep a soul's session warm between delegations so it resumes (instead of "
+        "re-reading its workspace each time); evict it after this many minutes idle.",
+    )
 
 
 class AgentBinding(BaseModel):

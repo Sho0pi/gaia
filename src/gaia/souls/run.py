@@ -188,20 +188,30 @@ def _deliverable_media(primary: Path, files: list[str], run_media: list[str]) ->
 
 
 async def run_soul_agent(
-    gaia: Gaia, soul: Any, key: str, task: str, user_id: str, *, state: dict[str, Any] | None = None
+    gaia: Gaia,
+    soul: Any,
+    key: str,
+    task: str,
+    user_id: str,
+    *,
+    state: dict[str, Any] | None = None,
+    warm_key: str | None = None,
 ) -> tuple[str, list[str]]:
-    """Run ``soul`` on ``task`` in a fresh nested Runner; return its final text and any media.
+    """Run ``soul`` on ``task`` in a nested Runner; return its final text and any media.
 
     The runner is given Gaia's ``memory_service`` and the caller's ``user_id`` so the soul's
     ``load_memory``/``remember`` tools read and write the *same* user's long-term memory.
 
-    ``state`` seeds the soul's ADK session state — the seam the soul's tools read to learn
-    which task they're running (so ``task_create`` files a subtask of it) and the consult
-    depth/chain that bounds in-turn recursion. ``None`` means a bare session (e.g. the smith).
+    ``state`` seeds the soul's ADK session state — the seam the soul's tools read to learn which
+    task they're running (so ``task_create`` files a subtask of it) and the consult depth/chain
+    that bounds in-turn recursion.
 
-    The media list is the paths of any files the soul produced for the user this run — the
-    screenshots it took and the files it sent — extracted from its event stream with the same
-    scanner the handler uses, so the root can deliver them instead of re-doing the work.
+    ``warm_key`` (``soul/project``) keeps the session alive across delegations via
+    :class:`gaia.souls.sessions.SoulSessionManager`, so the soul resumes instead of re-reading its
+    workspace each time; ``None`` (the smith) uses a fresh throwaway session that must not persist.
+
+    The media list is the paths of any files the soul produced for the user this run — extracted
+    from its event stream with the same scanner the handler uses, so the root can deliver them.
     """
     from google.adk.runners import Runner
     from google.adk.sessions import InMemorySessionService
@@ -210,11 +220,19 @@ async def run_soul_agent(
     from gaia.core.plugins import ToolLoggingPlugin, ToolPermissionPlugin
     from gaia.core.screenshots import media_for_outputs
 
-    session_service = InMemorySessionService()  # type: ignore[no-untyped-call]
-    session_id = f"soul-{key}"
-    await session_service.create_session(
-        app_name=constants.APP_NAME, user_id=user_id, session_id=session_id, state=state or {}
-    )
+    if warm_key is not None:
+        warm = await gaia.soul_sessions.acquire(
+            warm_key, app_name=constants.APP_NAME, user_id=user_id, state=state
+        )
+        session_service, session_id, lock = warm.session_service, warm.session_id, warm.lock
+    else:
+        session_service = InMemorySessionService()  # type: ignore[no-untyped-call]
+        session_id = f"soul-{key}"
+        await session_service.create_session(
+            app_name=constants.APP_NAME, user_id=user_id, session_id=session_id, state=state or {}
+        )
+        lock = asyncio.Lock()  # uncontended; keeps the run path uniform
+
     runner = Runner(
         app_name=constants.APP_NAME,
         agent=soul,
@@ -225,21 +243,19 @@ async def run_soul_agent(
     content = types.Content(role="user", parts=[types.Part(text=task)])
     parts: list[str] = []
     events: list[Any] = []
-    # NB: we deliberately never call ``runner.close()`` here. Runner.close() does three things:
-    # close the agent's toolsets, close the plugins, flush the session service. The soul's tools
-    # include the *shared* MCP and Skills toolsets (the same singleton objects on the root agent
-    # — see AgentFactory), and ADK closes every toolset on the agent; closing this nested runner
-    # would tear those down for the root mid-conversation, after which the root's turns make no
-    # model call and the chat goes silent. The other two are no-ops for us: our plugins are
-    # stateless, and the session service is a throwaway InMemory one created just above (GC'd
-    # when this returns). The shared toolsets are closed exactly once, by Gaia.close() at app
-    # shutdown — so there is nothing for this nested runner to clean up.
-    async for event in runner.run_async(
-        user_id=user_id, session_id=session_id, new_message=content
-    ):
-        events.append(event)
-        if event.is_final_response() and event.content and event.content.parts:
-            parts.extend(p.text for p in event.content.parts if p.text)
+    # NB: we deliberately never call ``runner.close()``. Runner.close() closes the agent's
+    # toolsets — and the soul's tools include the *shared* MCP/Skills singletons (same objects on
+    # the root agent, see AgentFactory); closing them mid-conversation makes the root's later turns
+    # emit no model call (dead chat). They're closed once, by Gaia.close() at shutdown. A warm
+    # session service is owned by SoulSessionManager; a throwaway one is GC'd here. The lock
+    # serialises turns on a warm session (one ADK turn at a time; the dispatcher runs concurrently).
+    async with lock:
+        async for event in runner.run_async(
+            user_id=user_id, session_id=session_id, new_message=content
+        ):
+            events.append(event)
+            if event.is_final_response() and event.content and event.content.parts:
+                parts.extend(p.text for p in event.content.parts if p.text)
     media = [str(m.path) for m in media_for_outputs(events)]
     return "\n".join(parts), media
 
@@ -347,7 +363,15 @@ async def execute_decision(
         run_state = {**(state or {}), "created_by": spec.key}
         try:
             summary, run_media = await asyncio.wait_for(
-                run_soul_agent(gaia, soul, spec.key, task, user_id, state=run_state),
+                run_soul_agent(
+                    gaia,
+                    soul,
+                    spec.key,
+                    task,
+                    user_id,
+                    state=run_state,
+                    warm_key=f"{spec.key}/{slug}",  # keep this (soul, project) session warm
+                ),
                 timeout=timeout,
             )
         except TimeoutError:
