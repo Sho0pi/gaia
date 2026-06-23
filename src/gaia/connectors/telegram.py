@@ -64,7 +64,8 @@ class TelegramConnector:
                         except Exception:
                             await message.reply_text(as_text(reply))
                     else:
-                        await message.reply_text(reply)
+                        # str passes through; a Question degrades to numbered text.
+                        await message.reply_text(as_text(reply))
 
                 # Record where this turn came from, so scheduling tools (cron) can
                 # capture the chat for later proactive delivery (the chat, not the sender).

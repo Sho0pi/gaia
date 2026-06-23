@@ -51,6 +51,7 @@ GROUPS: dict[str, frozenset[str]] = {
     "tasks": frozenset({"task_create", "task_list", "task_get", "task_update", "task_complete"}),
     "serve": frozenset({"serve", "serve_stop", "serve_list"}),
     "cron": frozenset({"cron"}),
+    "ask": frozenset({"ask_user"}),  # pause the run to ask the human (a choice / a credential)
     MANAGE_USERS: frozenset(),  # command right only — expands to no tool
     "skills": frozenset(),  # command right: install/manage skills (the /skill command)
 }
@@ -65,6 +66,6 @@ GROUP_PREFIXES: dict[str, str] = {"browser_": "browser"}
 #: dropped at dispatch anyway; this keeps them tool-less if that ever changes.
 DEFAULT_ROLE_CAPS: dict[Role, list[str]] = {
     "guest": [],
-    "user": ["web", "memory", "browser", "tasks", "serve", "skills"],
+    "user": ["web", "memory", "browser", "tasks", "serve", "skills", "ask"],
     "admin": [ALL],
 }

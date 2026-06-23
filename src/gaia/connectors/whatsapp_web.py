@@ -19,7 +19,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from gaia import constants
-from gaia.connectors.base import Dispatch, Inbound, InboundMedia, Media, Reply, current_chat
+from gaia.connectors.base import (
+    Dispatch,
+    Inbound,
+    InboundMedia,
+    Media,
+    Reply,
+    as_text,
+    current_chat,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from neonize.aioze.client import NewAClient
@@ -400,11 +408,12 @@ class WhatsAppWebConnector:
 
                 async def send(reply: Reply) -> None:
                     # A media reply goes out as the real file (image/video/audio/document);
-                    # text replies quote the inbound message as before.
+                    # text and questions quote the inbound message — a Question degrades to
+                    # numbered text via as_text, so the user replies with the option number.
                     if isinstance(reply, Media):
                         await _send_media(client, chat, reply)
                     else:
-                        await client.reply_message(reply, message)
+                        await client.reply_message(as_text(reply), message)
 
                 # Acknowledge the moment work starts: blue-tick the message and start the
                 # "typing…" indicator (best-effort; never blocks or breaks the turn).
