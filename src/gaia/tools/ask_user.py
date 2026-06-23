@@ -39,6 +39,12 @@ def make_ask_user() -> LongRunningFunctionTool:
             secret: true if the answer is sensitive (e.g. an API key) so it is kept out
                 of long-term memory and logs.
         """
+        # ask_user has no result to narrate: returning None pauses the run (a long-running
+        # tool emits no function-response), and the real "result" is the user's answer fed
+        # back on resume. skip_summarization tells ADK not to spend an extra model call
+        # narrating this tool's output — honoured via Event.is_final_response() — so the
+        # model just continues from the answer. Same idiom as ADK's own HITL tools
+        # (get_user_choice_tool, _request_input_tool).
         tool_context.actions.skip_summarization = True
         return None
 
