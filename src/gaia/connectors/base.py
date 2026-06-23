@@ -64,6 +64,22 @@ class Media:
 
 
 @dataclass(frozen=True)
+class Question:
+    """A reply that asks the user something and pauses the run until they answer.
+
+    Emitted when the model calls the ``ask_user`` tool. ``options`` (when present) make
+    it multiple-choice; a connector may render a native menu/poll, but every connector
+    degrades to numbered text via :func:`as_text`, so the user can always reply with the
+    option number. ``secret`` marks the answer sensitive (an API key): the handler keeps
+    it out of long-term memory and logs.
+    """
+
+    text: str
+    options: tuple[str, ...] = ()
+    secret: bool = False
+
+
+@dataclass(frozen=True)
 class InboundMedia:
     """An inbound attachment a connector downloaded to disk (e.g. a WhatsApp image)."""
 
@@ -85,8 +101,9 @@ class Inbound:
     media: tuple[InboundMedia, ...] = ()
 
 
-# What the handler may hand a connector to send back: plain text or a media file.
-Reply = str | Media
+# What the handler may hand a connector to send back: plain text, a media file, or a
+# question that pauses the run for the user's answer.
+Reply = str | Media | Question
 
 # Sink a connector provides; the handler calls it once per reply (text or media).
 Send = Callable[[Reply], Awaitable[None]]
@@ -106,8 +123,15 @@ def as_text(reply: Reply) -> str:
     """Best-effort text form of a reply, for connectors that can't send media.
 
     A text reply passes through; a :class:`Media` reply degrades to its caption (or
-    the file path) so the user at least gets told what was produced.
+    the file path); a :class:`Question` renders as its text plus a numbered option list
+    so any text-only channel can ask it and take a "reply with the number" answer.
     """
     if isinstance(reply, Media):
         return reply.caption or str(reply.path)
+    if isinstance(reply, Question):
+        if not reply.options:
+            return reply.text
+        lines = [reply.text, *(f"  {i}. {opt}" for i, opt in enumerate(reply.options, 1))]
+        lines.append("(reply with the number)")
+        return "\n".join(lines)
     return reply

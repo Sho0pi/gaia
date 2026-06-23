@@ -15,7 +15,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from gaia import constants
-from gaia.connectors.base import Inbound, Send, inbound_attachments
+from gaia.connectors.base import Inbound, Question, Send, inbound_attachments
+from gaia.core.elicit import ASK_USER_TOOL, Pending, resolve_answer
 from gaia.logs import log_event
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -73,6 +74,9 @@ class GaiaHandler:
         # The in-flight background ingest, if any. Threshold flushes run off the turn's
         # critical path so mem0's extraction LLM call never delays the next reply.
         self._flush_task: asyncio.Task[None] | None = None
+        # A question the model asked via ``ask_user`` that this conversation is paused on;
+        # the user's next message is its answer, fed back to resume the run (see _resume).
+        self._pending: Pending | None = None
 
     async def _profile_block(self) -> str | None:
         """The user's distilled profile to bake into the prompt, or None.
@@ -138,8 +142,15 @@ class GaiaHandler:
         )
 
         # A slash command is handled out-of-band: it never reaches the model or the
-        # memory ingest path. Media-only messages are never commands.
+        # memory ingest path. Media-only messages are never commands. Checked before the
+        # resume branch so /reset (which clears _pending) still escapes a pending question.
         if await self._maybe_run_command(inbound.text, send):
+            return
+
+        # The conversation is paused on an ask_user question: this message is the answer,
+        # so resume the same run with it instead of starting a fresh turn.
+        if self._pending is not None:
+            await self._resume(inbound, send)
             return
 
         # Build the model turn: the text part (if any) plus an image part per attachment, so
@@ -163,34 +174,77 @@ class GaiaHandler:
         if not parts:  # nothing to send (empty text, no readable media)
             return
 
-        runner = await self._ensure_runner()
+        # yield_user_message=True so the user's own turn is in the event stream we buffer —
+        # otherwise auto-ingest only ever sees Gaia's replies and mem0 extracts facts from
+        # the wrong half of the conversation.
         content = types.Content(role="user", parts=parts)
+        await self._drive(content, send, secret=False, yield_user_message=True)
 
+    async def _resume(self, inbound: Inbound, send: Send) -> None:
+        """Resume a run paused on ``ask_user`` by feeding the reply as its tool result.
+
+        ADK locates the original (long-running) ask_user call by id in the session events
+        and continues the same invocation, so the model picks up exactly where it paused.
+        ``yield_user_message=False`` keeps the synthetic function-response out of the
+        memory-ingest stream; a secret answer also skips buffering entirely (see _drive).
+        """
+        from google.genai import types
+
+        pending, self._pending = self._pending, None
+        assert pending is not None  # guarded by the caller
+        answer = resolve_answer(pending, inbound.text)
+        log_event("elicit_answered", user=self._user_id, secret=pending.secret or None)
+        content = types.Content(
+            role="user",
+            parts=[
+                types.Part(
+                    function_response=types.FunctionResponse(
+                        id=pending.fc_id, name=ASK_USER_TOOL, response={"answer": answer}
+                    )
+                )
+            ],
+        )
+        await self._drive(content, send, secret=pending.secret, yield_user_message=False)
+
+    async def _drive(
+        self, content: Any, send: Send, *, secret: bool, yield_user_message: bool
+    ) -> None:
+        """Run one turn to completion or to an ask_user pause, then reply/buffer.
+
+        Shared by a fresh turn and a resume. ``secret`` true means this turn carries a
+        sensitive answer, so its events are never buffered to long-term memory.
+        """
+        runner = await self._ensure_runner()
         turn_events: list[Any] = []
         texts: list[str] = []
         try:
-            # yield_user_message=True so the user's own turn is in the event stream we
-            # buffer — otherwise auto-ingest only ever sees Gaia's replies and mem0
-            # extracts facts from the wrong half of the conversation.
             async for event in runner.run_async(
                 user_id=self._user_id,
                 session_id=self._session_id,
                 new_message=content,
-                yield_user_message=True,
+                yield_user_message=yield_user_message,
             ):
                 turn_events.append(event)
+                call = self._ask_call(event)
+                if call is not None:
+                    # The run paused on ask_user: send any preface text + the question,
+                    # record what we're waiting on, and stop. The reply resumes the run.
+                    texts.extend(self._event_texts(event))
+                    await self._emit_texts(texts, send)
+                    await self._begin_elicitation(call, send)
+                    if not secret:
+                        await self._buffer_turn(turn_events)
+                    return
                 # Collect the final answer's text parts; they're emitted after the loop so
-                # a screenshot taken this turn can carry the reply as its caption (one
-                # message) rather than arriving as a separate "screenshot" image + text.
-                # Skip the echoed user event (role "user") — it's in the stream only so
-                # auto-ingest sees the user's side; it must not be sent back as a reply.
+                # a screenshot taken this turn can ride as its caption (one message). Skip
+                # the echoed user event (role "user") — it's only here for auto-ingest.
                 if (
                     event.is_final_response()
                     and event.content
                     and event.content.parts
                     and getattr(event.content, "role", None) != "user"
                 ):
-                    texts.extend(part.text for part in event.content.parts if part.text)
+                    texts.extend(self._event_texts(event))
         except Exception as exc:
             # A model error (rate limit, outage) or tool fault must not surface as a raw
             # traceback to the user. Log the detail, send a short apology, end the turn.
@@ -200,7 +254,48 @@ class GaiaHandler:
             return
 
         await self._emit_reply(turn_events, texts, send)
-        await self._buffer_turn(turn_events)
+        if not secret:
+            await self._buffer_turn(turn_events)
+
+    def _ask_call(self, event: Any) -> Any | None:
+        """The ask_user function call in ``event`` if it paused the run, else None.
+
+        A long-running tool call is flagged on ``event.long_running_tool_ids``; we match
+        the one named ask_user so an unrelated long-running tool never looks like a pause.
+        """
+        ids = getattr(event, "long_running_tool_ids", None)
+        if not ids or not (event.content and event.content.parts):
+            return None
+        for part in event.content.parts:
+            call = getattr(part, "function_call", None)
+            if call is not None and call.id in ids and call.name == ASK_USER_TOOL:
+                return call
+        return None
+
+    @staticmethod
+    def _event_texts(event: Any) -> list[str]:
+        """The non-empty text parts of an event's content (model speech), in order."""
+        if not (event.content and event.content.parts):
+            return []
+        return [part.text for part in event.content.parts if part.text]
+
+    async def _emit_texts(self, texts: list[str], send: Send) -> None:
+        """Send each non-empty text as its own reply (used for an ask_user preface)."""
+        for text in texts:
+            if text.strip():
+                log_event("message_out", user=self._user_id, chars=len(text))
+                await send(text)
+
+    async def _begin_elicitation(self, call: Any, send: Send) -> None:
+        """Record the pending question from an ask_user call and surface it to the user."""
+        args = call.args or {}
+        options = tuple(args.get("options") or ())
+        secret = bool(args.get("secret", False))
+        self._pending = Pending(fc_id=call.id, options=options, secret=secret)
+        log_event(
+            "elicit_asked", user=self._user_id, options=len(options) or None, secret=secret or None
+        )
+        await send(Question(text=str(args.get("question", "")), options=options, secret=secret))
 
     async def _emit_reply(self, events: list[Any], texts: list[str], send: Send) -> None:
         """Send the turn's reply: an image (with the text as its caption) when a screenshot
@@ -252,6 +347,7 @@ class GaiaHandler:
         self._runner_config = None
         self._buffer = []
         self._buffer_started = None
+        self._pending = None  # drop any unanswered question; /reset starts clean
 
     async def _maybe_run_command(self, text: str, send: Send) -> bool:
         """If ``text`` is a slash command, run it and reply; return whether it was one."""

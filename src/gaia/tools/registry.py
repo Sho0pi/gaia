@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING, Any, Union
 
 from gaia import constants
 from gaia.tools import browser, fs, shell
+from gaia.tools.ask_user import NAME as ASK_USER
+from gaia.tools.ask_user import make_ask_user
 from gaia.tools.cron import NAME as CRON
 from gaia.tools.cron import make_cron
 from gaia.tools.remember import NAME as REMEMBER
@@ -305,6 +307,11 @@ def default_registry(
 
     if _is_enabled(config, CRON):
         registry.register(CRON, make_cron())
+
+    # ask_user pauses the run to ask the human (a choice or a missing credential) and
+    # resumes on their reply; the handler surfaces the question and routes the answer.
+    if _is_enabled(config, ASK_USER):
+        registry.register(ASK_USER, make_ask_user())
 
     # Missions task board (P1): the five task_* tools share one TaskStore so they all hit
     # the same ~/.gaia/tasks.db. Gaia-only for now; souls get them in P3.
