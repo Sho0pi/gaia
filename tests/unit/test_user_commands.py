@@ -25,7 +25,11 @@ def _ctx(store: UserStore, *, args: str = "", role: str = "admin") -> CommandCon
 
 
 async def _run(name: str, ctx: CommandContext) -> Any:
-    return await default_registry().get(name).run(ctx)
+    # Mirror the dispatch: ACL-authorize, then run (gating lives in authorize, not run()).
+    from gaia.commands import authorize
+
+    cmd = default_registry().get(name)
+    return refusal if (refusal := authorize(cmd, ctx)) else await cmd.run(ctx)
 
 
 def _store(tmp_path: Path) -> UserStore:

@@ -8,7 +8,28 @@ from __future__ import annotations
 
 from typing import Any
 
-from gaia.connectors.base import Dispatch, Media, Reply, as_text, current_chat
+from gaia.connectors.base import Dispatch, Inbound, Media, Reply, as_text, current_chat
+
+#: Media.kind → (Message.reply_* method, Bot.send_* method). python-telegram-bot accepts a
+#: ``Path`` as the file argument and opens it itself.
+_TG_SENDERS = {
+    "image": ("reply_photo", "send_photo"),
+    "video": ("reply_video", "send_video"),
+    "audio": ("reply_audio", "send_audio"),
+    "document": ("reply_document", "send_document"),
+}
+
+
+async def _tg_reply_media(message: Any, media: Media) -> None:
+    """Reply with ``media`` using the method matching its kind (document as default)."""
+    reply_method, _ = _TG_SENDERS.get(media.kind, _TG_SENDERS["document"])
+    await getattr(message, reply_method)(media.path, caption=media.caption or None)
+
+
+async def _tg_send_media(bot: Any, chat: str, media: Media) -> None:
+    """Proactively send ``media`` to ``chat`` using the Bot.send_* matching its kind."""
+    _, send_method = _TG_SENDERS.get(media.kind, _TG_SENDERS["document"])
+    await getattr(bot, send_method)(chat, media.path, caption=media.caption or None)
 
 
 class TelegramConnector:
@@ -35,15 +56,21 @@ class TelegramConnector:
                 sender = message.from_user
 
                 async def send(reply: Reply) -> None:
-                    # Telegram media replies (reply_photo) are a follow-up; for now a
-                    # Media reply degrades to its caption/path text.
-                    await message.reply_text(as_text(reply))
+                    # A media reply goes out as the real file by kind; on any send failure
+                    # fall back to the caption/path text so the user still gets something.
+                    if isinstance(reply, Media):
+                        try:
+                            await _tg_reply_media(message, reply)
+                        except Exception:
+                            await message.reply_text(as_text(reply))
+                    else:
+                        await message.reply_text(reply)
 
                 # Record where this turn came from, so scheduling tools (cron) can
                 # capture the chat for later proactive delivery (the chat, not the sender).
                 current_chat.set((self.NAME, str(message.chat_id)))
                 name = sender.first_name or sender.username or str(sender.id)
-                await self._dispatch(str(sender.id), name, message.text, send)
+                await self._dispatch(str(sender.id), name, Inbound(text=message.text or ""), send)
 
         # filters.TEXT keeps slash-commands (/help, /reset, …) flowing to the handler,
         # which dispatches them itself; ~COMMAND would swallow them before Gaia sees them.
@@ -85,7 +112,6 @@ class TelegramConnector:
         if self._app is None:
             raise RuntimeError("telegram connector is not running")
         if isinstance(reply, Media):
-            with reply.path.open("rb") as fh:
-                await self._app.bot.send_photo(chat_id=chat, photo=fh, caption=reply.caption)
+            await _tg_send_media(self._app.bot, chat, reply)
         else:
             await self._app.bot.send_message(chat_id=chat, text=reply)

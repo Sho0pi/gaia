@@ -21,6 +21,41 @@ import typer
 from gaia.cli._console import console, emit_json
 from gaia.cli._options import state
 
+# Argument/option types named once so the command signatures below stay readable.
+KeyArg = Annotated[str, typer.Argument(help="The soul key.")]
+NameArg = Annotated[str, typer.Argument(help="Human name for the soul (slugified into its key).")]
+DescriptionOpt = Annotated[str | None, typer.Option("--description", help="What the soul is for.")]
+InstructionOpt = Annotated[
+    str | None, typer.Option("--instruction", help="The soul's system prompt.")
+]
+InstructionFileOpt = Annotated[
+    Path | None,
+    typer.Option("--instruction-file", help="Read the instruction from this file instead."),
+]
+ModelOpt = Annotated[
+    str | None, typer.Option("--model", help="Model id (default: config llm.model).")
+]
+SkillOpt = Annotated[list[str] | None, typer.Option("--skill", help="Skill id (repeatable).")]
+ToolOpt = Annotated[list[str] | None, typer.Option("--tool", help="Tool id to pin (repeatable).")]
+StyleOpt = Annotated[
+    str | None,
+    typer.Option("--style", help="Voice (default: config default_communication_style)."),
+]
+AiOpt = Annotated[
+    str | None,
+    typer.Option(
+        "--ai", help="Let the soul-smith author the spec from this TASK (needs a model key)."
+    ),
+]
+ForceOpt = Annotated[
+    bool, typer.Option("--force", help="Overwrite an existing soul with the same key.")
+]
+NoInputOpt = Annotated[
+    bool, typer.Option("--no-input", help="Never prompt; fail if a field is missing.")
+]
+YesOpt = Annotated[bool, typer.Option("--yes", "-y", help="With --ai: skip confirmation prompts.")]
+DeleteForceOpt = Annotated[bool, typer.Option("--force", help="Delete without confirmation.")]
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from gaia.agents import AgentSpec, SoulRegistry
     from gaia.config import GaiaConfig, Settings
@@ -86,7 +121,7 @@ def list_souls(ctx: typer.Context) -> None:
 
 
 @app.command()
-def show(ctx: typer.Context, key: Annotated[str, typer.Argument(help="The soul key.")]) -> None:
+def show(ctx: typer.Context, key: KeyArg) -> None:
     """Print every field of one soul (raw JSON with --json)."""
     spec = _registry(ctx).get(key)
     if spec is None:
@@ -105,48 +140,21 @@ def show(ctx: typer.Context, key: Annotated[str, typer.Argument(help="The soul k
     out.print(f"\ninstruction:\n{spec.instruction}")
 
 
-@app.command()
+@app.command("new")
 def create(
     ctx: typer.Context,
-    name: Annotated[str, typer.Argument(help="Human name for the soul (slugified into its key).")],
-    description: Annotated[
-        str | None, typer.Option("--description", help="What the soul is for.")
-    ] = None,
-    instruction: Annotated[
-        str | None, typer.Option("--instruction", help="The soul's system prompt.")
-    ] = None,
-    instruction_file: Annotated[
-        Path | None,
-        typer.Option("--instruction-file", help="Read the instruction from this file instead."),
-    ] = None,
-    model: Annotated[
-        str | None, typer.Option("--model", help="Model id (default: config llm.model).")
-    ] = None,
-    skill: Annotated[
-        list[str] | None, typer.Option("--skill", help="Skill id (repeatable).")
-    ] = None,
-    tool: Annotated[
-        list[str] | None, typer.Option("--tool", help="Tool id to pin (repeatable).")
-    ] = None,
-    style: Annotated[
-        str | None,
-        typer.Option("--style", help="Voice (default: config default_communication_style)."),
-    ] = None,
-    ai: Annotated[
-        str | None,
-        typer.Option(
-            "--ai", help="Let the soul-smith author the spec from this TASK (needs a model key)."
-        ),
-    ] = None,
-    force: Annotated[
-        bool, typer.Option("--force", help="Overwrite an existing soul with the same key.")
-    ] = False,
-    no_input: Annotated[
-        bool, typer.Option("--no-input", help="Never prompt; fail if a field is missing.")
-    ] = False,
-    yes: Annotated[
-        bool, typer.Option("--yes", "-y", help="With --ai: skip confirmation prompts.")
-    ] = False,
+    name: NameArg,
+    description: DescriptionOpt = None,
+    instruction: InstructionOpt = None,
+    instruction_file: InstructionFileOpt = None,
+    model: ModelOpt = None,
+    skill: SkillOpt = None,
+    tool: ToolOpt = None,
+    style: StyleOpt = None,
+    ai: AiOpt = None,
+    force: ForceOpt = False,
+    no_input: NoInputOpt = False,
+    yes: YesOpt = False,
 ) -> None:
     """Create a soul — manually (no model key) or, with --ai, via the soul-smith."""
     registry = _registry(ctx)
@@ -173,6 +181,9 @@ def create(
         out.print(f"soul {spec.key!r} already exists — pass --force to overwrite")
         raise typer.Exit(1)
     registry.save(spec)
+    from gaia.state import commit_change
+
+    commit_change(f"soul: created '{spec.key}'", spec.description)
     out.print(f"saved soul {spec.key!r} ({spec.name})")
 
 
@@ -307,7 +318,7 @@ async def _run_smith(cfg: GaiaConfig, task: str, existing: str) -> SoulDecision:
 
 
 @app.command()
-def edit(ctx: typer.Context, key: Annotated[str, typer.Argument(help="The soul key.")]) -> None:
+def edit(ctx: typer.Context, key: KeyArg) -> None:
     """Open a soul's Markdown in $EDITOR, re-validate it on save, and store it."""
     from gaia.agents import AgentSpec
 
@@ -329,17 +340,20 @@ def edit(ctx: typer.Context, key: Annotated[str, typer.Argument(help="The soul k
         raise typer.Exit(1) from exc
 
     registry.save(new_spec)
+    from gaia.state import commit_change
+
+    commit_change(f"soul: edited '{new_spec.key}'", new_spec.description)
     if new_spec.key != key:
         registry.delete(key)  # name changed → don't orphan the old file
         out.print(f"key changed {key!r} → {new_spec.key!r}")
     out.print(f"saved soul {new_spec.key!r}")
 
 
-@app.command()
+@app.command("rm")
 def delete(
     ctx: typer.Context,
-    key: Annotated[str, typer.Argument(help="The soul key.")],
-    force: Annotated[bool, typer.Option("--force", help="Delete without confirmation.")] = False,
+    key: KeyArg,
+    force: DeleteForceOpt = False,
 ) -> None:
     """Delete a soul by key (asks for confirmation unless --force)."""
     registry = _registry(ctx)
@@ -351,3 +365,7 @@ def delete(
         raise typer.Exit(0)
     registry.delete(key)
     out.print(f"deleted soul {key!r}")
+
+
+# `remove` is a visible alias for `rm`.
+app.command("remove")(delete)

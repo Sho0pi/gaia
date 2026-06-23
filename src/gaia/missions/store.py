@@ -94,6 +94,7 @@ class Task(BaseModel):
     blocked_by: list[str] = Field(default_factory=list)  # task ids that must be done first
     depth: int = 0
     artifacts: list[str] = Field(default_factory=list)  # workspace paths the task produced
+    workspace: str = ""  # abs dir the soul ran in, so a dependent can copy these artifacts in
     result: str = ""
     notes: str = ""
     owner: str = ""  # the human user_id this mission serves (per-user scope)
@@ -111,13 +112,14 @@ class Task(BaseModel):
 _COLUMNS = (
     "id, mission_id, parent_id, title, spec, status, assignee, blocked_by, depth, "
     "artifacts, result, notes, owner, created_by, approval_class, budget_used, "
-    "notify_channel, notify_chat, created_at, updated_at"
+    "notify_channel, notify_chat, created_at, updated_at, workspace"
 )
 
 #: Columns added after the initial P1 ship — applied to an existing db via idempotent ALTER.
 _MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("notify_channel", "TEXT NOT NULL DEFAULT ''"),
     ("notify_chat", "TEXT NOT NULL DEFAULT ''"),
+    ("workspace", "TEXT NOT NULL DEFAULT ''"),
 )
 
 _SCHEMA = """
@@ -141,7 +143,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     notify_channel TEXT NOT NULL DEFAULT '',
     notify_chat TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    workspace TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_mission ON tasks(mission_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_owner ON tasks(owner);
@@ -237,20 +240,24 @@ class TaskStore:
         task.status = status
         return self.update(task)
 
-    def post_result(self, task_id: str, result: str, artifacts: Sequence[str] = ()) -> Task | None:
-        """Record a finished task's ``result`` + ``artifacts`` and mark it ``done``."""
+    def post_result(
+        self, task_id: str, result: str, artifacts: Sequence[str] = (), workspace: str = ""
+    ) -> Task | None:
+        """Record a finished task's ``result`` + ``artifacts`` (+ its ``workspace``) and mark
+        it ``done`` — the workspace lets a dependent resolve these artifacts to copy them in."""
         task = self.get(task_id)
         if task is None:
             return None
         task.result = result
         task.artifacts = list(artifacts)
+        if workspace:
+            task.workspace = workspace
         task.status = TaskStatus.DONE
         return self.update(task)
 
     # -- reads -----------------------------------------------------------------------
 
     def get(self, task_id: str) -> Task | None:
-        """The task with ``task_id``, or ``None``."""
         with self._connect() as conn:
             row = conn.execute(f"SELECT {_COLUMNS} FROM tasks WHERE id = ?", (task_id,)).fetchone()
         return _to_task(row) if row is not None else None
@@ -347,6 +354,7 @@ def _to_row(task: Task) -> tuple[Any, ...]:
         task.notify_chat,
         task.created_at,
         task.updated_at,
+        task.workspace,
     )
 
 

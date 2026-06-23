@@ -32,11 +32,13 @@ _MCP_SCREENSHOT = "browser_take_screenshot"
 _IMAGE_PATH_RE = re.compile(r"[\w./\\-]+\.(?:png|jpe?g)", re.IGNORECASE)
 
 
-def media_for_screenshots(events: list[Any]) -> list[Media]:
-    """Every screenshot taken in ``events``, as :class:`Media` replies (in order).
+def media_for_outputs(events: list[Any]) -> list[Media]:
+    """Every file a turn produced for the user, as :class:`Media` replies (in order).
 
-    Only screenshots Gaia itself takes are seen here — files a delegated soul produces
-    come back via delegate_to_soul and are a follow-up.
+    Covers screenshots Gaia takes itself, any file it explicitly sends with ``send_file``
+    (a generated image, a soul's deliverable, an uploaded file), and the media a delegated
+    soul produced — those ride back in the ``delegate_to_soul`` result and are delivered here,
+    so the root needn't re-serve/re-screenshot to show them.
     """
     media: list[Media] = []
     for event in events:
@@ -44,29 +46,39 @@ def media_for_screenshots(events: list[Any]) -> list[Media]:
         if get_responses is None:
             continue
         for resp in get_responses() or []:
-            one = _screenshot_media(resp.name, resp.response)
-            if one is not None:
-                media.append(one)
+            media.extend(_output_media(resp.name, resp.response))
     return media
 
 
-def _screenshot_media(name: str, result: Any) -> Media | None:
-    """A :class:`Media` reply for a screenshot tool result, or ``None`` if it isn't one."""
-    from gaia.connectors.base import Media
+def _output_media(name: str, result: Any) -> list[Media]:
+    """The :class:`Media` replies for one tool result (screenshot / send_file / delegate)."""
+    from gaia.connectors.base import Media, media_kind
+    from gaia.souls.delegate import NAME as DELEGATE
     from gaia.tools.browser import SCREENSHOT
     from gaia.tools.image import NAME as GENERATE_IMAGE
+    from gaia.tools.send_file import NAME as SEND_FILE
 
     if not isinstance(result, dict):
-        return None
+        return []
+    if name == SEND_FILE and result.get("status") == "success" and result.get("path"):
+        # The model picked the file and its caption; kind was inferred by the tool.
+        return [
+            Media(
+                Path(result["path"]), caption=result.get("caption", ""), kind=result.get("kind", "")
+            )
+        ]
     if name == SCREENSHOT and result.get("status") == "success" and result.get("path"):
-        return Media(Path(result["path"]), caption="screenshot")
+        return [Media(Path(result["path"]), caption="screenshot")]
     if name == GENERATE_IMAGE and result.get("status") == "success" and result.get("path"):
-        return Media(Path(result["path"]), caption="image")
+        return [Media(Path(result["path"]), caption="image")]
     if name == _MCP_SCREENSHOT and not result.get("isError"):
         path = _mcp_screenshot_path(result)
-        if path is not None:
-            return Media(path, caption="screenshot")
-    return None
+        return [Media(path, caption="screenshot")] if path is not None else []
+    if name == DELEGATE and result.get("status") == "success":
+        # A soul's deliverable media comes back through delegate_to_soul; deliver each here so
+        # the root needn't re-serve/re-screenshot to show it. Kind is re-inferred from the file.
+        return [Media(p, kind=media_kind(p)) for p in map(Path, result.get("media") or [])]
+    return []
 
 
 def _mcp_screenshot_path(result: dict[str, Any]) -> Path | None:

@@ -11,10 +11,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from gaia import constants
-from gaia.connectors.base import Send
+from gaia.connectors.base import Inbound, Send, inbound_attachments
 from gaia.logs import log_event
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -22,12 +23,16 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 
 def _friendly_error(exc: Exception) -> str:
-    """A short, user-facing message for a failed turn (rate limit / outage / other)."""
+    """A short, user-facing message for a failed turn (rate limit / outage / network / other)."""
     text = str(exc)
     if "429" in text or "RESOURCE_EXHAUSTED" in text:
         return "I'm being rate-limited right now (model quota). Please try again in a minute."
     if "503" in text or "UNAVAILABLE" in text or "overloaded" in text.lower():
         return "The model is busy at the moment. Please try again shortly."
+    # A dropped connection to the model (httpx/httpcore TransportError) — usually a transient
+    # network blip; the backend already retried once before this surfaced.
+    if type(exc).__module__.split(".")[0] in ("httpx", "httpcore"):
+        return "I had a network hiccup reaching the model. Please try again."
     return "Sorry — something went wrong handling that. Please try again."
 
 
@@ -55,6 +60,12 @@ class GaiaHandler:
         # admin so single-user / cron / test callers that don't resolve a user are trusted.
         self._role = role
         self._runner: Any | None = None
+        # The session service is built once and reused across runner rebuilds, so the
+        # conversation history survives a hot-reload (see _ensure_runner). The config the
+        # runner was built against; when gaia.yaml changes, ConfigSupplier hands back a new
+        # object and we rebuild (None until the first build, so injected-runner tests skip).
+        self._session_service: Any = None
+        self._runner_config: Any | None = None
         # Auto-ingest buffer: turns accumulate here and flush in batches (by count or
         # age) so mem0's per-add extraction LLM call fires once per batch, not per turn.
         self._buffer: list[Any] = []
@@ -63,50 +74,122 @@ class GaiaHandler:
         # critical path so mem0's extraction LLM call never delays the next reply.
         self._flush_task: asyncio.Task[None] | None = None
 
-    async def _ensure_runner(self) -> Any:
+    async def _profile_block(self) -> str | None:
+        """The user's distilled profile to bake into the prompt, or None.
+
+        One LLM call per runner build (session start / config reload) — see
+        :func:`gaia.memory.profile.distill_profile`. Gated on ``memory.preload``; the
+        distiller itself returns None (no model call) when memory is off or the user has
+        nothing stored, so a fresh store never triggers one.
+        """
+        if not self._gaia.config.memory.preload:
+            return None
+        from gaia.memory.profile import distill_profile
+
+        return await distill_profile(self._gaia, self._user_id)
+
+    def _build_runner(self, profile: str | None) -> Any:
+        """Build a Runner over the (reused) session service against the live config.
+
+        Re-reads ``build_root_agent`` (model/instruction/profile) and ``memory_service``
+        each call, so a rebuild picks up every gaia.yaml change. The session service is
+        shared, so the conversation continues across rebuilds.
+        """
         from google.adk.runners import Runner
-        from google.adk.sessions import InMemorySessionService
 
         from gaia.core.plugins import ToolLoggingPlugin, ToolPermissionPlugin
 
+        return Runner(
+            app_name=constants.APP_NAME,
+            agent=self._gaia.build_root_agent(self, profile=profile),
+            session_service=self._session_service,
+            memory_service=self._gaia.memory_service,
+            plugins=[ToolPermissionPlugin(self._gaia), ToolLoggingPlugin()],
+        )
+
+    async def _ensure_runner(self) -> Any:
+        from google.adk.sessions import InMemorySessionService
+
         if self._runner is None:
-            session_service = InMemorySessionService()  # type: ignore[no-untyped-call]
-            await session_service.create_session(
+            self._session_service = InMemorySessionService()  # type: ignore[no-untyped-call]
+            await self._session_service.create_session(
                 app_name=constants.APP_NAME, user_id=self._user_id, session_id=self._session_id
             )
-            self._runner = Runner(
-                app_name=constants.APP_NAME,
-                agent=self._gaia.build_root_agent(),
-                session_service=session_service,
-                memory_service=self._gaia.memory_service,
-                plugins=[ToolPermissionPlugin(self._gaia), ToolLoggingPlugin()],
-            )
+            self._runner_config = self._gaia.config
+            self._runner = self._build_runner(await self._profile_block())
+        elif self._runner_config is not None and self._gaia.config is not self._runner_config:
+            # gaia.yaml changed on disk (ConfigSupplier returns a new object): rebuild the
+            # agent so the live conversation picks up the new model/instruction/memory. The
+            # shared session service keeps this session's history intact.
+            log_event("config_reloaded", user=self._user_id, session=self._session_id)
+            self._runner_config = self._gaia.config
+            self._runner = self._build_runner(await self._profile_block())
         return self._runner
 
-    async def __call__(self, text: str, send: Send) -> None:
+    async def __call__(self, inbound: Inbound, send: Send) -> None:
         from google.genai import types
 
-        log_event("message_in", user=self._user_id, session=self._session_id, chars=len(text))
+        log_event(
+            "message_in",
+            user=self._user_id,
+            session=self._session_id,
+            chars=len(inbound.text),
+            media=len(inbound.media) or None,
+        )
 
         # A slash command is handled out-of-band: it never reaches the model or the
-        # memory ingest path.
-        if await self._maybe_run_command(text, send):
+        # memory ingest path. Media-only messages are never commands.
+        if await self._maybe_run_command(inbound.text, send):
+            return
+
+        # Build the model turn: the text part (if any) plus an image part per attachment, so
+        # the model sees the picture this turn and it stays in the session for follow-ups.
+        parts: list[Any] = [types.Part(text=inbound.text)] if inbound.text else []
+        attached: list[Path] = []
+        for item in inbound.media:
+            try:
+                data = item.path.read_bytes()
+            except OSError:
+                logging.getLogger(constants.LOGGER_NAME).warning(
+                    "dropped inbound attachment (unreadable): %s", item.path
+                )
+                continue
+            parts.append(types.Part.from_bytes(data=data, mime_type=item.mime))
+            attached.append(item.path)
+        # Stash the files for this turn so delegate_to_soul can copy them into the chosen
+        # soul's workspace (where it can embed them). The model sees the image itself via the
+        # part above — no synthetic "here's the path" message needed.
+        inbound_attachments.set(tuple(attached))
+        if not parts:  # nothing to send (empty text, no readable media)
             return
 
         runner = await self._ensure_runner()
-        content = types.Content(role="user", parts=[types.Part(text=text)])
+        content = types.Content(role="user", parts=parts)
 
         turn_events: list[Any] = []
         texts: list[str] = []
         try:
+            # yield_user_message=True so the user's own turn is in the event stream we
+            # buffer — otherwise auto-ingest only ever sees Gaia's replies and mem0
+            # extracts facts from the wrong half of the conversation.
             async for event in runner.run_async(
-                user_id=self._user_id, session_id=self._session_id, new_message=content
+                user_id=self._user_id,
+                session_id=self._session_id,
+                new_message=content,
+                yield_user_message=True,
             ):
                 turn_events.append(event)
                 # Collect the final answer's text parts; they're emitted after the loop so
                 # a screenshot taken this turn can carry the reply as its caption (one
                 # message) rather than arriving as a separate "screenshot" image + text.
-                if event.is_final_response() and event.content and event.content.parts:
+                # Skip the echoed user event (role "user") — it's in the stream only so
+                # auto-ingest sees the user's side; it must not be sent back as a reply.
+                if (
+                    event.is_final_response()
+                    and event.content
+                    and event.content.parts
+                    and getattr(event.content, "role", None) != "user"
+                ):
                     texts.extend(part.text for part in event.content.parts if part.text)
         except Exception as exc:
             # A model error (rate limit, outage) or tool fault must not surface as a raw
@@ -128,39 +211,51 @@ class GaiaHandler:
         so either way the user gets the words attached to the picture, not a bare path.
         """
         from gaia.connectors.base import Media
-        from gaia.core.screenshots import media_for_screenshots
+        from gaia.core.screenshots import media_for_outputs
 
-        media = media_for_screenshots(events)
+        media = media_for_outputs(events)
         if media:
-            # The reply text becomes the first image's caption — one combined message.
-            # Extra screenshots (rare) follow without a caption.
+            # The reply text rides as the caption of the first attachment (one combined
+            # message); each file keeps its own caption otherwise (a send_file carries the
+            # model's words, screenshots their "screenshot" label).
             caption = "\n".join(t.strip() for t in texts if t.strip())
-            first = media[0]
-            log_event("media_out", user=self._user_id, tool="screenshot", chars=len(caption))
-            await send(Media(first.path, caption=caption or first.caption))
-            for extra in media[1:]:
-                log_event("media_out", user=self._user_id, tool="screenshot")
-                await send(Media(extra.path, caption=""))
+            for i, item in enumerate(media):
+                cap = (caption if i == 0 else "") or item.caption
+                log_event("media_out", user=self._user_id, tool=item.kind, chars=len(cap))
+                await send(Media(item.path, caption=cap, kind=item.kind))
             return
 
-        # No media: stream each text part as its own reply (one inbound can fan out to many).
+        # No media: stream each non-empty text part as its own reply (one inbound can fan out
+        # to many).
+        sent = False
         for text in texts:
+            if not text.strip():
+                continue
             log_event("message_out", user=self._user_id, chars=len(text))
             await send(text)
+            sent = True
+        if not sent:
+            # The turn ran but produced no text and no media — e.g. a reasoning model that put
+            # everything in its (hidden) thoughts and emitted no message. Never ghost the user:
+            # log it for visibility and send a short acknowledgement.
+            log_event("turn_empty", user=self._user_id, session=self._session_id)
+            await send("(Done — I didn't have anything to add there.)")
 
     def reset_session(self) -> None:
         """Drop the live ADK session and pending memory buffer (used by ``/reset``).
 
-        Nulling ``_runner`` makes the next message build a fresh session with no prior
-        turns; long-term memory is untouched.
+        Nulling ``_runner`` (and its session service) makes the next message build a fresh
+        session with no prior turns; long-term memory is untouched.
         """
         self._runner = None
+        self._session_service = None
+        self._runner_config = None
         self._buffer = []
         self._buffer_started = None
 
     async def _maybe_run_command(self, text: str, send: Send) -> bool:
         """If ``text`` is a slash command, run it and reply; return whether it was one."""
-        from gaia.commands import CommandContext, default_registry, parse
+        from gaia.commands import CommandContext, authorize, default_registry, parse
 
         parsed = parse(text)
         if parsed is None:
@@ -183,6 +278,10 @@ class GaiaHandler:
             session_id=self._session_id,
             role=self._role,
         )
+        if refusal := authorize(command, ctx):  # one ACL gate for the human path
+            log_event("command_used", command=command.name, status="denied")
+            await send(refusal)
+            return True
         reply = await command.run(ctx)
         log_event("command_used", command=command.name, status="ok")
         await send(reply)

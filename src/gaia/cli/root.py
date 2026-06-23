@@ -48,28 +48,44 @@ def _chat(st: CliState) -> None:
     run_cli(env_file=st.env_file)
 
 
+# Argument/option types named once so the command signatures below stay readable.
+EnvFileOpt = Annotated[
+    Path | None, typer.Option("--env-file", help="Secrets .env file (default: ~/.gaia/.env).")
+]
+JsonOpt = Annotated[
+    bool, typer.Option("--json", help="Machine-readable JSON output on read commands.")
+]
+NoColorOpt = Annotated[
+    bool, typer.Option("--no-color", help="Disable colored output (NO_COLOR also works).")
+]
+VersionOpt = Annotated[
+    bool,
+    typer.Option(
+        "--version", callback=_version_callback, is_eager=True, help="Print the version and exit."
+    ),
+]
+HostOpt = Annotated[str, typer.Option(help="Dev web UI host.")]
+PortOpt = Annotated[int, typer.Option(help="Dev web UI port.")]
+TextArg = Annotated[str, typer.Argument(help="The message text to send.")]
+UserOpt = Annotated[
+    str,
+    typer.Option(
+        "--user", help="The SENDER id (not a role), e.g. '972...@s.whatsapp.net' or '12345'."
+    ),
+]
+ChannelOpt = Annotated[
+    str, typer.Option("--channel", help="Channel the sender is on (whatsapp/telegram/cli).")
+]
+NameOpt = Annotated[str, typer.Option("--name", help="Display name for a first-seen sender.")]
+
+
 @app.callback()
 def root(
     ctx: typer.Context,
-    env_file: Annotated[
-        Path | None,
-        typer.Option("--env-file", help="Secrets .env file (default: ~/.gaia/.env)."),
-    ] = None,
-    json_output: Annotated[
-        bool, typer.Option("--json", help="Machine-readable JSON output on read commands.")
-    ] = False,
-    no_color: Annotated[
-        bool, typer.Option("--no-color", help="Disable colored output (NO_COLOR also works).")
-    ] = False,
-    _version_flag: Annotated[
-        bool,
-        typer.Option(
-            "--version",
-            callback=_version_callback,
-            is_eager=True,
-            help="Print the version and exit.",
-        ),
-    ] = False,
+    env_file: EnvFileOpt = None,
+    json_output: JsonOpt = False,
+    no_color: NoColorOpt = False,
+    _version_flag: VersionOpt = False,
 ) -> None:
     """Bare invocation (no subcommand) opens the inline chat."""
     if no_color:
@@ -88,8 +104,8 @@ def chat(ctx: typer.Context) -> None:
 @app.command()
 def dev(
     ctx: typer.Context,
-    host: Annotated[str, typer.Option(help="Dev web UI host.")] = "127.0.0.1",
-    port: Annotated[int, typer.Option(help="Dev web UI port.")] = 8000,
+    host: HostOpt = "127.0.0.1",
+    port: PortOpt = 8000,
 ) -> None:
     """Launch ADK's dev web UI on Gaia — inspect tool calls and LLM requests live."""
     from gaia.app import run_dev
@@ -100,18 +116,10 @@ def dev(
 @app.command()
 def msg(
     ctx: typer.Context,
-    text: Annotated[str, typer.Argument(help="The message text to send.")],
-    user: Annotated[
-        str,
-        typer.Option(
-            "--user",
-            help="The SENDER id (not a role), e.g. '972...@s.whatsapp.net' or '12345'.",
-        ),
-    ] = "local",
-    channel: Annotated[
-        str, typer.Option("--channel", help="Channel the sender is on (whatsapp/telegram/cli).")
-    ] = "cli",
-    name: Annotated[str, typer.Option("--name", help="Display name for a first-seen sender.")] = "",
+    text: TextArg,
+    user: UserOpt = "local",
+    channel: ChannelOpt = "cli",
+    name: NameOpt = "",
 ) -> None:
     """Send one message through the multi-user dispatcher and print the reply.
 

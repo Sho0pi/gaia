@@ -36,6 +36,19 @@ def test_tool_schema_types_are_lowercased_json_schema() -> None:
     assert params["properties"]["c"]["type"] == "string"
 
 
+def test_request_body_includes_reasoning_effort_when_set() -> None:
+    req = LlmRequest(
+        contents=[types.Content(role="user", parts=[types.Part(text="hi")])],
+        config=types.GenerateContentConfig(),
+    )
+
+    high = ChatGptOAuthLlm(model="gpt-5.5", effort="high")._request_body(req, "sid")
+    assert high["reasoning"] == {"effort": "high"}
+
+    default = ChatGptOAuthLlm(model="gpt-5.5")._request_body(req, "sid")
+    assert "reasoning" not in default  # no effort -> field omitted
+
+
 def test_function_response_with_pydantic_payload_is_serializable() -> None:
     import json
 
@@ -63,6 +76,54 @@ def test_function_response_with_pydantic_payload_is_serializable() -> None:
     assert json.loads(item["output"]) == {"r": {"memories": ["x"]}}
 
 
+def test_screenshot_base64_is_dropped_from_replayed_history() -> None:
+    # A browser_take_screenshot result carries the image inline (base64). Replaying that blob
+    # every turn bloats history until the model returns nothing (dead chat). It must be dropped
+    # to a placeholder — the image already reached the user from the live turn.
+
+    big = "A" * 50000  # a base64 image payload
+    contents = [
+        types.Content(
+            role="user",
+            parts=[
+                types.Part(
+                    function_response=types.FunctionResponse(
+                        id="c1",
+                        name="browser_take_screenshot",
+                        response={"content": [{"type": "image", "data": big, "mime": "image/png"}]},
+                    )
+                )
+            ],
+        )
+    ]
+
+    item = _content_to_input(contents)[0]
+
+    assert item["type"] == "function_call_output"
+    assert big not in item["output"]  # the blob is gone
+    assert "omitted" in item["output"]  # replaced by a placeholder
+    assert len(item["output"]) < 1000  # history stays small
+
+
+def test_huge_tool_output_is_capped() -> None:
+    contents = [
+        types.Content(
+            role="user",
+            parts=[
+                types.Part(
+                    function_response=types.FunctionResponse(
+                        id="c1", name="t", response={"text": "Z" * 100000}
+                    )
+                )
+            ],
+        )
+    ]
+
+    item = _content_to_input(contents)[0]
+
+    assert len(item["output"]) < 20000  # capped, not the full 100k
+
+
 def test_reasoning_part_is_replayed_as_a_reasoning_item() -> None:
     import json
 
@@ -74,6 +135,40 @@ def test_reasoning_part_is_replayed_as_a_reasoning_item() -> None:
     item = _content_to_input(contents)[0]
 
     assert item == {"type": "reasoning", "id": "rs_1", "encrypted_content": "enc", "summary": []}
+
+
+def test_inbound_image_becomes_an_input_image_item() -> None:
+    # An image-only turn must produce a real input item (else the backend 400s "missing input").
+    contents = [
+        types.Content(
+            role="user",
+            parts=[types.Part.from_bytes(data=b"\xff\xd8\xffjpeg", mime_type="image/jpeg")],
+        )
+    ]
+
+    item = _content_to_input(contents)[0]
+
+    assert item["type"] == "message" and item["role"] == "user"
+    img = item["content"][0]
+    assert img["type"] == "input_image"
+    assert img["image_url"].startswith("data:image/jpeg;base64,")
+
+
+def test_non_image_inline_data_becomes_a_text_note() -> None:
+    # This backend can't view video/audio/PDF; the part must become a text note (not be
+    # dropped — an attachment-only turn would otherwise have no input and 400).
+    contents = [
+        types.Content(
+            role="user",
+            parts=[types.Part.from_bytes(data=b"%PDF-1.4", mime_type="application/pdf")],
+        )
+    ]
+
+    item = _content_to_input(contents)[0]
+
+    assert item["type"] == "message"
+    content = item["content"][0]
+    assert content["type"] == "input_text" and "application/pdf" in content["text"]
 
 
 def test_orphaned_function_call_gets_synthetic_output() -> None:
@@ -199,6 +294,92 @@ async def test_streams_text_and_function_call(
     parts = final.content.parts
     assert any(p.text == "Hello world" for p in parts)
     assert any(p.function_call and p.function_call.name == "web_search" for p in parts)
+
+
+class _RaisingStream(_FakeStream):
+    """A stream that drops (httpx.ReadError) before emitting any line."""
+
+    def __init__(self) -> None:
+        super().__init__([])
+
+    async def aiter_lines(self) -> Any:
+        import httpx
+
+        raise httpx.ReadError("connection reset")
+        yield ""  # pragma: no cover - unreachable; makes this an async generator
+
+
+async def test_retries_once_on_transient_stream_drop(
+    monkeypatch: pytest.MonkeyPatch, fresh_creds: None
+) -> None:
+    import httpx
+
+    class _FlakyClient(_FakeClient):
+        calls = 0
+
+        def stream(self, method: str, url: str, *, headers: Any, json: dict[str, Any]) -> Any:
+            self.body = json
+            type(self).calls += 1
+            return _RaisingStream() if type(self).calls == 1 else _FakeStream(_SSE)
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda *a, **k: _FlakyClient())
+
+    out = [r async for r in ChatGptOAuthLlm(model="gpt-5").generate_content_async(_request())]
+
+    assert _FlakyClient.calls == 2  # dropped once, retried, then succeeded
+    assert any(p.text == "Hello world" for p in out[-1].content.parts)  # recovered output
+
+
+async def test_no_retry_after_partial_output(
+    monkeypatch: pytest.MonkeyPatch, fresh_creds: None
+) -> None:
+    import httpx
+
+    class _PartialThenDrop(_FakeStream):
+        def __init__(self) -> None:
+            super().__init__([])
+
+        async def aiter_lines(self) -> Any:
+            yield 'data: {"type":"response.output_text.delta","delta":"Hi"}'
+            raise httpx.ReadError("reset mid-stream")
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda *a, **k: _make_client(_PartialThenDrop()))
+
+    # stream=True so the delta is yielded before the drop → already produced output → no retry.
+    llm = ChatGptOAuthLlm(model="gpt-5")
+    with pytest.raises(httpx.ReadError):
+        async for _ in llm.generate_content_async(_request(), stream=True):
+            pass
+
+
+def _make_client(stream_obj: Any) -> Any:
+    client = _FakeClient()
+    client.stream = lambda *a, **k: stream_obj  # type: ignore[method-assign]
+    return client
+
+
+async def test_recovers_text_from_a_completed_message_item(
+    monkeypatch: pytest.MonkeyPatch, fresh_creds: None
+) -> None:
+    # With reasoning effort on, the backend delivers the answer as a completed message item
+    # instead of output_text.delta events. The turn must still carry that text (not be empty).
+    lines = [
+        'data: {"type":"response.output_item.done","item":{"type":"message",'
+        '"role":"assistant","content":[{"type":"output_text","text":"Recovered answer"}]}}',
+        "data: [DONE]",
+    ]
+
+    class _MsgClient(_FakeClient):
+        def stream(self, *a: Any, **k: Any) -> _FakeStream:
+            return _FakeStream(lines)
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda *a, **k: _MsgClient())
+
+    out = [r async for r in ChatGptOAuthLlm(model="gpt-5").generate_content_async(_request())]
+
+    assert any(p.text == "Recovered answer" for p in out[-1].content.parts)
 
 
 async def test_missing_credentials_raises(monkeypatch: pytest.MonkeyPatch) -> None:

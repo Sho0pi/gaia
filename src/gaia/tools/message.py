@@ -18,10 +18,21 @@ import re
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
+from google.adk.tools.tool_context import ToolContext
+
+from gaia import constants
 from gaia.connectors.base import current_chat
+from gaia.tools._helpers import err, ok
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
+    from gaia.memory import Mem0MemoryService
     from gaia.users import User, UserStore
+
+#: A phone-ish run of digits (with common separators); kept only if >= 8 digits so years,
+#: task ids, and other short numbers in memory aren't mistaken for a number.
+# ponytail: memory contact-resolution is phone/WhatsApp-only for now; channel-agnostic
+# contacts (telegram usernames, email, …) tracked in #206.
+_PHONE_RE = re.compile(r"\+?\d[\d\s().\-]{6,}\d")
 
 #: Tool id / ADK tool name (matches the closure name).
 NAME = "message_user"
@@ -79,13 +90,13 @@ def user_address(store: UserStore, user_id: str, channel: str = "") -> tuple[str
 
 def _resolve_target(
     store: UserStore, connectors: dict[str, Any], recipient: str, channel: str
-) -> tuple[str, str] | str:
-    """Resolve ``recipient`` to a ``(channel, chat)`` to send to, or an error string.
+) -> tuple[str, str] | str | None:
+    """Resolve ``recipient`` to a ``(channel, chat)``, an error string, or ``None``.
 
-    Tries the user store first (canonical id, then display name, then a
-    ``channel:sender`` identity); failing that, treats ``recipient`` as a raw sender id
-    (a phone/JID), inferring the channel from the arg, the live chat, or the only
-    running connector.
+    Tries the user store first (canonical id, then display name, then a ``channel:sender``
+    identity), then a raw sender id (a phone/JID). Returns ``None`` for a bare name/label
+    that is neither a known user nor an address (e.g. "girlfriend") so the caller can try
+    resolving it against the user's memory.
     """
     user: User | None = store.get(recipient)
     if user is None:
@@ -103,7 +114,12 @@ def _resolve_target(
             )
         return addr
 
-    # Not a known user — treat recipient as a raw sender id (phone/JID).
+    # A bare name/label (no JID, no digits) that isn't a known user — not an address.
+    # Signal the caller to look it up in the user's memory (e.g. "girlfriend" -> a number).
+    if "@" not in recipient and not any(char.isdigit() for char in recipient):
+        return None
+
+    # Otherwise treat recipient as a raw sender id (phone/JID).
     ch = _infer_channel(connectors, channel)
     if not ch:
         live = ", ".join(connectors) or "none"
@@ -111,52 +127,110 @@ def _resolve_target(
     return ch, _normalize_chat(ch, recipient)
 
 
+def _phone_numbers(text: str) -> list[str]:
+    """Digit-only phone numbers found in ``text`` (>= 8 digits), in order, de-duped."""
+    found: list[str] = []
+    for match in _PHONE_RE.findall(text):
+        digits = re.sub(r"\D", "", match)
+        if len(digits) >= 8 and digits not in found:
+            found.append(digits)
+    return found
+
+
+async def _resolve_via_memory(
+    memory: Mem0MemoryService | None,
+    caller_id: str,
+    recipient: str,
+    connectors: dict[str, Any],
+    channel: str,
+) -> tuple[str, str] | str:
+    """Resolve a label like "girlfriend" to a ``(channel, number)`` from the caller's memory.
+
+    Auto-uses the number only when memory yields exactly one; otherwise returns an error the
+    model can relay (ask for the number, or disambiguate).
+    """
+    if memory is None or not caller_id:
+        return (
+            f"I don't have a contact named {recipient!r}. Give me their number or save them first."
+        )
+    try:
+        response = await memory.search_memory(
+            app_name=constants.APP_NAME, user_id=caller_id, query=recipient
+        )
+    except Exception:
+        return f"couldn't look up {recipient!r} in memory — give me their number."
+    numbers: list[str] = []
+    for entry in response.memories:
+        parts = entry.content.parts if entry.content else None
+        hit_text = "".join(part.text for part in (parts or []) if part.text)
+        for number in _phone_numbers(hit_text):
+            if number not in numbers:
+                numbers.append(number)
+    if not numbers:
+        return f"I don't know {recipient!r}'s number — nothing in memory. Tell me the number first."
+    if len(numbers) > 1:
+        return f"I found more than one number for {recipient!r}: {', '.join(numbers)} — which one?"
+    ch = _infer_channel(connectors, channel)
+    if not ch:
+        live = ", ".join(connectors) or "none"
+        return f"can't tell which channel to send {recipient!r} on (live: {live}) — name one"
+    return ch, _normalize_chat(ch, numbers[0])
+
+
 def make_message_user(
-    users: UserStore, connectors: dict[str, Any]
+    users: UserStore,
+    connectors: dict[str, Any],
+    memory: Callable[[], Mem0MemoryService | None],
 ) -> Callable[..., Awaitable[dict[str, Any]]]:
     """Return the root-only ``message_user`` tool.
 
-    Takes just the two services it needs — the user store and the live connector
-    registry — rather than the whole ``Gaia`` (smaller surface, trivially testable).
+    Takes the user store, the live connector registry, and a getter for the long-term
+    memory service (so a recipient named by relationship/nickname — "girlfriend" — can be
+    resolved to a number from the caller's memory) rather than the whole ``Gaia``.
     """
 
-    async def message_user(recipient: str, text: str, channel: str = "") -> dict[str, Any]:
+    async def message_user(
+        recipient: str, text: str, channel: str = "", *, tool_context: ToolContext
+    ) -> dict[str, Any]:
         """Send a text message to another person, now.
 
-        Resolves ``recipient`` (a known user's id/name, or a raw phone/sender id) to their
-        address and delivers ``text`` over the live connector. Use this to proactively
-        reach someone — e.g. a scheduled "text Grace 'on my way'". Returns an error when
-        the recipient can't be resolved or the channel isn't currently running.
+        Resolves ``recipient`` (a known user's id/name, a raw phone/sender id, OR a
+        relationship/nickname like "girlfriend" — looked up in your memory) to their address
+        and delivers ``text`` over the live connector. Use this to proactively reach someone
+        — e.g. "text Grace 'on my way'". Returns an error when the recipient can't be
+        resolved (then ask for a number) or the channel isn't currently running.
 
         Args:
-            recipient: who to message — a user id ("grace"), display name ("Grace"),
-                a "channel:sender" id, or a raw phone / chat id.
+            recipient: who to message — a user id ("grace"), display name ("Grace"), a
+                relationship/nickname in memory ("girlfriend"), a "channel:sender" id, or a
+                raw phone / chat id.
             text: the message to send.
             channel: optional connector to send on (whatsapp/telegram); inferred from the
                 recipient or the current conversation when omitted.
         """
         # No self-logging: ToolLoggingPlugin records one tool_used event per call.
         if not text.strip():
-            return {"status": "error", "error_message": "text must not be empty"}
+            return err("text must not be empty")
 
         resolved = _resolve_target(users, connectors, recipient.strip(), channel.strip())
+        if resolved is None:  # a bare label — resolve it from the caller's memory
+            caller_id = getattr(tool_context, "user_id", "") or ""
+            resolved = await _resolve_via_memory(
+                memory(), caller_id, recipient.strip(), connectors, channel.strip()
+            )
         if isinstance(resolved, str):
-            return {"status": "error", "error_message": resolved}
+            return err(resolved)
         ch, chat = resolved
 
         sender = connectors.get(ch)
         if sender is None:
-            return {
-                "status": "error",
-                "error_message": f"channel {ch!r} is not running — can't deliver "
-                "(start the daemon)",
-            }
+            return err(f"channel {ch!r} is not running — can't deliver (start the daemon)")
 
         try:
             await sender.send_to(chat, text)
         except Exception as exc:  # tools never raise to the model
-            return {"status": "error", "error_message": f"delivery failed: {exc}"}
+            return err(f"delivery failed: {exc}")
 
-        return {"status": "success", "channel": ch, "chat": chat}
+        return ok(channel=ch, chat=chat)
 
     return message_user

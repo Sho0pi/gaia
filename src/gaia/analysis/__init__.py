@@ -6,7 +6,13 @@ smith-style decision agent that reads the digest and proposes new skills / memor
 writes, each gated behind human approval in ``gaia analyze``.
 """
 
-from gaia.analysis.analyst import AnalysisReport, MemoryProposal, SkillProposal, build_analyst
+from gaia.analysis.analyst import (
+    AnalysisReport,
+    MemoryProposal,
+    SkillProposal,
+    SoulProposal,
+    build_analyst,
+)
 from gaia.analysis.events import EventDigest, digest_events, read_events, render_digest
 
 __all__ = [
@@ -14,6 +20,7 @@ __all__ = [
     "EventDigest",
     "MemoryProposal",
     "SkillProposal",
+    "SoulProposal",
     "build_analyst",
     "digest_events",
     "read_events",

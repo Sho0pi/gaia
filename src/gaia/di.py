@@ -41,6 +41,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from gaia.config import GaiaConfig, Settings
     from gaia.config.store import ConfigSupplier
     from gaia.memory import Mem0MemoryService
+    from gaia.souls.sessions import SoulSessionManager
     from gaia.tools import ToolRegistry
     from gaia.voice import Transcriber
 
@@ -81,9 +82,9 @@ class LifecycleManager:
                 logger.debug("lifecycle close failed", exc_info=True)
 
 
-def _build_user_store(config: GaiaConfig) -> UserStore:
-    """Build the user store and seed admins from ``config.admin`` (a build-time side effect)."""
-    store = UserStore()
+def _build_user_store(users_file: Path, config: GaiaConfig) -> UserStore:
+    """Build the user store (settings-driven path) and seed admins from ``config.admin``."""
+    store = UserStore(users_file)
     store.seed_admins(config.admin)
     return store
 
@@ -114,6 +115,19 @@ def _build_factory(
         mcp_toolsets_provider=mcp_toolsets_provider,
         skill_toolset_provider=skill_toolset_provider,
     )
+
+
+def _build_soul_sessions(
+    config_provider: Callable[[], GaiaConfig], lifecycle: LifecycleManager
+) -> SoulSessionManager:
+    """The warm-soul-session manager; its idle window reads live config (yaml hot-reload)."""
+    from gaia.souls.sessions import SoulSessionManager
+
+    manager = SoulSessionManager(
+        idle_seconds=lambda: config_provider().souls.session_idle_minutes * 60.0
+    )
+    lifecycle.add(manager.close_all)
+    return manager
 
 
 def _build_memory_service(settings: Settings, config: GaiaConfig) -> Mem0MemoryService:
@@ -193,11 +207,18 @@ class Container(containers.DeclarativeContainer):
     souls: providers.Singleton[SoulRegistry] = providers.Singleton(
         SoulRegistry, settings.provided.agent_registry_dir
     )
-    users: providers.Singleton[UserStore] = providers.Singleton(_build_user_store, config)
+    users: providers.Singleton[UserStore] = providers.Singleton(
+        _build_user_store, settings.provided.users_file, config
+    )
     # The missions task board — one shared store (opens ~/.gaia/tasks.db) reused by the
     # task_* tools, the root agent's task_plan, and the dispatcher.
     tasks: providers.Singleton[TaskStore] = providers.Singleton(TaskStore)
     tools: providers.Singleton[ToolRegistry] = providers.Singleton(default_registry, config, tasks)
+
+    # Warm per-(soul, project) sessions so a re-delegation resumes instead of starting cold.
+    soul_sessions: providers.Singleton[SoulSessionManager] = providers.Singleton(
+        _build_soul_sessions, config.provider, lifecycle
+    )
 
     transcriber: providers.Singleton[Transcriber | None] = providers.Singleton(
         build_transcriber, config

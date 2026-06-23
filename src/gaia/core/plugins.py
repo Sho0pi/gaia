@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any
 from google.adk.plugins.base_plugin import BasePlugin
 
 from gaia.logs import log_event
+from gaia.tools.fs.base import current_project
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from google.adk.tools.base_tool import BaseTool
@@ -73,11 +74,19 @@ def _sanitize(tool_name: str, args: Any) -> dict[str, Any]:
 
 
 def _base_fields(name: str, tool_context: ToolContext | None) -> dict[str, Any]:
-    """The fields logged for every tool: its id and the calling agent (when known)."""
+    """The fields logged for every tool: its id, the calling agent, and the soul's project.
+
+    ``project`` is read from the ``current_project`` contextvar, which ``execute_decision``
+    sets around a soul's nested run — so a soul's tool calls are tagged with the project it's
+    building, while the root (Gaia) agent's calls carry none.
+    """
     fields: dict[str, Any] = {"tool": name}
     agent = getattr(tool_context, "agent_name", None)
     if agent:
         fields["agent"] = agent
+    project = current_project.get()
+    if project:
+        fields["project"] = project
     return fields
 
 
@@ -131,7 +140,12 @@ class ToolPermissionPlugin(BasePlugin):
 
 
 class ToolLoggingPlugin(BasePlugin):
-    """Emit exactly one ``tool_used`` event per tool call, for every tool."""
+    """Log one ``tool_used`` event per tool call — the single place tool calls are logged.
+
+    One line per call, emitted when the tool finishes: its name, the calling agent, the call
+    **args** (so a failure shows the command that failed), and the status. Tools never hand-roll
+    their own logging.
+    """
 
     def __init__(self) -> None:
         super().__init__(name="tool_logging")
@@ -145,15 +159,8 @@ class ToolLoggingPlugin(BasePlugin):
         result: dict[str, Any],
     ) -> None:
         name = getattr(tool, "name", type(tool).__name__)
-        fields = _base_fields(name, tool_context)
-        fields["status"] = result.get("status", "ok") if isinstance(result, dict) else "ok"
-        try:
-            args = _sanitize(name, tool_args)
-        except Exception:  # pragma: no cover - defensive; never break a tool over logging
-            args = {}
-        if args:
-            fields["args"] = args
-        log_event("tool_used", **fields)
+        status = result.get("status", "ok") if isinstance(result, dict) else "ok"
+        self._log_finish(name, tool_context, tool_args, status)
         return None
 
     async def on_tool_error_callback(
@@ -165,14 +172,32 @@ class ToolLoggingPlugin(BasePlugin):
         error: Exception,
     ) -> None:
         name = getattr(tool, "name", type(tool).__name__)
+        self._log_finish(name, tool_context, tool_args, "error", error=type(error).__name__)
+        return None
+
+    def _log_finish(
+        self,
+        name: str,
+        tool_context: ToolContext,
+        tool_args: dict[str, Any],
+        status: str,
+        *,
+        error: str | None = None,
+    ) -> None:
+        """Emit the one ``tool_used`` line: base fields + args + status (+ error)."""
         fields = _base_fields(name, tool_context)
-        fields["status"] = "error"
-        fields["error"] = type(error).__name__
-        try:
-            args = _sanitize(name, tool_args)
-        except Exception:  # pragma: no cover - defensive; never break a tool over logging
-            args = {}
+        args = _safe_args(name, tool_args)
         if args:
             fields["args"] = args
+        fields["status"] = status
+        if error is not None:
+            fields["error"] = error
         log_event("tool_used", **fields)
-        return None
+
+
+def _safe_args(name: str, tool_args: dict[str, Any]) -> dict[str, Any]:
+    """``_sanitize`` that never raises — logging must never break a tool call."""
+    try:
+        return _sanitize(name, tool_args)
+    except Exception:  # pragma: no cover - defensive
+        return {}

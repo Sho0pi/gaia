@@ -6,17 +6,20 @@ ChatGPT OAuth tokens don't work against ``api.openai.com``; they call
 ADK's request/response to that backend, mirroring openclaw's
 ``src/llm/providers/openai-chatgpt-responses.ts``.
 
-Scope: text + function (tool) calls, with gpt-5.x reasoning items replayed across turns
-(carried on a ``thought_signature`` part) so tool calls don't loop. Inline images are out
-of scope. The wire shape of this backend is unofficial and may change; everything
-backend-specific is kept in this one module.
+Scope: text + inbound images + function (tool) calls, with gpt-5.x reasoning items replayed
+across turns (carried on a ``thought_signature`` part) so tool calls don't loop, and a tunable
+reasoning ``effort`` (``reasoning.effort``). (A vision model is needed for images.) The wire
+shape of this backend is unofficial and may change; everything backend-specific is kept in
+this one module.
 
 httpx is imported lazily (optional ``llm`` dep group).
 """
 
 from __future__ import annotations
 
+import base64
 import json
+import logging
 import uuid
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any
@@ -31,7 +34,19 @@ from gaia.providers.openai.store import Credentials, load_credentials
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from google.adk.models.llm_request import LlmRequest
 
+logger = logging.getLogger(__name__)
+
 RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses"
+
+#: Cap on any single string inside a replayed tool result, and on the whole serialized output.
+#: A tool like ``browser_take_screenshot`` returns the image inline (a base64 block); replaying
+#: that blob into every later turn's history bloats the request until the model returns nothing
+#: (a reasoning-only, message-less completion -> a dead chat). The image is already delivered to
+#: the user from the live turn, so the model never needs the bytes in history.
+_MAX_STR = 2000
+_MAX_TOOL_OUTPUT = 16000
+#: Keys whose value is a binary payload to drop wholesale (mcp image block ``data``, etc.).
+_BINARY_KEYS = frozenset({"data", "image", "image_url", "b64_json", "bytes", "blob"})
 
 
 class ChatGptNotAuthenticatedError(RuntimeError):
@@ -52,6 +67,35 @@ def _jsonable(obj: Any) -> Any:
 def _dumps(value: Any) -> str:
     """``json.dumps`` that never raises on a tool's pydantic/odd return value."""
     return json.dumps(value, default=_jsonable)
+
+
+def _shrink(value: Any) -> Any:
+    """Drop/truncate heavy bits of a tool result so the replayed history stays small.
+
+    Binary payloads (a screenshot's inline base64) are dropped to a placeholder; any long
+    string is truncated. Keeps the structure so the model still sees what the tool returned.
+    """
+    if isinstance(value, dict):
+        out: dict[str, Any] = {}
+        for k, v in value.items():
+            if k in _BINARY_KEYS and isinstance(v, str) and len(v) > _MAX_STR:
+                out[k] = f"[{len(v)} chars omitted]"
+            else:
+                out[k] = _shrink(v)
+        return out
+    if isinstance(value, list):
+        return [_shrink(v) for v in value]
+    if isinstance(value, str) and len(value) > _MAX_STR:
+        return value[:_MAX_STR] + f"…[{len(value) - _MAX_STR} more chars omitted]"
+    return value
+
+
+def _tool_output(response: Any) -> str:
+    """Serialize a tool result for replay, shrunk + capped so it can't bloat history."""
+    text = _dumps(_shrink(response or {}))
+    if len(text) > _MAX_TOOL_OUTPUT:
+        text = text[:_MAX_TOOL_OUTPUT] + "…[truncated]"
+    return text
 
 
 def _content_to_input(contents: list[types.Content]) -> list[dict[str, Any]]:
@@ -90,6 +134,27 @@ def _content_to_input(contents: list[types.Content]) -> list[dict[str, Any]]:
                         "content": [{"type": kind, "text": part.text}],
                     }
                 )
+            elif part.inline_data and part.inline_data.data:
+                mime = part.inline_data.mime_type or "image/jpeg"
+                if mime.startswith("image/"):
+                    # An inbound image. This is OpenAI's Responses wire format (input_image +
+                    # base64 data URL) — every provider differs (Claude uses source/base64,
+                    # Gemini inline_data); we convert here only because this is our own backend.
+                    # An image-only turn would otherwise produce no input items -> 400.
+                    b64 = base64.b64encode(bytes(part.inline_data.data)).decode("ascii")
+                    block: dict[str, Any] = {
+                        "type": "input_image",
+                        "image_url": f"data:{mime};base64,{b64}",
+                    }
+                else:
+                    # Video/audio/PDF: this backend has no vision for them. Don't drop the part
+                    # silently (an attachment-only turn would then have no input -> 400); send a
+                    # text note so the turn stays valid and the model can say it can't view it.
+                    block = {
+                        "type": "input_text",
+                        "text": f"[the user sent a {mime} file, which this model can't open]",
+                    }
+                items.append({"type": "message", "role": role, "content": [block]})
             elif part.function_call:
                 call_id = part.function_call.id or part.function_call.name or ""
                 call_ids.add(call_id)
@@ -108,7 +173,7 @@ def _content_to_input(contents: list[types.Content]) -> list[dict[str, Any]]:
                     {
                         "type": "function_call_output",
                         "call_id": call_id,
-                        "output": _dumps(part.function_response.response or {}),
+                        "output": _tool_output(part.function_response.response),
                     }
                 )
     # Heal orphaned calls (interrupted turns) so the backend doesn't 400 the session.
@@ -169,6 +234,10 @@ def _system_text(llm_request: LlmRequest) -> str:
 class ChatGptOAuthLlm(BaseLlm):
     """Run an LLM turn over the user's ChatGPT subscription (Responses backend)."""
 
+    #: Reasoning effort (minimal|low|medium|high); blank = the model's default. Sent as the
+    #: Responses ``reasoning.effort`` so the gpt-5.x backend thinks harder or faster on demand.
+    effort: str = ""
+
     @staticmethod
     def supported_models() -> list[str]:
         return [r"openai-chatgpt/.*", r"chatgpt/.*"]
@@ -176,19 +245,12 @@ class ChatGptOAuthLlm(BaseLlm):
     def _model_id(self) -> str:
         return self.model.split("/", 1)[1] if "/" in self.model else self.model
 
-    async def generate_content_async(
-        self, llm_request: LlmRequest, stream: bool = False
-    ) -> AsyncGenerator[LlmResponse, None]:
-        import httpx
-
-        creds = load_credentials()
-        if creds is None:
-            raise ChatGptNotAuthenticatedError("no ChatGPT login — run: gaia llm auth openai")
-
-        # Body shape matches openclaw's working Codex request (buildRequestBody): the
-        # backend 400s without text/include/tool_choice/parallel_tool_calls/prompt_cache_key,
-        # and rejects an empty instructions string or an empty tools array.
-        session_id = str(uuid.uuid4())
+    def _request_body(self, llm_request: LlmRequest, session_id: str) -> dict[str, Any]:
+        """The Responses request body. Shape matches openclaw's working Codex request
+        (buildRequestBody): the backend 400s without text/include/tool_choice/
+        parallel_tool_calls/prompt_cache_key, and rejects an empty instructions string or an
+        empty tools array. ``reasoning.effort`` is added only when an effort is set.
+        """
         body: dict[str, Any] = {
             "model": self._model_id(),
             "instructions": _system_text(llm_request) or "You are a helpful assistant.",
@@ -201,14 +263,44 @@ class ChatGptOAuthLlm(BaseLlm):
             "include": ["reasoning.encrypted_content"],
             "prompt_cache_key": session_id,
         }
+        if self.effort:
+            body["reasoning"] = {"effort": self.effort}
         tools = _tools_from_request(llm_request)
         if tools:
             body["tools"] = tools
+        return body
+
+    async def generate_content_async(
+        self, llm_request: LlmRequest, stream: bool = False
+    ) -> AsyncGenerator[LlmResponse, None]:
+        import httpx
+
+        creds = load_credentials()
+        if creds is None:
+            raise ChatGptNotAuthenticatedError("no ChatGPT login — run: gaia llm auth openai")
+
+        session_id = str(uuid.uuid4())
+        body = self._request_body(llm_request, session_id)
 
         async with httpx.AsyncClient(timeout=httpx.Timeout(600.0)) as client:
             creds = await self._ensure_fresh(creds, client)
-            async for resp in self._stream(client, creds, body, session_id, stream):
-                yield resp
+            # Retry once on a transient stream drop (httpx TransportError: ReadError/ConnectError/
+            # protocol/timeout) — but only if nothing was emitted yet, so a mid-stream drop can't
+            # duplicate already-delivered text. A clean blip recovers without the user seeing it.
+            for attempt in range(2):
+                produced = False
+                try:
+                    async for resp in self._stream(client, creds, body, session_id, stream):
+                        produced = True
+                        yield resp
+                    return
+                except httpx.TransportError as exc:
+                    if produced or attempt == 1:
+                        raise
+                    logger.warning(
+                        "ChatGPT stream dropped (%s) before any output — retrying once",
+                        type(exc).__name__,
+                    )
 
     async def _ensure_fresh(self, creds: Credentials, client: Any) -> Credentials:
         if creds.is_expired():
@@ -237,6 +329,10 @@ class ChatGptOAuthLlm(BaseLlm):
         text_parts: list[str] = []
         calls: list[types.Part] = []
         reasoning: list[types.Part] = []
+        # Whether any text was delivered incrementally as partial deltas. When the backend
+        # sends the answer only as a completed message item (seen with reasoning effort on) we
+        # recover it below, and it must still be put in the final response.
+        streamed = False
         async with client.stream(
             "POST", RESPONSES_URL, headers=self._headers(creds, session_id), json=body
         ) as response:
@@ -257,13 +353,24 @@ class ChatGptOAuthLlm(BaseLlm):
                     delta = event.get("delta", "")
                     text_parts.append(delta)
                     if stream and delta:
+                        streamed = True
                         yield LlmResponse(
                             content=types.Content(role="model", parts=[types.Part(text=delta)]),
                             partial=True,
                         )
                 elif kind == "response.output_item.done":
                     item = event.get("item", {})
-                    if item.get("type") == "function_call":
+                    if item.get("type") == "message" and not text_parts:
+                        # The assistant message arrived as a completed item, not as
+                        # output_text.delta events (the backend does this with reasoning effort
+                        # on). Recover its text so the turn isn't empty. Guarded on no deltas so
+                        # a normal streamed turn isn't double-counted.
+                        text_parts.extend(
+                            c.get("text", "")
+                            for c in item.get("content") or []
+                            if c.get("type") in ("output_text", "text") and c.get("text")
+                        )
+                    elif item.get("type") == "function_call":
                         calls.append(
                             types.Part(
                                 function_call=types.FunctionCall(
@@ -285,9 +392,21 @@ class ChatGptOAuthLlm(BaseLlm):
         # backend expects when these items are replayed next turn.
         parts: list[types.Part] = [*reasoning]
         full = "".join(text_parts)
-        if full and not stream:
+        # Add the text unless it was already delivered as partial deltas (stream mode). Text
+        # recovered from a message item was never streamed, so it still needs to go out here.
+        if full and not streamed:
             parts.append(types.Part(text=full))
         parts.extend(calls)
+        # A turn with neither a message nor a tool call (reasoning only) reaches the user as an
+        # empty "(Done — nothing to add)" — the dead-chat symptom. Usually a sign history has
+        # grown too big (see _tool_output). Log it so the failure is visible if it recurs.
+        if not full and not calls:
+            logger.warning(
+                "openai turn produced no message or tool call (reasoning-only) — "
+                "model=%s, reasoning_items=%d",
+                self._model_id(),
+                len(reasoning),
+            )
         if parts or not stream:
             yield LlmResponse(
                 content=types.Content(role="model", parts=parts or [types.Part(text=full)]),

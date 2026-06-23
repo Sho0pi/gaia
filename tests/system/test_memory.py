@@ -27,14 +27,14 @@ def _tool_names(gaia: Gaia) -> set[str]:
 
 
 def test_root_agent_has_memory_tools_by_default(tmp_path: Path) -> None:
-    # Memory is on by default; load_memory (read) + remember (write) are registered.
+    # Memory is on by default; load_memory (read) + remember (write) are registered and
+    # reach the root agent through its AclToolset (which resolves the registry per turn).
     settings = Settings(agent_registry_dir=tmp_path, config_path=tmp_path / "gaia.yaml")
     gaia = Gaia(settings)
 
-    root = gaia.build_root_agent()
+    gaia.build_root_agent()  # smoke: the root builds with memory on
 
-    names = {getattr(t, "name", getattr(t, "__name__", "")) for t in root.tools}
-    assert {"load_memory", "remember"} <= names
+    assert {"load_memory", "remember"} <= _tool_names(gaia)
 
 
 def test_memory_tools_dropped_when_disabled(tmp_path: Path) -> None:

@@ -41,6 +41,13 @@ class LLMConfig(BaseModel):
     model: str = Field(
         default="gemini-2.0-flash", description="Model id, e.g. gemini-2.5-flash or gpt-4o."
     )
+    effort: str = Field(
+        default="",
+        description="Reasoning effort for thinking-capable models: minimal|low|medium|high "
+        "(blank = provider default). Mapped per provider — OpenAI/Anthropic via litellm "
+        "reasoning_effort, ChatGPT-OAuth via reasoning.effort, Gemini via thinking budget. "
+        "Change it from chat with /effort.",
+    )
     # Per-provider blocks. Each provider gets its own settings sub-block here as needed
     # (openai today; anthropic/gemini/… can follow the same shape).
     openai: OpenAIConfig = Field(
@@ -189,6 +196,24 @@ class CronConfig(BaseModel):
     )
 
 
+class AnalysisConfig(BaseModel):
+    """The self-improve loop: gaia mines its own usage to grow skills/souls/memory."""
+
+    enabled: bool = Field(
+        default=False,
+        description="Run the self-improve loop in the daemon — periodically analyze usage and "
+        "apply new/refined skills, souls, and memories. Off by default (opt-in).",
+    )
+    interval_hours: float = Field(
+        default=24.0, description="How often the improve cycle runs (hours)."
+    )
+    window_days: int = Field(default=7, description="How many days of usage each cycle analyzes.")
+    autonomous: bool = Field(
+        default=True,
+        description="Apply proposals automatically. (A HITL review mode is a follow-up.)",
+    )
+
+
 class MissionsConfig(BaseModel):
     """The missions task board engine (the dispatcher inside the daemon)."""
 
@@ -284,9 +309,6 @@ class WhatsAppConnectorConfig(BaseModel):
     """WhatsApp connector toggle + access policy."""
 
     enabled: bool = Field(default=False, description="Run the WhatsApp connector.")
-    store_path: Path | None = Field(
-        default=None, description="Session db path; empty = the default under the home dir."
-    )
     allow: list[str] = Field(
         default_factory=list,
         description="Allowed sender ids; empty = everyone (enforcement is a follow-up).",
@@ -297,7 +319,6 @@ class WhatsAppConnectorConfig(BaseModel):
         description="Look active while working: blue-tick the message and show the 'typing…' "
         "(or 'recording audio…') indicator for the turn.",
     )
-    default_soul: str = Field(default="gaia", description="Soul used for new chats.")
     default_role: Literal["admin", "user", "guest"] = Field(
         default="guest",
         description="Role for a first-seen sender (admin/user/guest). 'guest' is gated "
@@ -311,7 +332,6 @@ class CLIConnectorConfig(BaseModel):
     enabled: bool = Field(
         default=False, description="Run the local terminal chat; foreground-exclusive."
     )
-    default_soul: str = Field(default="gaia", description="Soul used in the CLI session.")
     default_role: Literal["admin", "user", "guest"] = Field(
         default="admin", description="Role for the local operator."
     )
@@ -412,8 +432,23 @@ class MemoryConfig(BaseModel):
         default=3600,
         description="Also flush if this many seconds have passed since the first buffered turn.",
     )
+    extraction_instructions: str = Field(
+        default="",
+        description="Override what long-term memory extracts (mem0 custom_instructions); "
+        "empty = the built-in default (durable user facts only, no assistant action logs).",
+    )
     recall_limit: int = Field(
         default=5, description="How many memories load_memory returns per search."
+    )
+    preload: bool = Field(
+        default=True,
+        description="At session start, distil the user's facts + recent projects into a "
+        "profile baked into the prompt (always-on recall); off = the agent must call "
+        "load_memory to recall anything.",
+    )
+    preload_limit: int = Field(
+        default=20,
+        description="Max bullet points the session-start profile keeps (importance-ranked).",
     )
     # Provider-agnostic components. Defaults wire Gemini (reusing the agent's model; keys
     # come from env like the agent) + a local chroma store; override provider/model per
@@ -459,6 +494,11 @@ class SoulsConfig(BaseModel):
         default=300.0,
         description="Max seconds a delegated soul may run before the delegation is abandoned.",
     )
+    session_idle_minutes: float = Field(
+        default=30.0,
+        description="Keep a soul's session warm between delegations so it resumes (instead of "
+        "re-reading its workspace each time); evict it after this many minutes idle.",
+    )
 
 
 class AgentBinding(BaseModel):
@@ -490,6 +530,7 @@ class GaiaConfig(BaseModel):
     browser: BrowserConfig = Field(default_factory=BrowserConfig)
     cron: CronConfig = Field(default_factory=CronConfig)
     missions: MissionsConfig = Field(default_factory=MissionsConfig)
+    analysis: AnalysisConfig = Field(default_factory=AnalysisConfig)
     voice: VoiceConfig = Field(default_factory=VoiceConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     default_communication_style: str = Field(
@@ -497,6 +538,11 @@ class GaiaConfig(BaseModel):
     )
     skills_dir: Path | None = Field(
         default=None, description="Skills folder; empty = the default under the home dir."
+    )
+    skill_index: list[str] = Field(
+        default_factory=list,
+        description="Skill index urls (json manifests of {name, description, source}) that "
+        "'skill search' / Gaia search for installable skills; empty = web-search fallback only.",
     )
     agents: dict[str, AgentBinding] = Field(
         default_factory=dict,

@@ -12,6 +12,7 @@ class WhoamiCommand(Command):
     async def run(self, ctx: CommandContext) -> str:
         cfg = ctx.gaia.config
         model = cfg.llm.model or ctx.gaia.settings.model
+        effort = f"  (effort: {cfg.llm.effort})" if cfg.llm.effort else ""
         memory = "on" if cfg.memory.enabled else "off"
         user = ctx.gaia.users.get(ctx.user_id)
         identities = ", ".join(user.identities) if user else "—"
@@ -21,6 +22,6 @@ class WhoamiCommand(Command):
             f"role: {ctx.role}\n"
             f"channels: {identities}\n"
             f"session: {ctx.session_id}\n"
-            f"model: {model}\n"
+            f"model: {model}{effort}\n"
             f"long-term memory: {memory}"
         )

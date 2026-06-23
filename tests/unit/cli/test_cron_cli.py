@@ -23,7 +23,7 @@ def cron_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def test_add_and_list(cron_file: Path) -> None:
-    added = runner.invoke(cli_app, ["cron", "add", "0 9 * * *", "AI news brief", "--name", "news"])
+    added = runner.invoke(cli_app, ["cron", "new", "0 9 * * *", "AI news brief", "--name", "news"])
     assert added.exit_code == 0, added.output
 
     listed = runner.invoke(cli_app, ["--json", "cron", "list"])
@@ -34,9 +34,9 @@ def test_add_and_list(cron_file: Path) -> None:
 
 
 def test_add_every_and_at_flags(cron_file: Path) -> None:
-    assert runner.invoke(cli_app, ["cron", "add", "--every", "60", "tick"]).exit_code == 0
+    assert runner.invoke(cli_app, ["cron", "new", "--every", "60", "tick"]).exit_code == 0
     assert (
-        runner.invoke(cli_app, ["cron", "add", "--at", "2030-01-01T09:00:00", "once"]).exit_code
+        runner.invoke(cli_app, ["cron", "new", "--at", "2030-01-01T09:00:00", "once"]).exit_code
         == 0
     )
 
@@ -45,7 +45,7 @@ def test_add_every_and_at_flags(cron_file: Path) -> None:
 
 
 def test_add_bad_expression_exits_2(cron_file: Path) -> None:
-    result = runner.invoke(cli_app, ["cron", "add", "not cron", "x"])
+    result = runner.invoke(cli_app, ["cron", "new", "not cron", "x"])
 
     assert result.exit_code == 2
     assert "invalid cron expression" in result.output

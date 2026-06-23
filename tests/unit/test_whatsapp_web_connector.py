@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 
-from gaia.connectors.base import Send
+from gaia.connectors.base import Inbound, Send
 from gaia.connectors.whatsapp_web import WhatsAppWebConnector, _message_text
 
 
@@ -72,6 +72,8 @@ class _FakeClient:
         self.handlers: dict[Any, Any] = {}
         self.replies: list[tuple[str, Any]] = []
         self.images: list[tuple[Any, str, str | None]] = []
+        self.media_sends: list[tuple[str, Any, str, str | None]] = []
+        self.doc_filenames: list[str | None] = []
         self.connected = False
         self.stopped = False
         self.reads: list[tuple[str, Any, Any, Any]] = []
@@ -99,6 +101,19 @@ class _FakeClient:
 
     async def send_image(self, to: Any, file: str, caption: str | None = None) -> None:
         self.images.append((to, file, caption))
+        self.media_sends.append(("send_image", to, file, caption))
+
+    async def send_video(self, to: Any, file: str, caption: str | None = None) -> None:
+        self.media_sends.append(("send_video", to, file, caption))
+
+    async def send_audio(self, to: Any, file: str, caption: str | None = None) -> None:
+        self.media_sends.append(("send_audio", to, file, caption))
+
+    async def send_document(
+        self, to: Any, file: str, caption: str | None = None, filename: str | None = None
+    ) -> None:
+        self.media_sends.append(("send_document", to, file, caption))
+        self.doc_filenames.append(filename)
 
     async def get_me(self) -> SimpleNamespace:
         # Device carries both the phone JID and the @lid identity.
@@ -172,7 +187,7 @@ def test_no_quote_returns_plain_text() -> None:
     assert _message_text(_msg(conversation="just a normal message")) == "just a normal message"
 
 
-async def _noop_dispatch(_sender_id: str, _name: str, _text: str, _send: Send) -> None:
+async def _noop_dispatch(_sender_id: str, _name: str, _inbound: Inbound, _send: Send) -> None:
     return None
 
 
@@ -189,10 +204,10 @@ async def test_inbound_message_routed_to_dispatch(
 ) -> None:
     seen: list[str] = []
 
-    async def dispatch(_sender_id: str, _name: str, text: str, send: Send) -> None:
-        seen.append(text)
+    async def dispatch(_sender_id: str, _name: str, inbound: Inbound, send: Send) -> None:
+        seen.append(inbound.text)
         # Stream two replies to prove the sink can fan out one inbound to many.
-        await send(f"echo:{text}")
+        await send(f"echo:{inbound.text}")
         await send("again")
 
     client = WhatsAppWebConnector(tmp_path / "wa.db", dispatch).build_client()
@@ -207,7 +222,7 @@ async def test_inbound_message_routed_to_dispatch(
 async def test_media_reply_sent_as_image(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
     from gaia.connectors.base import Media
 
-    async def dispatch(_sender_id: str, _name: str, _text: str, send: Send) -> None:
+    async def dispatch(_sender_id: str, _name: str, _inbound: Inbound, send: Send) -> None:
         await send("here:")  # a text reply, then the image
         await send(Media(Path("/tmp/shot.png"), caption="screenshot"))
 
@@ -216,6 +231,31 @@ async def test_media_reply_sent_as_image(fake_neonize: dict[str, Any], tmp_path:
 
     assert [text for text, _ in client.replies] == ["here:"]  # text reply still sent
     assert client.images == [("chat-jid", "/tmp/shot.png", "screenshot")]  # image via send_image
+
+
+@pytest.mark.parametrize(
+    ("name", "method"),
+    [
+        ("clip.mp4", "send_video"),
+        ("song.mp3", "send_audio"),
+        ("report.pdf", "send_document"),
+        ("data.csv", "send_document"),  # unknown-ish type → document
+    ],
+)
+async def test_media_reply_sent_by_kind(
+    name: str, method: str, fake_neonize: dict[str, Any], tmp_path: Path
+) -> None:
+    from gaia.connectors.base import Media
+
+    async def dispatch(_sender_id: str, _name: str, _inbound: Inbound, send: Send) -> None:
+        await send(Media(Path("/tmp") / name, caption="here"))
+
+    client = WhatsAppWebConnector(tmp_path / "wa.db", dispatch).build_client()
+    await client.handlers[fake_neonize["MessageEv"]](client, _msg(conversation="x"))
+
+    assert client.media_sends == [(method, "chat-jid", f"/tmp/{name}", "here")]
+    if method == "send_document":
+        assert client.doc_filenames == [name]  # filename set, else WhatsApp shows "Untitled"
 
 
 async def test_empty_message_is_ignored(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
@@ -238,7 +278,7 @@ async def test_lid_chat_captures_phone_number_jid(
 
     seen: list[str] = []
 
-    async def dispatch(sender_id: str, _name: str, _text: str, _send: Send) -> None:
+    async def dispatch(sender_id: str, _name: str, _inbound: Inbound, _send: Send) -> None:
         seen.append(sender_id)
 
     client = WhatsAppWebConnector(tmp_path / "wa.db", dispatch).build_client()
@@ -322,8 +362,8 @@ async def test_voice_note_transcribed_to_handler(
     sys.modules["neonize.aioze.client"].NewAClient = _DownloadClient  # type: ignore[attr-defined]
     seen: list[str] = []
 
-    async def dispatch(_sender_id: str, _name: str, text: str, _send: Send) -> None:
-        seen.append(text)
+    async def dispatch(_sender_id: str, _name: str, inbound: Inbound, _send: Send) -> None:
+        seen.append(inbound.text)
 
     transcriber = _FakeTranscriber()
     connector = WhatsAppWebConnector(tmp_path / "wa.db", dispatch, transcriber=transcriber)
@@ -371,8 +411,8 @@ async def test_text_message_pipeline_unchanged_with_transcriber(
 ) -> None:
     seen: list[str] = []
 
-    async def dispatch(_sender_id: str, _name: str, text: str, _send: Send) -> None:
-        seen.append(text)
+    async def dispatch(_sender_id: str, _name: str, inbound: Inbound, _send: Send) -> None:
+        seen.append(inbound.text)
 
     connector = WhatsAppWebConnector(tmp_path / "wa.db", dispatch, transcriber=_FakeTranscriber())
     client = connector.build_client()
@@ -380,6 +420,184 @@ async def test_text_message_pipeline_unchanged_with_transcriber(
     await client.handlers[fake_neonize["MessageEv"]](client, _msg(conversation="plain text"))
 
     assert seen == ["plain text"]  # no [voice message] prefix, no transcription
+
+
+# --- inbound images (#6 / #138) ------------------------------------------------------
+
+
+def _image_msg(caption: str = "") -> SimpleNamespace:
+    """A fake MessageEv carrying an imageMessage (with optional caption)."""
+    msg = _msg()  # empty text fields
+    msg.Message.imageMessage = SimpleNamespace(
+        mediaKey=b"key", caption=caption, mimetype="image/jpeg"
+    )
+    msg.Info.ID = "IMG123"
+    return msg
+
+
+async def test_inbound_image_downloaded_and_dispatched_with_caption(
+    fake_neonize: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    uploads = tmp_path / "uploads"
+    monkeypatch.setattr("gaia.constants.UPLOADS_DIR", uploads)
+    sys.modules["neonize.aioze.client"].NewAClient = _DownloadClient  # type: ignore[attr-defined]
+    captured: list[Inbound] = []
+
+    async def dispatch(_sender_id: str, _name: str, inbound: Inbound, _send: Send) -> None:
+        captured.append(inbound)
+
+    client = WhatsAppWebConnector(tmp_path / "wa.db", dispatch).build_client()
+    await client.handlers[fake_neonize["MessageEv"]](client, _image_msg(caption="what's this?"))
+
+    assert len(captured) == 1
+    inbound = captured[0]
+    assert inbound.text == "what's this?"  # caption becomes the turn's text
+    assert len(inbound.media) == 1
+    item = inbound.media[0]
+    assert item.kind == "image" and item.mime == "image/jpeg"
+    saved = next(uploads.glob("IMG123.*"))  # downloaded into the sandbox-reachable uploads dir
+    assert saved.read_bytes() == b"OGGDATA" and item.path == saved
+
+
+@pytest.mark.parametrize(
+    ("field", "kind", "mime", "extra"),
+    [
+        ("videoMessage", "video", "video/mp4", {"caption": "watch this"}),
+        ("documentMessage", "document", "application/pdf", {"fileName": "report.pdf"}),
+        ("stickerMessage", "image", "image/webp", {}),
+    ],
+)
+async def test_inbound_media_types_downloaded_and_dispatched(
+    field: str,
+    kind: str,
+    mime: str,
+    extra: dict[str, Any],
+    fake_neonize: dict[str, Any],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Video / document / sticker each download to the sandbox uploads dir and reach the handler
+    # as an InboundMedia with the right kind/mime (the handler then hands it to the model).
+    uploads = tmp_path / "uploads"
+    monkeypatch.setattr("gaia.constants.UPLOADS_DIR", uploads)
+    sys.modules["neonize.aioze.client"].NewAClient = _DownloadClient  # type: ignore[attr-defined]
+    captured: list[Inbound] = []
+
+    async def dispatch(_sender_id: str, _name: str, inbound: Inbound, _send: Send) -> None:
+        captured.append(inbound)
+
+    msg = _msg()
+    setattr(msg.Message, field, SimpleNamespace(mediaKey=b"key", mimetype=mime, **extra))
+    msg.Info.ID = "MEDIA1"
+
+    client = WhatsAppWebConnector(tmp_path / "wa.db", dispatch).build_client()
+    await client.handlers[fake_neonize["MessageEv"]](client, msg)
+
+    assert len(captured) == 1
+    item = captured[0].media[0]
+    assert item.kind == kind and item.mime == mime
+    assert item.path.exists() and item.path.read_bytes() == b"OGGDATA"
+    if extra.get("caption"):
+        assert captured[0].text == extra["caption"]
+    if extra.get("fileName"):
+        assert item.path.suffix == ".pdf"  # document keeps its own extension
+
+
+async def test_inbound_location_becomes_text(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
+    captured: list[Inbound] = []
+
+    async def dispatch(_sender_id: str, _name: str, inbound: Inbound, _send: Send) -> None:
+        captured.append(inbound)
+
+    msg = _msg()
+    msg.Message.locationMessage = SimpleNamespace(
+        degreesLatitude=32.07, degreesLongitude=34.78, name="Tel Aviv", address=""
+    )
+    client = WhatsAppWebConnector(tmp_path / "wa.db", dispatch).build_client()
+    await client.handlers[fake_neonize["MessageEv"]](client, msg)
+
+    assert len(captured) == 1 and not captured[0].media
+    text = captured[0].text
+    assert "32.07,34.78" in text and "Tel Aviv" in text and "maps.google.com" in text
+
+
+async def test_inbound_contact_becomes_text(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
+    captured: list[Inbound] = []
+
+    async def dispatch(_sender_id: str, _name: str, inbound: Inbound, _send: Send) -> None:
+        captured.append(inbound)
+
+    msg = _msg()
+    msg.Message.contactMessage = SimpleNamespace(
+        displayName="Dana", vcard="BEGIN:VCARD\nTEL;waid=972:+972 50-123-4567\nEND:VCARD"
+    )
+    client = WhatsAppWebConnector(tmp_path / "wa.db", dispatch).build_client()
+    await client.handlers[fake_neonize["MessageEv"]](client, msg)
+
+    assert len(captured) == 1
+    assert "Dana" in captured[0].text and "+972 50-123-4567" in captured[0].text
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expect"),
+    [
+        ("buttonsResponseMessage", SimpleNamespace(selectedDisplayText="Yes"), "[Selected: Yes]"),
+        (
+            "templateButtonReplyMessage",
+            SimpleNamespace(selectedDisplayText="Option B"),
+            "[Selected: Option B]",
+        ),
+        ("listResponseMessage", SimpleNamespace(title="Large"), "[Selected: Large]"),
+        ("reactionMessage", SimpleNamespace(text="👍"), "[Reacted 👍 to a message]"),
+    ],
+)
+async def test_inbound_interactive_replies_become_text(
+    field: str, value: Any, expect: str, fake_neonize: dict[str, Any], tmp_path: Path
+) -> None:
+    captured: list[Inbound] = []
+
+    async def dispatch(_sender_id: str, _name: str, inbound: Inbound, _send: Send) -> None:
+        captured.append(inbound)
+
+    msg = _msg()
+    setattr(msg.Message, field, value)
+    client = WhatsAppWebConnector(tmp_path / "wa.db", dispatch).build_client()
+    await client.handlers[fake_neonize["MessageEv"]](client, msg)
+
+    assert len(captured) == 1 and captured[0].text == expect
+
+
+async def test_inbound_poll_creation_becomes_text(
+    fake_neonize: dict[str, Any], tmp_path: Path
+) -> None:
+    captured: list[Inbound] = []
+
+    async def dispatch(_sender_id: str, _name: str, inbound: Inbound, _send: Send) -> None:
+        captured.append(inbound)
+
+    msg = _msg()
+    msg.Message.pollCreationMessage = SimpleNamespace(
+        name="Lunch?",
+        options=[SimpleNamespace(optionName="Pizza"), SimpleNamespace(optionName="Sushi")],
+    )
+    client = WhatsAppWebConnector(tmp_path / "wa.db", dispatch).build_client()
+    await client.handlers[fake_neonize["MessageEv"]](client, msg)
+
+    assert len(captured) == 1
+    assert "Lunch?" in captured[0].text and "Pizza" in captured[0].text
+
+
+async def test_unsupported_type_is_dropped(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
+    # A message with no text, file, voice, or known special type produces nothing → not dispatched.
+    captured: list[Inbound] = []
+
+    async def dispatch(_sender_id: str, _name: str, inbound: Inbound, _send: Send) -> None:
+        captured.append(inbound)
+
+    client = WhatsAppWebConnector(tmp_path / "wa.db", dispatch).build_client()
+    await client.handlers[fake_neonize["MessageEv"]](client, _msg())  # empty message
+
+    assert captured == []
 
 
 async def test_start_stops_client_on_cancel(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
@@ -513,8 +731,8 @@ async def test_group_message_dropped_when_not_addressed(
 ) -> None:
     seen: list[str] = []
 
-    async def dispatch(_s: str, _n: str, text: str, _send: Send) -> None:
-        seen.append(text)
+    async def dispatch(_s: str, _n: str, inbound: Inbound, _send: Send) -> None:
+        seen.append(inbound.text)
 
     connector = WhatsAppWebConnector(tmp_path / "wa.db", dispatch)
     client = connector.build_client()
@@ -530,8 +748,8 @@ async def test_group_message_handled_when_mentioned(
 ) -> None:
     seen: list[str] = []
 
-    async def dispatch(_s: str, _n: str, text: str, send: Send) -> None:
-        seen.append(text)
+    async def dispatch(_s: str, _n: str, inbound: Inbound, send: Send) -> None:
+        seen.append(inbound.text)
         await send("on it")
 
     connector = WhatsAppWebConnector(tmp_path / "wa.db", dispatch)
@@ -548,7 +766,7 @@ async def test_group_message_handled_when_mentioned(
 
 async def test_marks_read_and_shows_typing(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
     # When Gaia starts a turn: blue-tick the inbound, type while working, clear when done.
-    async def dispatch(_s: str, _n: str, _t: str, send: Send) -> None:
+    async def dispatch(_s: str, _n: str, _inbound: Inbound, send: Send) -> None:
         await send("hi back")
 
     client = WhatsAppWebConnector(tmp_path / "wa.db", dispatch).build_client()
@@ -566,7 +784,7 @@ async def test_voice_turn_shows_recording_audio(
 ) -> None:
     sys.modules["neonize.aioze.client"].NewAClient = _DownloadClient  # type: ignore[attr-defined]
 
-    async def dispatch(_s: str, _n: str, _t: str, send: Send) -> None:
+    async def dispatch(_s: str, _n: str, _inbound: Inbound, send: Send) -> None:
         await send("spoken answer")
 
     connector = WhatsAppWebConnector(tmp_path / "wa.db", dispatch, transcriber=_FakeTranscriber())
@@ -586,7 +804,7 @@ async def test_presence_announced_on_connect(fake_neonize: dict[str, Any], tmp_p
 async def test_presence_disabled_makes_no_calls(
     fake_neonize: dict[str, Any], tmp_path: Path
 ) -> None:
-    async def dispatch(_s: str, _n: str, _t: str, send: Send) -> None:
+    async def dispatch(_s: str, _n: str, _inbound: Inbound, send: Send) -> None:
         await send("ok")
 
     connector = WhatsAppWebConnector(tmp_path / "wa.db", dispatch, show_active=False)

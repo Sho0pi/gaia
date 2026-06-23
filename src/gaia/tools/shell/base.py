@@ -28,6 +28,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from gaia.tools._helpers import err as err  # re-export for gaia.tools.shell.* importers
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from gaia.tools.serve.base import ServedPorts
 
@@ -112,11 +114,6 @@ def truncate(text: str, cap: int = OUTPUT_CHAR_CAP) -> tuple[str, bool]:
     if len(text) <= cap:
         return text, False
     return text[-cap:], True
-
-
-def err(message: str) -> dict[str, Any]:
-    """A standard error result dict (matches the fs/browser tools)."""
-    return {"status": "error", "error_message": message}
 
 
 # --- process spawning + management ------------------------------------------------

@@ -24,7 +24,7 @@ from gaia.communication import apply_communication_style
 from gaia.config import ConfigSupplier, Settings, configure_adk_env, get_settings
 from gaia.config.schema import AgentBinding
 from gaia.di import Container
-from gaia.models import resolve_model
+from gaia.models import resolve_model, thinking_planner
 from gaia.skills import attach_skills
 
 logger = logging.getLogger(__name__)
@@ -55,6 +55,7 @@ class Gaia:
         self.users = self.container.users()
         self.tasks = self.container.tasks()  # the shared missions board (TaskStore)
         self.tools = self.container.tools()
+        self.soul_sessions = self.container.soul_sessions()  # warm per-(soul, project) sessions
         self.factory = self.container.factory()
         # Live proactive senders (connector name → object with ``send_to``); the launcher
         # populates this same dict once connectors are running (empty outside the daemon).
@@ -109,14 +110,18 @@ class Gaia:
 
     def ensure_agent(self, spec: AgentSpec) -> LlmAgent:
         """Get a subagent for ``spec`` — reused if known, created+stored if new."""
-        return self.factory.create_or_reuse(spec)
+        return self.factory.create_or_reuse(spec, effort=self.config.llm.effort)
 
     def known_souls(self) -> list[str]:
         """Keys of every subagent Gaia has already learned."""
         return self.souls.list_keys()
 
-    def build_root_agent(self) -> LlmAgent:
+    def build_root_agent(self, handler: Any = None, *, profile: str | None = None) -> LlmAgent:
         """Construct the ADK root agent with all known subagents attached.
+
+        ``handler`` (the live :class:`~gaia.core.handler.GaiaHandler`, passed by it) is
+        threaded into the root-only ``run_command`` tool so Gaia can run handler-dependent
+        commands (``/reset``) for the user; ``None`` for handler-free callers (dev web).
 
         Registry tools are attached through :class:`~gaia.core.acl_toolset.AclToolset`, a
         dynamic toolset ADK re-resolves every turn against the caller's *current*
@@ -129,7 +134,7 @@ class Gaia:
         from google.adk.agents import BaseAgent, LlmAgent
 
         sub_agents: list[BaseAgent] = [
-            self.factory.create_or_reuse(self.souls.get(key))  # type: ignore[arg-type]
+            self.factory.create_or_reuse(self.souls.get(key), effort=self.config.llm.effort)  # type: ignore[arg-type]
             for key in self.known_souls()
         ]
         from datetime import datetime
@@ -146,9 +151,16 @@ class Gaia:
             "in one shot (e.g. 'write me a poem', a tiny script), call delegate_to_soul(task) "
             "— it finds or forges the right soul, runs it, and returns. When it returns, tell "
             "the user which soul handled it (say so explicitly when 'created' is true), then "
-            "report the workspace path and the list of files the soul produced. You can open "
-            "those deliverables directly (fs_read takes the absolute paths under the souls' "
-            "workspaces), so read/verify/summarize them yourself when the user asks. But for "
+            "report the workspace path and the list of files the soul produced. Any media the "
+            "soul made (a screenshot/preview it took, a generated image or PDF) comes back in "
+            "the result's 'media' and is sent to the user for you automatically — do NOT "
+            "re-read, re-serve, re-open, or re-screenshot the soul's work just to show it; that "
+            "only duplicates what was already delivered. You can still open deliverables "
+            "directly (fs_read takes the absolute paths under the souls' workspaces) to "
+            "verify or summarize their contents when the user asks. But to CHANGE or extend a "
+            "soul's project (e.g. 'make it dark mode', 'add a page'), re-delegate: call "
+            "delegate_to_soul again with the SAME project slug — never edit a soul's files "
+            "yourself (you can read them, but writing into a soul's workspace is blocked). But for "
             "a MULTI-ROLE or MULTI-STEP project (e.g. 'build a gym website' = a trainer writes "
             "the program AND a frontend designer builds the site from it), use task_plan, NOT "
             "repeated delegate_to_soul — the board tracks each step, lets the user list/iterate "
@@ -160,6 +172,17 @@ class Gaia:
             "reply to whoever you're talking to), call message_user(recipient, text) — "
             "recipient may be a known user's name/id or a raw phone; combine it with the "
             "cron tool for 'in 5 minutes text Grace ...'-style tasks.\n"
+            "DELIVERY — assume the user is REMOTE (WhatsApp/Telegram, on a phone): they CANNOT "
+            "open a local file path or a http://127.0.0.1 URL you type. Only a user on the local "
+            "CLI/terminal can. So by DEFAULT, never reply with a local path or a localhost URL — "
+            "deliver the real thing: to give a FILE (a document, image, audio, a soul's "
+            "deliverable, including a .md/.html/.txt file), call send_file(path, caption); it "
+            'sends the actual file in the chat. To SHOW a website ("show me", "how does it '
+            'look"), serve it then browser_navigate + browser_take_screenshot and let the '
+            "screenshot go back — do NOT paste the 127.0.0.1 url (serve flags it "
+            "viewable_by_user=false when the user can't open it; share a public_url only if serve "
+            "returns one). serve is ONLY for previewing a website, never to hand over a file. For "
+            "several files, zip them (exec) and send_file the zip, or send_file once per file.\n"
             "For multi-step or long-running work that should run in the background and "
             "survive restarts, use the task board: a daemon worker runs each task on a "
             "specialist soul and delivers the result. For a mission with MORE THAN ONE step "
@@ -167,36 +190,72 @@ class Gaia:
             "whole plan as JSON (tasks with local refs + depends_on); it wires the real "
             "dependency edges so a step waits for its inputs and receives their results + "
             "files. Use task_create only for a single standalone task. Never put a made-up "
-            "id in blocked_by — let task_plan resolve dependencies."
+            "id in blocked_by — let task_plan resolve dependencies.\n"
+            "You can run the user's slash-commands yourself with the run_command tool — pass "
+            "the whole command line, e.g. run_command('skill install <git-url>'), "
+            "run_command('skill search <query>'), run_command('skill list'). Use it to manage "
+            "SKILLS (reusable know-how) — a freshly installed skill is usable right away — and, "
+            "when the user is an ADMIN, to manage users and permissions on their behalf: "
+            "run_command('grant <user> <capability>'), run_command('approve <user> <role>'), "
+            "run_command('users'), run_command('perms <user>'). run_command only runs commands "
+            "available to you; if it returns an error, tell the user what it said."
         )
+        # Memory guidance only when long-term memory is on — so the prompt never advertises
+        # the remember/load_memory tools or a <USER_PROFILE> block that aren't attached.
+        # (Gated on memory.enabled, NOT on `profile`: an empty store still has the tools.)
+        if self.config.memory.enabled:
+            base_instruction += (
+                "\nYou have long-term memory of this user: what you already know about them "
+                "(facts + recent projects) is provided above under <USER_PROFILE> — use it and "
+                "don't re-ask. When the user shares something durable (preferences, identity, "
+                "ongoing context), save it with the remember tool. For older or more specific "
+                "details not in the profile, call load_memory(query) to search your memory."
+            )
         bound = self.config.agents.get("gaia", AgentBinding())
         instruction = attach_skills(base_instruction, bound.skills, self.skills_dir)
         style = bound.communication_style or self.config.default_communication_style
         instruction = apply_communication_style(instruction, style)
 
+        # Profile recall: a compact, importance-ranked block of what gaia knows about the
+        # user (durable facts + recent projects), distilled by one LLM call when the handler
+        # builds this agent (session start / config reload) and baked into the prompt — like
+        # the timestamp above. Always fresh per session; deep lookups stay in load_memory.
+        if profile:
+            instruction += (
+                "\n\nWhat you know about the user (long-term memory + recent projects):\n"
+                f"<USER_PROFILE>\n{profile}\n</USER_PROFILE>"
+            )
+
         from gaia.core.acl_toolset import AclToolset
         from gaia.souls import make_delegate
+        from gaia.tools.command import make_run_command
         from gaia.tools.message import make_message_user
         from gaia.tools.permission import make_manage_permission
+        from gaia.tools.send_file import make_send_file
         from gaia.tools.task import make_task_plan
 
         # delegate_to_soul and message_user are attached to the root only — souls (built
         # from self.tools) never receive them, so a soul can neither spawn souls nor text
         # arbitrary users. message_user needs the live connector registry on `self`.
+        root_model = self.config.llm.model or self.settings.model
         return LlmAgent(
             name="gaia",
             model=resolve_model(
-                self.config.llm.model or self.settings.model,
+                root_model,
                 provider=self.config.llm.provider,
                 use_oauth=self.config.llm.openai.use_oauth,
+                effort=self.config.llm.effort,
             ),
+            planner=thinking_planner(self.config.llm.provider, root_model, self.config.llm.effort),
             description="Root orchestrator that routes tasks to specialized subagents.",
             instruction=instruction,
             tools=[
                 AclToolset(self),
                 make_delegate(self),
-                make_message_user(self.users, self.connectors),
+                make_run_command(self, handler),
+                make_message_user(self.users, self.connectors, lambda: self.memory_service),
                 make_manage_permission(self),
+                make_send_file(),
                 make_task_plan(self.tasks, max_tasks=self.config.missions.max_tasks),
                 *self.container.mcp_toolsets(),
                 *self.container.skill_toolsets(),

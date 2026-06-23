@@ -95,13 +95,29 @@ async def test_gym_site_mission_runs_two_souls_with_handoff(
     gaia.connectors["whatsapp"] = wa
     store = TaskStore()
 
+    # The leaf-task result is pushed to the owner's connector, so the owner must be a known
+    # user with a whatsapp identity. Register them here so the test is self-contained rather
+    # than relying on whatever happens to be in the real user store.
+    owner = gaia.users.register("whatsapp", "itay@s.whatsapp.net", "Itay", role="admin").id
+
     # Capture each soul's input so we can prove the hand-off (T2 sees T1's result).
     inputs: list[str] = []
     real_execute = disp_mod.execute_decision
 
-    async def spy_execute(g: Any, decision: Any, task: str, user: str, *, state: Any = None) -> Any:
+    async def spy_execute(
+        g: Any,
+        decision: Any,
+        task: str,
+        user: str,
+        *,
+        project: str = "",
+        attachments: Any = None,
+        state: Any = None,
+    ) -> Any:
         inputs.append(task)
-        return await real_execute(g, decision, task, user, state=state)
+        return await real_execute(
+            g, decision, task, user, project=project, attachments=attachments, state=state
+        )
 
     monkeypatch.setattr(disp_mod, "execute_decision", spy_execute)
 
@@ -116,7 +132,7 @@ async def test_gym_site_mission_runs_two_souls_with_handoff(
             },
         ]
     )
-    make_task_plan(store)(plan, tool_context=_ctx("itay"))
+    make_task_plan(store)(plan, tool_context=_ctx(owner))
 
     d = MissionDispatcher(gaia, store=store, poll_seconds=0.01)
     async with gaia:

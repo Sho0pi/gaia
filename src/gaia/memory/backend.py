@@ -36,6 +36,18 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 #: ``gemini-embedding-2`` is the current/GA model per ai.google.dev/gemini-api/docs/embeddings.
 DEFAULT_GEMINI_EMBEDDER_MODEL = "models/gemini-embedding-2"
 
+#: Default steering for mem0's fact extractor (mem0 ``custom_instructions``). Keeps the store
+#: to durable facts about the user; drops the assistant's transient action logs.
+EXTRACTION_INSTRUCTIONS = (
+    "Extract ONLY durable facts about the USER and the people/things they care about: "
+    "their identity (name, location, job), relationships and contacts (e.g. 'Grace is the "
+    "user's girlfriend', phone numbers, emails), stable preferences, and ongoing goals or "
+    "projects. DO NOT record the assistant's own actions or transient events — screenshots "
+    "taken, files saved, tasks or cron jobs created/updated/removed, navigation, tool "
+    "outputs, or one-off requests. If a message only describes what the assistant did, "
+    "extract nothing."
+)
+
 
 def _component(block: MemoryProvider, defaults: dict[str, Any]) -> dict[str, Any]:
     """Turn a :class:`MemoryProvider` into mem0's ``{provider, config}`` shape.
@@ -75,6 +87,11 @@ def build_mem0_config(settings: Settings, memory: MemoryConfig) -> dict[str, Any
         "llm": _component(memory.llm, llm_defaults),
         "embedder": _component(memory.embedder, embedder_defaults),
         "vector_store": _component(memory.vector_store, store_defaults),
+        # Steer mem0's fact extractor toward durable facts ABOUT THE USER and away from the
+        # assistant's own action logs (screenshots taken, tasks/cron created, files saved) —
+        # those were flooding the store and crowding out real facts. A gaia.yaml override
+        # (memory.extraction_instructions) wins when set.
+        "custom_instructions": memory.extraction_instructions or EXTRACTION_INSTRUCTIONS,
     }
 
 

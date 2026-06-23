@@ -66,10 +66,10 @@ def test_default_models_have_both() -> None:
 
 def test_generate_image_is_media() -> None:
     # The handler turns the tool result into an image reply (same path as screenshots).
-    from gaia.core.screenshots import _screenshot_media
+    from gaia.core.screenshots import _output_media
 
-    media = _screenshot_media("generate_image", {"status": "success", "path": "/tmp/x.png"})
-    assert media is not None and str(media.path) == "/tmp/x.png"
+    media = _output_media("generate_image", {"status": "success", "path": "/tmp/x.png"})
+    assert len(media) == 1 and str(media[0].path) == "/tmp/x.png" and media[0].caption == "image"
 
 
 def test_image_acl_group() -> None:

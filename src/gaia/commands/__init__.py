@@ -5,7 +5,14 @@ it, runs the matching :class:`Command`, and sends the reply directly — no mode
 memory ingest. See :mod:`gaia.commands.registry` for the built-in set.
 """
 
-from gaia.commands.base import Command, CommandContext, parse
+from gaia.commands.base import Command, CommandContext, authorize, parse
 from gaia.commands.registry import CommandRegistry, default_registry
 
-__all__ = ["Command", "CommandContext", "CommandRegistry", "default_registry", "parse"]
+__all__ = [
+    "Command",
+    "CommandContext",
+    "CommandRegistry",
+    "authorize",
+    "default_registry",
+    "parse",
+]

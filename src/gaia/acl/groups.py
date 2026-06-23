@@ -53,6 +53,7 @@ GROUPS: dict[str, frozenset[str]] = {
     "images": frozenset({"generate_image"}),
     "cron": frozenset({"cron"}),
     MANAGE_USERS: frozenset(),  # command right only — expands to no tool
+    "skills": frozenset(),  # command right: install/manage skills (the /skill command)
 }
 
 #: Tool-name prefix -> the capability that governs every tool with that prefix. Lets a
@@ -65,6 +66,6 @@ GROUP_PREFIXES: dict[str, str] = {"browser_": "browser"}
 #: dropped at dispatch anyway; this keeps them tool-less if that ever changes.
 DEFAULT_ROLE_CAPS: dict[Role, list[str]] = {
     "guest": [],
-    "user": ["web", "memory", "browser", "tasks", "serve", "images"],
+    "user": ["web", "memory", "browser", "tasks", "serve", "skills", "images"],
     "admin": [ALL],
 }

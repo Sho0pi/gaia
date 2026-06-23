@@ -16,6 +16,7 @@ from typing import Any
 
 import pytest
 
+from gaia.connectors.base import Inbound, InboundMedia
 from gaia.core.handler import GaiaHandler
 
 
@@ -43,7 +44,7 @@ async def _collect(handler: GaiaHandler, text: str) -> list[str]:
     async def send(reply: str) -> None:
         sent.append(reply)
 
-    await handler(text, send)
+    await handler(Inbound(text=text), send)
     return sent
 
 
@@ -56,6 +57,17 @@ async def test_streams_each_text_part_of_final_response() -> None:
 
     # The empty (text-less) part is skipped; the rest stream in order.
     assert sent == ["hello", "world"]
+
+
+async def test_empty_turn_sends_a_fallback_not_silence() -> None:
+    # A reasoning model can emit only (hidden) thoughts and no message -> texts empty. The
+    # turn must not ghost the user; a short acknowledgement goes out instead.
+    handler = GaiaHandler(SimpleNamespace(memory_service=None))
+    handler._runner = _FakeRunner([_event("")])  # final response, no text, no media
+
+    sent = await _collect(handler, "thank you")
+
+    assert len(sent) == 1 and "didn't have anything to add" in sent[0]
 
 
 async def test_ignores_non_final_events() -> None:
@@ -100,6 +112,116 @@ async def test_plain_text_still_reaches_the_model() -> None:
     assert await _collect(handler, "not a command") == ["answer"]
 
 
+async def test_inbound_image_becomes_a_multimodal_turn(tmp_path: Path) -> None:
+    img = tmp_path / "pic.jpg"
+    img.write_bytes(b"\xff\xd8\xff fake jpeg bytes")
+    captured: dict[str, Any] = {}
+
+    class _CapturingRunner:
+        async def run_async(self, **kwargs: Any) -> AsyncIterator[SimpleNamespace]:
+            captured.update(kwargs)
+            yield _event("it's a cat")
+
+    handler = GaiaHandler(SimpleNamespace(memory_service=None))
+    handler._runner = _CapturingRunner()
+    sent: list[str] = []
+
+    async def send(reply: str) -> None:
+        sent.append(reply)
+
+    inbound = Inbound(text="what's this?", media=(InboundMedia(path=img, mime="image/jpeg"),))
+    await handler(inbound, send)
+
+    parts = captured["new_message"].parts
+    assert any(getattr(p, "text", None) == "what's this?" for p in parts)  # the question
+    assert any(getattr(p, "inline_data", None) is not None for p in parts)  # the image part
+    assert sent == ["it's a cat"]
+    # the file is stashed for delegate_to_soul to copy into a soul's workspace (file use)
+    from gaia.connectors.base import inbound_attachments
+
+    assert inbound_attachments.get() == (img,)
+
+
+async def test_runner_rebuilds_when_config_changes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A gaia.yaml change (new config object) rebuilds the agent but keeps the session."""
+    from gaia.config import GaiaConfig
+
+    builds: list[object] = []
+    services: list[object] = []
+
+    class _FakeSession:
+        async def create_session(self, **_kwargs: Any) -> None:
+            return None
+
+    def _fake_session_ctor(*_a: Any, **_k: Any) -> _FakeSession:
+        svc = _FakeSession()
+        services.append(svc)
+        return svc
+
+    class _RebuildRunner:
+        def __init__(self, **kwargs: Any) -> None:
+            self.session_service = kwargs["session_service"]
+
+        async def run_async(self, **_kwargs: Any) -> AsyncIterator[SimpleNamespace]:
+            yield _event("ok")
+
+    monkeypatch.setattr("google.adk.sessions.InMemorySessionService", _fake_session_ctor)
+    monkeypatch.setattr("google.adk.runners.Runner", _RebuildRunner)
+    monkeypatch.setattr("gaia.core.plugins.ToolPermissionPlugin", lambda gaia: object())
+    monkeypatch.setattr("gaia.core.plugins.ToolLoggingPlugin", lambda: object())
+
+    def _build(_handler: object, *, profile: object = None) -> object:
+        agent = object()
+        builds.append(agent)
+        return agent
+
+    cfg1, cfg2 = GaiaConfig(), GaiaConfig()
+    gaia = SimpleNamespace(memory_service=None, build_root_agent=_build, config=cfg1)
+    handler = GaiaHandler(gaia)
+
+    await _collect(handler, "one")  # first turn builds
+    await _collect(handler, "two")  # same config object → no rebuild
+    assert len(builds) == 1
+
+    gaia.config = cfg2  # simulate gaia.yaml edit (ConfigSupplier hands back a new object)
+    await _collect(handler, "three")
+
+    assert len(builds) == 2  # rebuilt against the new config
+    assert len(services) == 1  # session service reused → conversation history preserved
+
+
+async def test_user_message_is_included_in_the_event_stream() -> None:
+    """The user's own turn must be yielded so auto-ingest sees both sides (not just Gaia)."""
+    captured: dict[str, Any] = {}
+
+    class _CapturingRunner:
+        async def run_async(self, **kwargs: Any) -> AsyncIterator[SimpleNamespace]:
+            captured.update(kwargs)
+            yield _event("ok")
+
+    handler = GaiaHandler(SimpleNamespace(memory_service=None))
+    handler._runner = _CapturingRunner()
+
+    await _collect(handler, "hi")
+
+    assert captured.get("yield_user_message") is True
+
+
+async def test_profile_block_distills_when_preload_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_distill(gaia: object, user_id: str) -> str:
+        return f"PROFILE for {user_id}"
+
+    monkeypatch.setattr("gaia.memory.profile.distill_profile", fake_distill)
+    memory = SimpleNamespace(preload=True)
+    gaia = SimpleNamespace(config=SimpleNamespace(memory=memory))
+    handler = GaiaHandler(gaia, user_id="u1")
+
+    assert await handler._profile_block() == "PROFILE for u1"
+
+    memory.preload = False
+    assert await handler._profile_block() is None  # gated off → no distill
+
+
 class _BoomRunner:
     def __init__(self, exc: Exception) -> None:
         self._exc = exc
@@ -126,6 +248,17 @@ async def test_generic_error_yields_generic_message() -> None:
     sent = await _collect(handler, "hi")
 
     assert sent == ["Sorry — something went wrong handling that. Please try again."]
+
+
+async def test_network_error_yields_hiccup_message() -> None:
+    import httpx
+
+    handler = GaiaHandler(SimpleNamespace(memory_service=None))
+    handler._runner = _BoomRunner(httpx.ReadError("connection reset"))
+
+    sent = await _collect(handler, "hi")
+
+    assert len(sent) == 1 and "network hiccup" in sent[0]
 
 
 def _gaia(*, batch_size: int = 2, interval: int = 3600, auto_ingest: bool = True) -> Any:
@@ -203,7 +336,7 @@ async def _collect_replies(handler: GaiaHandler, text: str) -> list[Any]:
     async def send(reply: Any) -> None:
         sent.append(reply)
 
-    await handler(text, send)
+    await handler(Inbound(text=text), send)
     return sent
 
 

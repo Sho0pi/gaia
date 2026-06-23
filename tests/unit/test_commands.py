@@ -32,6 +32,7 @@ def _ctx(
     args: str = "",
     memory: Any = None,
     agents: list[str] | None = None,
+    sessions: list[tuple[str, float]] | None = None,
     handler: Any = None,
     missing: dict[str, str] | None = None,
 ) -> CommandContext:
@@ -40,6 +41,7 @@ def _ctx(
         settings=SimpleNamespace(model="gemini-test"),
         memory_service=memory,
         known_souls=lambda: agents or [],
+        soul_sessions=SimpleNamespace(active=lambda: sessions or []),
         tools=SimpleNamespace(names=lambda: ["web_fetch", "fs_read"], missing=missing or {}),
         users=SimpleNamespace(get=lambda _uid: None),
     )
@@ -57,6 +59,49 @@ def _run(name: str, ctx: CommandContext) -> Any:
     return default_registry().get(name).run(ctx)
 
 
+def _effort_ctx(args: str, cfg_path: Any, *, provider: str = "openai", model: str = "gpt-5.5"):
+    from gaia.config.schema import LLMConfig
+
+    gaia = SimpleNamespace(
+        config=GaiaConfig(llm=LLMConfig(provider=provider, model=model)),
+        settings=SimpleNamespace(model=model, config_path=cfg_path),
+    )
+    return CommandContext(
+        args=args,
+        gaia=gaia,
+        handler=SimpleNamespace(),
+        registry=default_registry(),
+        user_id="u1",
+        session_id="s1",
+    )
+
+
+async def test_effort_shows_writes_and_clears(tmp_path: Any) -> None:
+    cfg = tmp_path / "gaia.yaml"
+
+    # No arg -> shows current (default).
+    assert "(default)" in await _run("effort", _effort_ctx("", cfg))
+
+    # Set -> persisted to yaml.
+    out = await _run("effort", _effort_ctx("high", cfg))
+    assert "set to 'high'" in out
+    assert 'effort: "high"' in cfg.read_text()
+
+    # Clear -> blanks it.
+    await _run("effort", _effort_ctx("off", cfg))
+    assert 'effort: ""' in cfg.read_text()
+
+
+async def test_effort_rejects_unknown_level(tmp_path: Any) -> None:
+    out = await _run("effort", _effort_ctx("turbo", tmp_path / "gaia.yaml"))
+    assert "Unknown effort" in out
+
+
+async def test_effort_warns_on_nonthinking_model(tmp_path: Any) -> None:
+    ctx = _effort_ctx("high", tmp_path / "gaia.yaml", provider="gemini", model="gemini-2.0-flash")
+    assert "no reasoning dial" in await _run("effort", ctx)
+
+
 async def test_help_lists_every_command() -> None:
     out = await _run("help", _ctx())
 
@@ -72,9 +117,28 @@ async def test_whoami_shows_user_and_memory() -> None:
     assert "long-term memory: on" in out
 
 
-async def test_agents_empty_and_populated() -> None:
-    assert "No specialist" in await _run("agents", _ctx())
-    assert "- researcher" in await _run("agents", _ctx(agents=["researcher"]))
+async def test_whoami_shows_effort_only_when_set() -> None:
+    from gaia.config.schema import LLMConfig
+
+    assert "(effort:" not in await _run("whoami", _ctx())  # blank -> no clutter
+
+    ctx = _ctx()
+    ctx.gaia.config = GaiaConfig(llm=LLMConfig(effort="high"))
+    assert "(effort: high)" in await _run("whoami", ctx)
+
+
+async def test_souls_empty_and_populated() -> None:
+    assert "No souls" in await _run("souls", _ctx())
+    assert "- researcher" in await _run("souls", _ctx(agents=["researcher"]))
+
+
+async def test_souls_lists_live_warm_sessions() -> None:
+    out = await _run(
+        "souls",
+        _ctx(agents=["frontend_developer"], sessions=[("frontend_developer/pasta", 30.0)]),
+    )
+    assert "Live now (1)" in out
+    assert "frontend_developer/pasta" in out and "just now" in out
 
 
 async def test_status_reports_counts() -> None:
@@ -84,6 +148,16 @@ async def test_status_reports_counts() -> None:
     assert "tools: 2" in out
     assert "memory: on" in out
     assert "disabled tools:" not in out  # nothing missing → no line
+
+
+async def test_status_shows_effort_only_when_set() -> None:
+    from gaia.config.schema import LLMConfig
+
+    assert "(effort:" not in await _run("status", _ctx())  # blank -> no clutter
+
+    ctx = _ctx()
+    ctx.gaia.config = GaiaConfig(llm=LLMConfig(effort="high"))
+    assert "(effort: high)" in await _run("status", ctx)
 
 
 async def test_status_lists_disabled_tools() -> None:

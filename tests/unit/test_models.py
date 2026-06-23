@@ -1,4 +1,4 @@
-"""resolve_model: Gemini stays a bare string; other providers wrap in LiteLlm."""
+"""resolve_model: Gemini stays a bare string; other providers wrap in LiteLlm; effort routing."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from gaia.models import resolve_model
+from gaia.models import resolve_model, thinking_planner
 
 
 @pytest.fixture
@@ -16,9 +16,11 @@ def lite(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     seen: dict[str, Any] = {}
     import google.adk.models.lite_llm as lm
 
-    monkeypatch.setattr(
-        lm, "LiteLlm", lambda *, model: seen.update(model=model) or SimpleNamespace(model=model)
-    )
+    def fake(*, model: str, **kwargs: Any) -> SimpleNamespace:
+        seen.update(model=model, kwargs=kwargs)
+        return SimpleNamespace(model=model, **kwargs)
+
+    monkeypatch.setattr(lm, "LiteLlm", fake)
     return seen
 
 
@@ -60,3 +62,36 @@ def test_openai_with_use_oauth_uses_chatgpt_backend() -> None:
 def test_provider_is_required() -> None:
     with pytest.raises(TypeError):
         resolve_model("gpt-4o")  # type: ignore[call-arg]  # provider must be explicit
+
+
+# --- reasoning effort ---------------------------------------------------------------------
+
+
+def test_litellm_path_passes_reasoning_effort(lite: dict[str, Any]) -> None:
+    resolve_model("claude-sonnet-4-6", "anthropic", effort="high")
+    assert lite["kwargs"] == {"reasoning_effort": "high"}  # litellm maps it per provider
+
+
+def test_litellm_path_omits_effort_when_blank(lite: dict[str, Any]) -> None:
+    resolve_model("gpt-4o", "openai", effort="")
+    assert lite["kwargs"] == {}  # no reasoning_effort sent at the default
+
+
+def test_oauth_backend_carries_effort() -> None:
+    out = resolve_model("gpt-5.5", "openai", use_oauth=True, effort="medium")
+    assert out.effort == "medium"  # ends up in the Responses reasoning.effort
+
+
+def test_thinking_planner_for_gemini_maps_effort_to_budget() -> None:
+    planner = thinking_planner("gemini", "gemini-2.5-flash", "high")
+    assert planner is not None
+    assert planner.thinking_config.thinking_budget == 24576
+
+
+def test_thinking_planner_none_for_nonthinking_gemini() -> None:
+    assert thinking_planner("gemini", "gemini-2.0-flash", "high") is None  # 2.0 has no budget
+
+
+def test_thinking_planner_none_off_gemini_and_when_blank() -> None:
+    assert thinking_planner("openai", "gpt-4o", "high") is None  # effort rides the model object
+    assert thinking_planner("gemini", "gemini-2.5-flash", "") is None  # no effort set

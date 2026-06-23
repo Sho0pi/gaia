@@ -51,6 +51,39 @@ def test_root_agent_attaches_all_registered_tools(
     assert expected <= names
 
 
+def test_profile_is_baked_into_the_instruction(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import google.adk.agents as adk
+
+    gaia = _gaia(tmp_path)
+    captured: dict[str, object] = {}
+
+    class _Recorder:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr(adk, "LlmAgent", _Recorder)
+    gaia.build_root_agent(profile="- Name: Itay\n- follows football (Arsenal)")
+
+    instruction = captured["instruction"]
+    assert isinstance(instruction, str)
+    # The closing tag only comes from the injected block (the static guidance mentions the
+    # opening tag), so it's the reliable marker that the profile was actually baked in.
+    assert "</USER_PROFILE>" in instruction
+    assert "Name: Itay" in instruction and "Arsenal" in instruction
+
+
+def test_no_profile_block_without_a_profile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gaia = _gaia(tmp_path)
+
+    captured = _capture_root_kwargs(gaia, monkeypatch)  # build_root_agent() — no profile
+
+    assert "</USER_PROFILE>" not in captured["instruction"]  # type: ignore[operator]
+
+
 def test_root_agent_attaches_skill_toolset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # On-demand skills: when skills_dir holds a skill, the root agent gets a SkillToolset.
     skills = tmp_path / "skills"

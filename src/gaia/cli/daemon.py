@@ -33,17 +33,23 @@ _START_WAIT = 5.0
 #: Poll interval for start/stop wait loops.
 _POLL = 0.1
 
+# Argument/option types named once so the command signatures below stay readable.
+HoldOpt = Annotated[
+    bool,
+    typer.Option(
+        "--hold",
+        hidden=True,
+        help="Keep running with zero connectors (testing / service debugging).",
+    ),
+]
+TimeoutOpt = Annotated[
+    int, typer.Option(help="Seconds to wait for graceful shutdown before SIGKILL.")
+]
+
 
 def serve(
     ctx: typer.Context,
-    hold: Annotated[
-        bool,
-        typer.Option(
-            "--hold",
-            hidden=True,
-            help="Keep running with zero connectors (testing / service debugging).",
-        ),
-    ] = False,
+    hold: HoldOpt = False,
 ) -> None:
     """Run the background connectors in the foreground (what the daemon executes)."""
     pid = PidFile().read_live()
@@ -62,9 +68,7 @@ def start(ctx: typer.Context) -> None:
 
 def stop(
     ctx: typer.Context,
-    timeout: Annotated[
-        int, typer.Option(help="Seconds to wait for graceful shutdown before SIGKILL.")
-    ] = 10,
+    timeout: TimeoutOpt = 10,
 ) -> None:
     """Stop the running daemon (SIGTERM, then SIGKILL after --timeout)."""
     raise typer.Exit(_stop(timeout))
@@ -72,9 +76,7 @@ def stop(
 
 def restart(
     ctx: typer.Context,
-    timeout: Annotated[
-        int, typer.Option(help="Seconds to wait for graceful shutdown before SIGKILL.")
-    ] = 10,
+    timeout: TimeoutOpt = 10,
 ) -> None:
     """Restart the daemon (stop if running, then start)."""
     if _stop(timeout) == EXIT_DAEMON:

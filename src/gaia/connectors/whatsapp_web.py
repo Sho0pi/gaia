@@ -14,11 +14,12 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from gaia import constants
-from gaia.connectors.base import Dispatch, Media, Reply, current_chat
+from gaia.connectors.base import Dispatch, Inbound, InboundMedia, Media, Reply, current_chat
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from neonize.aioze.client import NewAClient
@@ -170,6 +171,118 @@ def _message_text(message: Any) -> str:
     return text
 
 
+#: Downloadable inbound attachments, as ``(neonize proto field, InboundMedia.kind)``. The
+#: handler hands each to the model as a file part, so the kind only labels it; stickers are
+#: webp images. Audio is *not* here — it goes through the transcription path instead.
+_MEDIA_KINDS: tuple[tuple[str, str], ...] = (
+    ("imageMessage", "image"),
+    ("videoMessage", "video"),
+    ("documentMessage", "document"),
+    ("stickerMessage", "image"),
+)
+
+#: Fallback mime when a proto omits ``mimetype``, by kind.
+_DEFAULT_MIME = {
+    "image": "image/jpeg",
+    "video": "video/mp4",
+    "document": "application/octet-stream",
+}
+
+
+def _vcard_phone(vcard: str) -> str:
+    """The first phone number in a vCard's ``TEL`` line, as `` <number>`` (or ``""``)."""
+    match = re.search(r"TEL[^:\n]*:\s*([+\d][\d\s().-]+)", vcard or "")
+    return f" {match.group(1).strip()}" if match else ""
+
+
+def _describe_special(message: Any) -> str:
+    """A text proxy for inbound types that are neither text nor a downloadable file.
+
+    Location, shared contacts, and interactive replies (poll / button / list / reaction) have no
+    file to hand the model, so we turn them into a short bracketed line Gaia answers like any
+    text. Returns ``""`` when none apply (so the message is dropped as before).
+    """
+    msg = message.Message
+    loc = getattr(msg, "locationMessage", None) or getattr(msg, "liveLocationMessage", None)
+    if loc is not None:
+        lat = getattr(loc, "degreesLatitude", None)
+        lng = getattr(loc, "degreesLongitude", None)
+        if lat or lng:
+            label = getattr(loc, "name", None) or getattr(loc, "address", None) or ""
+            where = f" ({label})" if label else ""
+            return f"[Location{where}: {lat},{lng} — https://maps.google.com/?q={lat},{lng}]"
+    contact = getattr(msg, "contactMessage", None)
+    name = getattr(contact, "displayName", None) if contact is not None else None
+    if name:
+        return f"[Contact: {name}{_vcard_phone(getattr(contact, 'vcard', None) or '')}]"
+    array = getattr(msg, "contactsArrayMessage", None)
+    contacts = getattr(array, "contacts", None) if array is not None else None
+    if contacts:
+        names = ", ".join(
+            f"{getattr(c, 'displayName', None) or ''}"
+            f"{_vcard_phone(getattr(c, 'vcard', None) or '')}".strip()
+            for c in contacts
+        )
+        return f"[Contacts: {names}]"
+    return _interactive_text(msg)
+
+
+def _interactive_text(msg: Any) -> str:
+    """Text proxy for an interactive reply (button / list / template / poll / reaction)."""
+    for field in ("buttonsResponseMessage", "templateButtonReplyMessage"):
+        chosen = getattr(getattr(msg, field, None), "selectedDisplayText", None)
+        if chosen:
+            return f"[Selected: {chosen}]"
+    title = getattr(getattr(msg, "listResponseMessage", None), "title", None)
+    if title:
+        return f"[Selected: {title}]"
+    poll = getattr(msg, "pollCreationMessage", None)
+    poll_name = getattr(poll, "name", None) if poll is not None else None
+    if poll_name:
+        opts = ", ".join(
+            getattr(o, "optionName", "") for o in getattr(poll, "options", None) or [] if o
+        )
+        return f"[Poll: {poll_name}" + (f" — options: {opts}" if opts else "") + "]"
+    emoji = getattr(getattr(msg, "reactionMessage", None), "text", None)
+    if emoji:
+        return f"[Reacted {emoji} to a message]"
+    return ""
+
+
+def _media_message(message: Any) -> tuple[Any, str] | None:
+    """The first real downloadable attachment as ``(proto, kind)``, else ``None``.
+
+    Like the voice check, the proto field is always present, so a non-empty ``mediaKey`` is
+    what distinguishes a real attachment from the default-empty one.
+    """
+    msg = message.Message
+    for field, kind in _MEDIA_KINDS:
+        proto = getattr(msg, field, None)
+        if proto is not None and getattr(proto, "mediaKey", None):
+            return proto, kind
+    return None
+
+
+#: Outbound ``Media.kind`` → the neonize client method that sends that file type.
+_MEDIA_SENDERS = {
+    "image": "send_image",
+    "video": "send_video",
+    "audio": "send_audio",
+    "document": "send_document",
+}
+
+
+async def _send_media(client: Any, to: Any, media: Media) -> None:
+    """Send ``media`` to a neonize JID with the method matching its kind (document as default)."""
+    name = _MEDIA_SENDERS.get(media.kind, "send_document")
+    method = getattr(client, name)
+    if name == "send_document":
+        # send_document needs the filename, else WhatsApp shows the file as "Untitled".
+        await method(to, str(media.path), caption=media.caption or None, filename=media.path.name)
+    else:
+        await method(to, str(media.path), caption=media.caption or None)
+
+
 class WhatsAppWebConnector:
     """Bridges regular-account WhatsApp messages to the dispatcher (per-sender identity).
 
@@ -262,10 +375,21 @@ class WhatsAppWebConnector:
             )
             text = _message_text(message)
             was_voice = False
-            if not text:
-                text = await self._transcribe_voice(client, message)
-                was_voice = bool(text)  # inbound was a (transcribed) voice note
-            if text:
+            media: tuple[InboundMedia, ...] = ()
+            found = _media_message(message)  # image/video/document/sticker, with optional caption
+            if found is not None:
+                proto, kind = found
+                item = await self._download_media(client, message, proto, kind)
+                if item is not None:
+                    media = (item,)
+                    text = text or (getattr(proto, "caption", "") or "")
+            elif not text:
+                voice = await self._transcribe_voice(client, message)
+                if voice:
+                    text, was_voice = voice, True  # a (transcribed) voice note
+                else:
+                    text = _describe_special(message)  # location/contact → a text proxy
+            if text or media:
                 if not await self._should_handle(client, message, source):
                     return  # a group message Gaia wasn't addressed in (mention/reply)
                 chat = source.Chat  # JID to send media replies to
@@ -275,12 +399,10 @@ class WhatsAppWebConnector:
                 current_chat.set((self.NAME, _deliverable_chat(source)))
 
                 async def send(reply: Reply) -> None:
-                    # An image reply goes out as a real WhatsApp image; text replies
-                    # quote the inbound message as before.
+                    # A media reply goes out as the real file (image/video/audio/document);
+                    # text replies quote the inbound message as before.
                     if isinstance(reply, Media):
-                        await client.send_image(
-                            chat, str(reply.path), caption=reply.caption or None
-                        )
+                        await _send_media(client, chat, reply)
                     else:
                         await client.reply_message(reply, message)
 
@@ -292,7 +414,9 @@ class WhatsAppWebConnector:
                 # coincide for DMs, differ in groups. PushName is WhatsApp's display name.
                 name = getattr(message.Info, "Pushname", "") or ""
                 try:
-                    await self._dispatch(_sender_jid(source), name, text, send)
+                    await self._dispatch(
+                        _sender_jid(source), name, Inbound(text=text, media=media), send
+                    )
                 finally:
                     await self._end_typing(client, chat, typing)
 
@@ -434,6 +558,34 @@ class WhatsAppWebConnector:
         # The prefix tells Gaia the modality, so it answers the spoken content naturally.
         return f"[voice message] {transcript}"
 
+    async def _download_media(
+        self, client: Any, message: Any, proto: Any, kind: str
+    ) -> InboundMedia | None:
+        """Download an inbound attachment (image/video/document/sticker) to ``UPLOADS_DIR``.
+
+        WhatsApp media is E2E-encrypted on its servers, so it must be downloaded (not read
+        inline). Saved under UPLOADS_DIR (a sandbox root) so a soul can copy it into its
+        workspace and use the real file. Best-effort like the voice path — a bad attachment
+        must never take the connector loop down; returns ``None`` on failure.
+        """
+        import mimetypes
+
+        mime = getattr(proto, "mimetype", "") or _DEFAULT_MIME[kind]
+        # Prefer a document's own extension; else derive one from the mime.
+        ext = (
+            Path(getattr(proto, "fileName", "") or "").suffix
+            or mimetypes.guess_extension(mime.split(";")[0])
+            or ".bin"
+        )
+        path = constants.UPLOADS_DIR / f"{message.Info.ID}{ext}"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            await client.download_any(message.Message, str(path))
+        except Exception:
+            logger.warning("inbound %s dropped: download failed", kind, exc_info=True)
+            return None
+        return InboundMedia(path=path, mime=mime, kind=kind)
+
     async def pair(self, timeout_s: float = 120.0) -> bool:
         """Foreground QR pairing: connect, wait for scan, then shut the client down.
 
@@ -484,7 +636,7 @@ class WhatsAppWebConnector:
         user, _, server = chat.partition("@")
         jid = build_jid(user, server or "s.whatsapp.net")
         if isinstance(reply, Media):
-            await self._client.send_image(jid, str(reply.path), caption=reply.caption or None)
+            await _send_media(self._client, jid, reply)
         else:
             await self._client.send_message(jid, reply)
 

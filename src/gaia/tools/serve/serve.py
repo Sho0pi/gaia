@@ -13,6 +13,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from gaia.connectors.base import current_chat
+from gaia.tools._helpers import err, ok
 from gaia.tools.serve.base import ServeError, StaticServerManager
 from gaia.tools.serve.tunnel import TunnelError, TunnelManager
 
@@ -40,28 +41,32 @@ def make_serve(
     """Return the ADK ``serve`` tool bound to ``manager`` (and an optional ``tunnel``)."""
 
     async def serve(path: str, public: bool | None = None) -> dict[str, Any]:
-        """Serve a built site from a workspace so you can open, screenshot, or share it.
+        """Serve a built *website* so you can open or screenshot it (or share a live preview).
+
+        This is for previewing a website. To hand the user a FILE (document, image, a zip of
+        files), use send_file — never serve a link for that.
 
         Pass a soul's workspace directory (or a specific .html file in it). Open the
         returned ``url`` with browser_navigate and browser_screenshot to render it — a real
         http render, unlike a blank file:// one. The server stays up (for live testing)
         until idle or serve_stop.
 
-        By default the site is also exposed on a public https URL (``public_url``) when the
-        user is messaging from a phone/remote channel, and kept local-only when they're at
-        the computer (cli). Pass public=True/False to override.
+        Remote users (whatsapp/telegram) always get a public https URL (``public_url``) to
+        share — a 127.0.0.1 link is useless on their phone. A local user (cli) stays
+        local-only by default; pass public=True there to also expose it.
 
         Args:
             path: absolute path to a workspace directory under the agents tree, or an
                 .html file inside one.
-            public: force a public URL on/off; omit to auto-pick by channel.
+            public: for a local (cli) user, force a public URL on; ignored for remote users
+                (they always get one).
         """
         try:
             site, url = await manager.serve(path.strip())
         except ServeError as exc:
-            return {"status": "error", "error_message": str(exc)}
+            return err(str(exc))
         except Exception as exc:  # tools never raise to the model
-            return {"status": "error", "error_message": f"could not serve: {exc}"}
+            return err(f"could not serve: {exc}")
 
         result: dict[str, Any] = {
             "status": "success",
@@ -69,11 +74,18 @@ def make_serve(
             "port": site.port,
             "root": str(site.root),
         }
-        want_public = _auto_public() if public is None else public
+        # A remote user (whatsapp/telegram) can't open a 127.0.0.1 link, so they always need
+        # the public URL — even if the model passed public=False (it has no reason to strand a
+        # phone user local-only). Explicit on/off is honoured only for local channels (cli).
+        want_public = _auto_public() or bool(public)
         if want_public:
             if tunnel_enabled and tunnel is not None:
                 try:
-                    result["public_url"] = await tunnel.open(site.port)
+                    # The tunnel forwards the port root; re-attach the entry (e.g. "site.html")
+                    # so the public link opens the same page the local url/screenshot does — not
+                    # the bare directory (a listing or 404 when there's no index.html).
+                    base = (await tunnel.open(site.port)).rstrip("/")
+                    result["public_url"] = base + "/" + url[len(site.url) :]
                 except TunnelError as exc:
                     result["public_url_error"] = str(exc)
             elif public is True:
@@ -82,6 +94,15 @@ def make_serve(
                 result["public_url_error"] = (
                     "public tunneling is disabled — set tools.serve.tunnel.enabled in gaia.yaml"
                 )
+        # A remote user needs a public_url; if we couldn't make one, the only thing they can
+        # actually see is a screenshot. Flag it so the model screenshots instead of pasting the
+        # useless 127.0.0.1 url. (A local cli user — want_public false — can open it directly.)
+        if want_public and "public_url" not in result:
+            result["viewable_by_user"] = False
+            result["note"] = (
+                "127.0.0.1 is local-only — the user can't open it. Show them by taking a "
+                "screenshot (browser_navigate + browser_take_screenshot); do not paste this url."
+            )
         return result
 
     return serve
@@ -101,12 +122,12 @@ def make_serve_stop(
         try:
             site = await manager.stop(target.strip())
         except Exception as exc:  # tools never raise to the model
-            return {"status": "error", "error_message": f"could not stop: {exc}"}
+            return err(f"could not stop: {exc}")
         if site is None:
-            return {"status": "error", "error_message": f"no server matching {target.strip()!r}"}
+            return err(f"no server matching {target.strip()!r}")
         if tunnel is not None:
             await tunnel.close(site.port)
-        return {"status": "success", "stopped": str(site.root), "port": site.port}
+        return ok(stopped=str(site.root), port=site.port)
 
     return serve_stop
 
@@ -125,6 +146,6 @@ def make_serve_list(
             if live is not None:
                 entry["public_url"] = live.url
             sites.append(entry)
-        return {"status": "success", "servers": sites}
+        return ok(servers=sites)
 
     return serve_list

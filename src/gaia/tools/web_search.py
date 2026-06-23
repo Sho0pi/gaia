@@ -12,6 +12,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Protocol
 
+from gaia.tools._helpers import err, ok
+
 #: Tool id, used by the registry and as the ADK tool name (matches the closure name).
 NAME = "web_search"
 
@@ -78,17 +80,14 @@ def make_web_search(provider: SearchProvider) -> Callable[..., dict[str, Any]]:
         cleaned = query.strip()
 
         if not cleaned:
-            return {"status": "error", "error_message": "query must not be empty"}
+            return err("query must not be empty")
 
         timelimit: str | None = None
         if time_range:
             timelimit = TIME_RANGES.get(time_range.strip().lower())
             if timelimit is None:
                 allowed = ", ".join(TIME_RANGES)
-                return {
-                    "status": "error",
-                    "error_message": f"time_range must be empty or one of: {allowed}",
-                }
+                return err(f"time_range must be empty or one of: {allowed}")
 
         capped = max(1, min(max_results, MAX_RESULTS_CAP))
         # The provider hits the network (DNS, rate limits, SDK changes); a raised
@@ -97,7 +96,7 @@ def make_web_search(provider: SearchProvider) -> Callable[..., dict[str, Any]]:
         try:
             results = provider(cleaned, capped, timelimit)
         except Exception as exc:
-            return {"status": "error", "error_message": f"search failed: {exc}"}
-        return {"status": "success", "results": results}
+            return err(f"search failed: {exc}")
+        return ok(results=results)
 
     return web_search

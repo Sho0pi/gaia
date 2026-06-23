@@ -42,7 +42,7 @@ def make_fs_write(agents_dir: Path) -> Callable[..., dict[str, Any]]:
         if mode not in _WRITE_MODES:
             return err(f"mode must be one of: {', '.join(sorted(_WRITE_MODES))}")
         try:
-            target = sandbox.resolve(path)
+            target = sandbox.resolve(path, write=True)
         except SandboxError as exc:
             return err(str(exc))
         if target.is_dir():

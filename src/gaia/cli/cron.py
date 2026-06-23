@@ -17,6 +17,20 @@ import typer
 from gaia.cli._console import console, emit_json
 from gaia.cli._options import state
 
+# Argument/option types named once so the command signatures below stay readable.
+JobIdArg = Annotated[str, typer.Argument(help="Job id.")]
+ExprArg = Annotated[
+    str, typer.Argument(help="Cron expression ('0 9 * * *'); or use --every/--at instead.")
+]
+MessageArg = Annotated[str, typer.Argument(help="What gaia should do when it fires.")]
+EveryOpt = Annotated[int, typer.Option("--every", help="Interval in seconds (min 30).")]
+AtOpt = Annotated[str, typer.Option("--at", help="One-shot ISO datetime (auto-deletes).")]
+NameOpt = Annotated[str, typer.Option("--name", help="Short label.")]
+ChannelOpt = Annotated[
+    str, typer.Option("--channel", help="Deliver to this connector (telegram/whatsapp).")
+]
+ChatOpt = Annotated[str, typer.Option("--chat", help="Chat id on that connector.")]
+
 app = typer.Typer(name="cron", help="Schedule jobs gaia runs on its own.", no_args_is_help=True)
 
 
@@ -48,7 +62,7 @@ def list_jobs(ctx: typer.Context) -> None:
 
 
 @app.command()
-def show(ctx: typer.Context, job_id: Annotated[str, typer.Argument(help="Job id.")]) -> None:
+def show(ctx: typer.Context, job_id: JobIdArg) -> None:
     """Print one job in full (raw JSON with --json)."""
     from gaia.cron import CronStore
 
@@ -62,20 +76,16 @@ def show(ctx: typer.Context, job_id: Annotated[str, typer.Argument(help="Job id.
         console().print(job.model_dump())
 
 
-@app.command()
+@app.command("new")
 def add(
     ctx: typer.Context,
-    expr: Annotated[
-        str, typer.Argument(help="Cron expression ('0 9 * * *'); or use --every/--at instead.")
-    ] = "",
-    message: Annotated[str, typer.Argument(help="What gaia should do when it fires.")] = "",
-    every: Annotated[int, typer.Option("--every", help="Interval in seconds (min 30).")] = 0,
-    at: Annotated[str, typer.Option("--at", help="One-shot ISO datetime (auto-deletes).")] = "",
-    name: Annotated[str, typer.Option("--name", help="Short label.")] = "",
-    channel: Annotated[
-        str, typer.Option("--channel", help="Deliver to this connector (telegram/whatsapp).")
-    ] = "",
-    chat: Annotated[str, typer.Option("--chat", help="Chat id on that connector.")] = "",
+    expr: ExprArg = "",
+    message: MessageArg = "",
+    every: EveryOpt = 0,
+    at: AtOpt = "",
+    name: NameOpt = "",
+    channel: ChannelOpt = "",
+    chat: ChatOpt = "",
 ) -> None:
     """Add a job: EXPR MESSAGE, or --every N / --at WHEN with MESSAGE."""
     from gaia.cron import CronJob, CronStore
@@ -103,7 +113,7 @@ def add(
 
 
 @app.command()
-def rm(ctx: typer.Context, job_id: Annotated[str, typer.Argument(help="Job id.")]) -> None:
+def rm(ctx: typer.Context, job_id: JobIdArg) -> None:
     """Delete a job."""
     from gaia.cron import CronStore
 
@@ -113,14 +123,18 @@ def rm(ctx: typer.Context, job_id: Annotated[str, typer.Argument(help="Job id.")
     console().print(f"removed {job_id}")
 
 
+# `remove` is a visible alias for `rm`.
+app.command("remove")(rm)
+
+
 @app.command()
-def enable(ctx: typer.Context, job_id: Annotated[str, typer.Argument(help="Job id.")]) -> None:
+def enable(ctx: typer.Context, job_id: JobIdArg) -> None:
     """Enable a disabled job."""
     _flip(job_id, True)
 
 
 @app.command()
-def disable(ctx: typer.Context, job_id: Annotated[str, typer.Argument(help="Job id.")]) -> None:
+def disable(ctx: typer.Context, job_id: JobIdArg) -> None:
     """Disable a job without deleting it."""
     _flip(job_id, False)
 

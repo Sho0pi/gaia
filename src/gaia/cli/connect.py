@@ -47,21 +47,27 @@ _WHATSAPP_TUTORIAL = """\
 """
 
 
+ConnectorsArg = Annotated[
+    list[str] | None,
+    typer.Argument(help="Connector names (telegram/whatsapp); empty = pick from a menu."),
+]
+TokenOpt = Annotated[
+    str | None, typer.Option("--token", help="Telegram bot token (skips the prompt).")
+]
+VerifyOpt = Annotated[
+    bool, typer.Option("--verify/--no-verify", help="Check the telegram token via getMe.")
+]
+TimeoutOpt = Annotated[
+    int, typer.Option("--timeout", help="Seconds to wait for the WhatsApp QR scan.")
+]
+
+
 def connect(
     ctx: typer.Context,
-    connectors: Annotated[
-        list[str] | None,
-        typer.Argument(help="Connector names (telegram/whatsapp); empty = pick from a menu."),
-    ] = None,
-    token: Annotated[
-        str | None, typer.Option("--token", help="Telegram bot token (skips the prompt).")
-    ] = None,
-    verify: Annotated[
-        bool, typer.Option("--verify/--no-verify", help="Check the telegram token via getMe.")
-    ] = True,
-    timeout: Annotated[
-        int, typer.Option("--timeout", help="Seconds to wait for the WhatsApp QR scan.")
-    ] = 120,
+    connectors: ConnectorsArg = None,
+    token: TokenOpt = None,
+    verify: VerifyOpt = True,
+    timeout: TimeoutOpt = 120,
 ) -> None:
     """Set up chat connectors: pick them from a menu, then connect each one."""
     from gaia.config import get_settings
@@ -287,9 +293,10 @@ async def _pair(session_db: object, timeout_s: int) -> bool:
     from pathlib import Path
 
     from gaia.connectors import WhatsAppWebConnector
+    from gaia.connectors.base import Inbound
 
     async def _noop_dispatch(
-        _sender_id: str, _name: str, _text: str, _send: object
+        _sender_id: str, _name: str, _inbound: Inbound, _send: object
     ) -> None:  # pragma: no cover
         return None
 

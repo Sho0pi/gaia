@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 
 import gaia.core.dispatch as dispatch_mod
+from gaia.connectors.base import Inbound
 from gaia.core.dispatch import Dispatcher
 from gaia.users import UserStore
 
@@ -25,9 +26,9 @@ class _FakeHandler:
         self.calls: list[str] = []
         self.flushed = 0
 
-    async def __call__(self, text: str, send: Any) -> None:
-        self.calls.append(text)
-        await send(f"handled:{text}")
+    async def __call__(self, inbound: Inbound, send: Any) -> None:
+        self.calls.append(inbound.text)
+        await send(f"handled:{inbound.text}")
 
     async def flush(self) -> None:
         self.flushed += 1
@@ -76,7 +77,9 @@ async def test_unknown_remote_sender_is_gated_as_guest(
     d = Dispatcher(gaia)
     out: list[str] = []
 
-    await d.for_channel("whatsapp")("972@s.whatsapp.net", "Grace", "hi", await _send_collect(out))
+    await d.for_channel("whatsapp")(
+        "972@s.whatsapp.net", "Grace", Inbound(text="hi"), await _send_collect(out)
+    )
 
     assert built == []  # no handler built — never reached the model
     assert out == []  # guests get silence on the wire; approval is out-of-band
@@ -93,7 +96,9 @@ async def test_approved_user_routes_to_per_user_handler(
     d = Dispatcher(gaia)
     out: list[str] = []
 
-    await d.for_channel("whatsapp")("972@s.whatsapp.net", "Grace", "hi", await _send_collect(out))
+    await d.for_channel("whatsapp")(
+        "972@s.whatsapp.net", "Grace", Inbound(text="hi"), await _send_collect(out)
+    )
 
     assert out == ["handled:hi"]
     assert len(built) == 1
@@ -109,8 +114,8 @@ async def test_handler_cached_per_user_channel(tmp_path: Path, built: list[_Fake
     send = await _send_collect(out)
 
     wa = d.for_channel("whatsapp")
-    await wa("972@s.whatsapp.net", "Grace", "one", send)
-    await wa("972@s.whatsapp.net", "Grace", "two", send)
+    await wa("972@s.whatsapp.net", "Grace", Inbound(text="one"), send)
+    await wa("972@s.whatsapp.net", "Grace", Inbound(text="two"), send)
 
     assert len(built) == 1  # same handler reused
     assert built[0].calls == ["one", "two"]
@@ -126,8 +131,8 @@ async def test_same_person_two_channels_shares_user_id(
     out: list[str] = []
     send = await _send_collect(out)
 
-    await d.for_channel("whatsapp")("111@s.whatsapp.net", "Itay", "a", send)
-    await d.for_channel("telegram")("42", "Itay", "b", send)
+    await d.for_channel("whatsapp")("111@s.whatsapp.net", "Itay", Inbound(text="a"), send)
+    await d.for_channel("telegram")("42", "Itay", Inbound(text="b"), send)
 
     # two handlers (one per channel session) but the SAME memory partition (user_id)
     assert {h.user_id for h in built} == {"itay"}
@@ -139,7 +144,7 @@ async def test_cli_local_is_trusted_admin(tmp_path: Path, built: list[_FakeHandl
     d = Dispatcher(gaia)
     out: list[str] = []
 
-    await d.for_channel("cli")("local", "operator", "hi", await _send_collect(out))
+    await d.for_channel("cli")("local", "operator", Inbound(text="hi"), await _send_collect(out))
 
     assert out == ["handled:hi"]  # not gated
     assert built[0].role == "admin"  # cli default_role
@@ -155,7 +160,7 @@ async def test_cli_is_admin_even_if_config_says_otherwise(
     d = Dispatcher(gaia)
     out: list[str] = []
 
-    await d.for_channel("cli")("local", "operator", "hi", await _send_collect(out))
+    await d.for_channel("cli")("local", "operator", Inbound(text="hi"), await _send_collect(out))
 
     assert out == ["handled:hi"]  # still not gated
     assert built[0].role == "admin"
@@ -165,7 +170,9 @@ async def test_flush_all_drains_every_handler(tmp_path: Path, built: list[_FakeH
     gaia = _gaia(tmp_path)
     gaia.users.register("whatsapp", "972@s.whatsapp.net", "Grace", role="user")
     d = Dispatcher(gaia)
-    await d.for_channel("whatsapp")("972@s.whatsapp.net", "Grace", "hi", await _send_collect([]))
+    await d.for_channel("whatsapp")(
+        "972@s.whatsapp.net", "Grace", Inbound(text="hi"), await _send_collect([])
+    )
 
     await d.flush_all()
 

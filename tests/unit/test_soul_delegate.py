@@ -30,7 +30,7 @@ class _FakeFactory:
     def __init__(self, registry: SoulRegistry) -> None:
         self._registry = registry
 
-    def create_or_reuse(self, spec: AgentSpec, *, extra_tools: Any = None) -> Any:
+    def create_or_reuse(self, spec: AgentSpec, *, effort: str = "", extra_tools: Any = None) -> Any:
         if self._registry.get(spec.key) is None:
             self._registry.save(spec)
         return SimpleNamespace(name=spec.key)
@@ -40,7 +40,7 @@ def _gaia(registry: SoulRegistry) -> Any:
     return SimpleNamespace(
         config=SimpleNamespace(
             llm=SimpleNamespace(
-                model="m", provider="gemini", openai=SimpleNamespace(use_oauth=False)
+                model="m", provider="gemini", effort="", openai=SimpleNamespace(use_oauth=False)
             ),
             souls=SimpleNamespace(timeout_seconds=300.0),
         ),
@@ -69,10 +69,17 @@ def _stub_decision(monkeypatch: pytest.MonkeyPatch, decision: SoulDecision) -> N
 
 def _stub_run_writing(monkeypatch: pytest.MonkeyPatch, filename: str) -> None:
     async def fake_run(
-        gaia: Any, soul: Any, key: str, task: str, user_id: str, *, state: Any = None
-    ) -> str:
+        gaia: Any,
+        soul: Any,
+        key: str,
+        task: str,
+        user_id: str,
+        *,
+        state: Any = None,
+        warm_key: Any = None,
+    ) -> tuple[str, list[str]]:
         (sandbox_for(constants.AGENTS_DIR, key).primary / filename).write_text("<html>")
-        return "built it"
+        return "built it", []
 
     monkeypatch.setattr("gaia.souls.run.run_soul_agent", fake_run)
 
@@ -93,8 +100,94 @@ async def test_forge_path_persists_runs_and_lists_only_new_files(
     assert out["created"] is True
     assert out["soul"] == "Web Designer"
     assert out["files"] == ["index.html"]  # only this run's file; old_site.html excluded
-    assert out["workspace"].endswith("web_designer/workspace")
+    # No project given -> a fresh project dir under the soul's workspace.
+    assert "web_designer/workspace/" in out["workspace"]
     assert gaia.souls.get("web_designer") is not None  # persisted for reuse
+
+
+async def test_project_arg_scopes_the_workspace(
+    env: tuple[Any, list[Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gaia, _ = env
+    _stub_decision(monkeypatch, SoulDecision(action="forge", reason="r", spec=_SPEC))
+    _stub_run_writing(monkeypatch, "index.html")
+
+    out = await make_delegate(gaia)("build it", "plant-shop", tool_context=_CTX)
+
+    assert out["status"] == "success"
+    assert out["project"] == "plant-shop"
+    assert out["workspace"].endswith("web_designer/workspace/plant-shop")
+
+
+async def test_media_deliverables_come_back_in_the_result(
+    env: tuple[Any, list[Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The soul writes a PDF deliverable + the site source, and took a screenshot mid-run. The
+    # PDF (a media file) and the screenshot (from the soul's event stream) come back as media;
+    # the .html source does not — so the root can deliver them without re-doing the work.
+    gaia, _ = env
+    _stub_decision(monkeypatch, SoulDecision(action="forge", reason="r", spec=_SPEC))
+
+    async def fake_run(
+        gaia: Any,
+        soul: Any,
+        key: str,
+        task: str,
+        user_id: str,
+        *,
+        state: Any = None,
+        warm_key: Any = None,
+    ) -> tuple[str, list[str]]:
+        primary = sandbox_for(constants.AGENTS_DIR, key).primary
+        (primary / "plan.pdf").write_text("%PDF")
+        (primary / "index.html").write_text("<html>")
+        return "done", ["/tmp/screenshot.png"]  # a screenshot the soul took this run
+
+    monkeypatch.setattr("gaia.souls.run.run_soul_agent", fake_run)
+
+    out = await make_delegate(gaia)("build it", tool_context=_CTX)
+
+    assert out["status"] == "success"
+    media = out["media"]
+    assert "/tmp/screenshot.png" in media  # screenshot from the soul's events
+    assert any(p.endswith("plan.pdf") for p in media)  # PDF deliverable from the workspace
+    assert not any(p.endswith("index.html") for p in media)  # site source is not media
+
+
+async def test_attachment_is_copied_into_the_soul_workspace(
+    env: tuple[Any, list[Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # delegate_to_soul(attachments=[...]) hands a prior soul's file to the next one: it lands in
+    # the target's workspace before it runs (the copy happens in execute_decision, pre-run).
+    gaia, _ = env
+    _stub_decision(monkeypatch, SoulDecision(action="forge", reason="r", spec=_SPEC))
+    src = sandbox_for(constants.AGENTS_DIR, "gym_bro").primary / "plan.pdf"
+    src.parent.mkdir(parents=True, exist_ok=True)
+    src.write_bytes(b"%PDF")
+
+    seen: dict[str, Path] = {}
+
+    async def fake_run(
+        gaia: Any,
+        soul: Any,
+        key: str,
+        task: str,
+        user_id: str,
+        *,
+        state: Any = None,
+        warm_key: Any = None,
+    ) -> tuple[str, list[str]]:
+        seen["dest"] = sandbox_for(constants.AGENTS_DIR, key).primary / "plan.pdf"
+        return "done", []
+
+    monkeypatch.setattr("gaia.souls.run.run_soul_agent", fake_run)
+
+    out = await make_delegate(gaia)(
+        "build a site", "site", attachments=[str(src)], tool_context=_CTX
+    )
+
+    assert out["status"] == "success"
+    assert seen["dest"].read_bytes() == b"%PDF"  # present in the soul's workspace before it ran
 
 
 async def test_passes_invocation_user_id_to_the_soul(
@@ -105,10 +198,17 @@ async def test_passes_invocation_user_id_to_the_soul(
     seen: dict[str, str] = {}
 
     async def fake_run(
-        gaia: Any, soul: Any, key: str, task: str, user_id: str, *, state: Any = None
-    ) -> str:
+        gaia: Any,
+        soul: Any,
+        key: str,
+        task: str,
+        user_id: str,
+        *,
+        state: Any = None,
+        warm_key: Any = None,
+    ) -> tuple[str, list[str]]:
         seen["user_id"] = user_id
-        return "ok"
+        return "ok", []
 
     monkeypatch.setattr("gaia.souls.run.run_soul_agent", fake_run)
     ctx = SimpleNamespace(user_id="alice")  # ADK public ToolContext.user_id
@@ -171,12 +271,19 @@ async def test_honors_configured_soul_timeout(
     _stub_decision(monkeypatch, SoulDecision(action="forge", reason="r", spec=_SPEC))
 
     async def slow_run(
-        gaia: Any, soul: Any, key: str, task: str, user_id: str, *, state: Any = None
-    ) -> str:
+        gaia: Any,
+        soul: Any,
+        key: str,
+        task: str,
+        user_id: str,
+        *,
+        state: Any = None,
+        warm_key: Any = None,
+    ) -> tuple[str, list[str]]:
         import asyncio
 
         await asyncio.sleep(1.0)
-        return "too late"
+        return "too late", []
 
     monkeypatch.setattr("gaia.souls.run.run_soul_agent", slow_run)
 

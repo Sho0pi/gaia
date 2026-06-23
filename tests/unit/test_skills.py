@@ -65,6 +65,7 @@ def test_attach_skills_no_ids_returns_base(tmp_path: Path) -> None:
     assert attach_skills("BASE", [], tmp_path) == "BASE"
 
 
+@pytest.mark.realhome  # asserts the real default skills dir (constants), not the tmp home
 def test_resolve_skills_dir_default_and_override(tmp_path: Path) -> None:
     assert resolve_skills_dir(GaiaConfig()) == constants.SKILLS_DIR
     assert resolve_skills_dir(GaiaConfig(skills_dir=tmp_path)) == tmp_path
