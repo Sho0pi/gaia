@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from gaia import constants
 
 
+@pytest.mark.realhome
 def test_home_dir_derives_from_app_name() -> None:
     assert constants.HOME_DIR == Path.home() / f".{constants.APP_NAME}"
 
@@ -15,6 +18,7 @@ def test_env_prefix_derives_from_app_name() -> None:
     assert constants.ENV_PREFIX == f"{constants.APP_NAME.upper()}_"
 
 
+@pytest.mark.realhome
 def test_paths_sit_under_home_dir() -> None:
     for path in (
         constants.ENV_FILE,

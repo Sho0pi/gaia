@@ -31,26 +31,30 @@ class Settings(BaseSettings):
     # OpenAI key for GPT models (provider: openai); read by litellm from the env.
     openai_api_key: str | None = Field(default=None, validation_alias="OPENAI_API_KEY")
 
+    # Path fields use ``default_factory`` so they read ``constants`` at *construction*, not at
+    # class-definition: a test that redirects the home (see tests/conftest.py ``_isolate_home``)
+    # by patching the ``constants`` paths then gets a tmp home from a bare ``Settings()`` too —
+    # so no test writes the real ~/.gaia. (``default=constants.X`` would bake the real path in.)
     # Where reusable AgentCards are persisted.
     agent_registry_dir: Path = Field(
-        default=constants.AGENT_REGISTRY_DIR,
+        default_factory=lambda: constants.AGENT_REGISTRY_DIR,
         validation_alias=f"{constants.ENV_PREFIX}AGENT_REGISTRY_DIR",
     )
 
     # The hot-swappable gaia.yaml (non-secret runtime config). Lives next to the
     # WhatsApp session db so all of the app's home state is under HOME_DIR.
     config_path: Path = Field(
-        default=constants.CONFIG_PATH, validation_alias=f"{constants.ENV_PREFIX}CONFIG"
+        default_factory=lambda: constants.CONFIG_PATH,
+        validation_alias=f"{constants.ENV_PREFIX}CONFIG",
     )
 
     # Directory for rotating log files (system.log / events.jsonl / errors.log).
     log_dir: Path = Field(
-        default=constants.LOG_DIR, validation_alias=f"{constants.ENV_PREFIX}LOG_DIR"
+        default_factory=lambda: constants.LOG_DIR,
+        validation_alias=f"{constants.ENV_PREFIX}LOG_DIR",
     )
 
-    # Cross-channel user store (channel sender -> canonical user). ``default_factory`` reads
-    # ``constants`` at construction so tests can redirect the whole store to a tmp home by
-    # patching ``constants.USERS_FILE`` (keeps test runs from writing the real ~/.gaia file).
+    # Cross-channel user store (channel sender -> canonical user).
     users_file: Path = Field(
         default_factory=lambda: constants.USERS_FILE,
         validation_alias=f"{constants.ENV_PREFIX}USERS_FILE",
@@ -69,7 +73,8 @@ class Settings(BaseSettings):
     # Session db for the regular-account (neonize) backend. First run writes a QR
     # to the terminal; the paired session is persisted here so later runs skip it.
     whatsapp_session_db: Path = Field(
-        default=constants.SESSION_DB, validation_alias=f"{constants.ENV_PREFIX}WHATSAPP_SESSION_DB"
+        default_factory=lambda: constants.SESSION_DB,
+        validation_alias=f"{constants.ENV_PREFIX}WHATSAPP_SESSION_DB",
     )
 
     # mem0 long-term memory.
