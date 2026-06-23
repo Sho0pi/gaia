@@ -56,6 +56,26 @@ def test_resolve_answer_free_text_passthrough() -> None:
     assert resolve_answer(pending, "sk-abc123") == "sk-abc123"
 
 
+def test_soul_pending_json_round_trip() -> None:
+    # P3 persists a SoulPending on a Task row; it must survive a JSON round-trip intact.
+    from gaia.core.elicit import soul_pending_from_json, soul_pending_to_json
+
+    p = SoulPending(
+        warm_key="w/p",
+        soul_key="w",
+        project="p",
+        soul_fc_id="fc",
+        question="q?",
+        options=("a", "b"),
+        secret=True,
+        soul_name="N",
+        user_id="u",
+        before={"a.html": 1.5},
+    )
+    back = soul_pending_from_json(soul_pending_to_json(p))
+    assert back == p and back.options == ("a", "b")  # options restored as a tuple, not a list
+
+
 # --- as_text: every connector can render a Question as numbered text -----------------
 
 

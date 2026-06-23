@@ -115,3 +115,38 @@ async def test_approve_other_owners_task_hidden() -> None:
 async def test_approve_without_id_shows_usage() -> None:
     out = await TasksCommand().run(_ctx(args="approve"))
     assert "Usage" in out
+
+
+async def test_answer_records_answer_and_releases_to_inbox() -> None:
+    ctx = _ctx(user_id="itay")
+    store = ctx.gaia.tasks  # type: ignore[attr-defined]
+    t = store.create(
+        Task(title="weather", owner="itay", status=TaskStatus.AWAITING_INPUT, pending="{}")
+    )
+
+    out = await TasksCommand().run(_ctx(args=f"answer {t.id} Tel Aviv", user_id="itay"))
+
+    assert "continue" in out.lower()
+    got = store.get(t.id)
+    assert got is not None and got.status is TaskStatus.INBOX and got.pending_answer == "Tel Aviv"
+
+
+async def test_answer_non_awaiting_task_is_refused() -> None:
+    ctx = _ctx()
+    store = ctx.gaia.tasks  # type: ignore[attr-defined]
+    t = store.create(Task(title="x", owner="itay", status=TaskStatus.INBOX))
+
+    out = await TasksCommand().run(_ctx(args=f"answer {t.id} hi", user_id="itay"))
+
+    assert "isn't waiting" in out
+    assert store.get(t.id).pending_answer == ""  # type: ignore[union-attr]
+
+
+async def test_answer_not_your_task_is_refused() -> None:
+    ctx = _ctx()
+    store = ctx.gaia.tasks  # type: ignore[attr-defined]
+    t = store.create(Task(title="x", owner="grace", status=TaskStatus.AWAITING_INPUT))
+
+    out = await TasksCommand().run(_ctx(args=f"answer {t.id} hi", user_id="itay", role="user"))
+
+    assert "No task" in out  # not the caller's task

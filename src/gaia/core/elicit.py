@@ -9,8 +9,9 @@ ADK-free module so the resolve logic is unit-testable without a runner.
 
 from __future__ import annotations
 
+import json
 from contextvars import ContextVar
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 
 #: The ``ask_user`` tool id (mirrors ``gaia.tools.ask_user.NAME``). Duplicated as a plain
 #: literal so the handler need not import the tool module (which pulls in ADK at import).
@@ -52,6 +53,21 @@ class SoulPending:
 soul_elicitation_sink: ContextVar[list[SoulPending] | None] = ContextVar(
     "soul_elicitation_sink", default=None
 )
+
+
+def soul_pending_to_json(pending: SoulPending) -> str:
+    """Serialize a :class:`SoulPending` for durable storage on a Task row (P3)."""
+    return json.dumps(asdict(pending))
+
+
+def soul_pending_from_json(raw: str) -> SoulPending:
+    """Rebuild a :class:`SoulPending` persisted by :func:`soul_pending_to_json`.
+
+    ``options`` round-trips through JSON as a list — restore it to the dataclass's tuple.
+    """
+    data = json.loads(raw)
+    data["options"] = tuple(data.get("options") or ())
+    return SoulPending(**data)
 
 
 @dataclass(frozen=True)

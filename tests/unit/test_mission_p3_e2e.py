@@ -177,3 +177,60 @@ async def test_gated_task_waits_for_approval_and_survives_restart(
         await _poll_until(store, lambda: store.get(t.id).status is TaskStatus.DONE)  # type: ignore[union-attr]
         await d2.stop()
     assert store.get(t.id).status is TaskStatus.DONE  # type: ignore[union-attr]
+
+
+async def test_background_soul_asks_user_then_resumes_on_answer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The P3 acceptance: a soul running on the dispatcher calls ask_user → the task parks at
+    # AWAITING_INPUT and the question is pushed out-of-band → the user answers via /tasks →
+    # the dispatcher resumes the soul (exact, in-process) and it finishes.
+    gaia = _gaia(tmp_path, monkeypatch, "memory:\n  enabled: false\n")
+    fake = FakeLlm(
+        responses=[
+            _forge("Weatherman"),  # smith forges the soul
+            _call("ask_user", question="Which city?"),  # the soul asks → pauses the run
+            _text("Weather for Tel Aviv: sunny"),  # after the answer, it finishes
+        ]
+    )
+    monkeypatch.setattr("gaia.models.resolve_model", lambda *a, **k: fake)
+    monkeypatch.setattr("gaia.agents.factory.resolve_model", lambda *a, **k: fake)
+    sender = _Sender()
+    gaia.connectors["whatsapp"] = sender
+    store = TaskStore()
+    t = store.create(
+        Task(
+            title="weather site",
+            owner="itay",
+            spec="build a weather page",
+            notify_channel="whatsapp",
+            notify_chat="972@x",
+        )
+    )
+
+    d = MissionDispatcher(gaia, store=store, poll_seconds=0.01)
+    async with gaia:
+        d.start()
+        await _poll_until(store, lambda: store.get(t.id).status is TaskStatus.AWAITING_INPUT)  # type: ignore[union-attr]
+        assert any("Which city?" in m for m in sender.sent)  # asked out-of-band
+        parked = store.get(t.id)
+        assert parked is not None and "Which city?" in parked.pending  # parked durably
+
+        ctx = CommandContext(
+            args=f"answer {t.id} Tel Aviv",
+            gaia=gaia,
+            handler=SimpleNamespace(),  # type: ignore[arg-type]
+            registry=SimpleNamespace(),  # type: ignore[arg-type]
+            user_id="itay",
+            session_id="s",
+            role="user",
+        )
+        assert "continue" in (await TasksCommand().run(ctx)).lower()
+
+        await _poll_until(store, lambda: store.get(t.id).status is TaskStatus.DONE)  # type: ignore[union-attr]
+        await d.stop()
+
+    done = store.get(t.id)
+    assert done is not None and done.status is TaskStatus.DONE
+    assert "Tel Aviv" in (done.result or "")  # resumed and finished
+    assert done.pending == "" and done.pending_answer == ""  # slot cleared
