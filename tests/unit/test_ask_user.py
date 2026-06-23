@@ -183,6 +183,38 @@ async def test_secret_answer_is_not_buffered_to_memory() -> None:
     assert handler._buffer == []  # the secret-bearing turn never entered the ingest buffer
 
 
+class _CompletionTrackingRunner:
+    """Records whether run_async ran to its natural end or was aclose()d early."""
+
+    def __init__(self, events: list[SimpleNamespace]) -> None:
+        self._events = events
+        self.completed = False
+        self.aclosed = False
+
+    async def run_async(self, **_kwargs: Any) -> AsyncIterator[SimpleNamespace]:
+        try:
+            for event in self._events:
+                yield event
+            self.completed = True  # reached StopAsyncIteration — the run closed itself
+        except GeneratorExit:
+            self.aclosed = True  # early break/return aclose()d a live span → the old bug
+            raise
+
+
+async def test_pause_lets_the_run_complete_not_cancelled() -> None:
+    # Regression: a long-running ask_user emits no function-response, so run_async ends on
+    # its own. The handler must iterate to that end, not return mid-loop — an early exit
+    # aclose()s ADK's still-suspended generator ("Root node cancelled" / otel detach error).
+    handler = GaiaHandler(SimpleNamespace(memory_service=None))
+    runner = _CompletionTrackingRunner([_pause_event("fc1", "Pick?", options=["a", "b"])])
+    handler._runner = runner
+
+    await _collect(handler, "go")
+
+    assert handler._pending is not None  # the pause was still recorded + surfaced
+    assert runner.completed is True and runner.aclosed is False  # generator closed cleanly
+
+
 async def test_reset_clears_a_pending_question() -> None:
     handler = GaiaHandler(SimpleNamespace(memory_service=None))
     handler._pending = Pending(fc_id="fc1", options=("a",))

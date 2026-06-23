@@ -217,6 +217,7 @@ class GaiaHandler:
         runner = await self._ensure_runner()
         turn_events: list[Any] = []
         texts: list[str] = []
+        ask_call: Any | None = None
         try:
             async for event in runner.run_async(
                 user_id=self._user_id,
@@ -227,14 +228,14 @@ class GaiaHandler:
                 turn_events.append(event)
                 call = self._ask_call(event)
                 if call is not None:
-                    # The run paused on ask_user: send any preface text + the question,
-                    # record what we're waiting on, and stop. The reply resumes the run.
+                    # The run paused on ask_user. Record it but DON'T break the loop: a
+                    # long-running tool emits no function-response, so run_async ends on its
+                    # own right after this event. Letting it finish lets ADK close the run
+                    # cleanly — breaking early aclose()s a live span ("Root node cancelled" /
+                    # "Failed to detach context"). Act on the pause after the loop.
+                    ask_call = call
                     texts.extend(self._event_texts(event))
-                    await self._emit_texts(texts, send)
-                    await self._begin_elicitation(call, send)
-                    if not secret:
-                        await self._buffer_turn(turn_events)
-                    return
+                    continue
                 # Collect the final answer's text parts; they're emitted after the loop so
                 # a screenshot taken this turn can ride as its caption (one message). Skip
                 # the echoed user event (role "user") — it's only here for auto-ingest.
@@ -253,7 +254,12 @@ class GaiaHandler:
             await send(_friendly_error(exc))
             return
 
-        await self._emit_reply(turn_events, texts, send)
+        if ask_call is not None:
+            # Paused: stream any preface text, surface the question, record what we await.
+            await self._emit_texts(texts, send)
+            await self._begin_elicitation(ask_call, send)
+        else:
+            await self._emit_reply(turn_events, texts, send)
         if not secret:
             await self._buffer_turn(turn_events)
 
