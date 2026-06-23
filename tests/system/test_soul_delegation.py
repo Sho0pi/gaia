@@ -48,13 +48,13 @@ async def test_soul_writes_html_into_its_workspace(
     )
     soul = gaia.factory.create_or_reuse(spec)
 
-    summary = await run_soul_agent(
+    turn = await run_soul_agent(
         gaia, soul, spec.key, "Create index.html containing an <h1>Hello</h1>.", "tester"
     )
 
     workspace = tmp_path / "agents" / "web_designer" / "workspace"
     html = list(workspace.rglob("*.html"))
-    assert html, f"soul wrote no .html (summary: {summary!r})"
+    assert html, f"soul wrote no .html (summary: {turn.text!r})"
     assert "<h1>" in html[0].read_text().lower() or "hello" in html[0].read_text().lower()
 
 

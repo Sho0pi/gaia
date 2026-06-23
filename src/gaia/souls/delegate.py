@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 from google.adk.tools.tool_context import ToolContext
 
-from gaia.souls.run import SoulRun, execute_decision, existing_souls
+from gaia.souls.run import SoulRun, execute_decision, existing_souls, soul_result
 from gaia.souls.smith import SoulDecision, build_soul_smith
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -26,8 +26,13 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 NAME = "delegate_to_soul"
 
 
-def make_delegate(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any]]]:
-    """Return the root-only ``delegate_to_soul`` tool bound to ``gaia``."""
+def make_delegate(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any] | None]]:
+    """Return the root-only ``delegate_to_soul`` tool bound to ``gaia``.
+
+    Wrapped as a ``LongRunningFunctionTool`` where it's attached to the root agent: when the
+    delegated soul calls ``ask_user``, this returns ``None`` to pause the root (the handler then
+    surfaces the soul's question); a normal completion returns its result dict as usual.
+    """
 
     async def delegate_to_soul(
         task: str,
@@ -35,7 +40,7 @@ def make_delegate(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any]]]:
         attachments: list[str] | None = None,
         *,
         tool_context: ToolContext,
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | None:
         """Hand a complex or specialized task to a specialist soul (found or newly
         forged); it writes its deliverables as files in its workspace. For build/creation
         tasks (e.g. "design a website"), not things you answer yourself.
@@ -66,24 +71,14 @@ def make_delegate(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any]]]:
         run: SoulRun = await execute_decision(
             gaia, decision, task, user_id, project=project, attachments=attachments
         )
-        if not run.ok:
-            return {
-                "status": "error",
-                "soul": run.soul_key,
-                "created": run.created,
-                "error_message": run.error,
-            }
-        return {
-            "status": "success",
-            "soul": run.soul_name,
-            "created": run.created,
-            "reason": run.reason,
-            "workspace": run.workspace,
-            "project": run.project,
-            "files": run.files,
-            "media": run.media,
-            "summary": run.summary,
-        }
+        if run.pending is not None:
+            # The soul asked the user mid-task. Stash the pause for the handler (keyed by user)
+            # and pin its warm session so the reaper can't drop it before the answer; return None
+            # so this long-running tool pauses the root run.
+            gaia.elicitations[user_id] = run.pending
+            gaia.soul_sessions.pin(run.pending.warm_key)
+            return None
+        return soul_result(run)
 
     return delegate_to_soul
 

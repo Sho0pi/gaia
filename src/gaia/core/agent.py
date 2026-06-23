@@ -33,6 +33,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from google.adk.agents import LlmAgent
 
     from gaia.config import GaiaConfig
+    from gaia.core.elicit import SoulPending
     from gaia.memory import Mem0MemoryService
 
 
@@ -60,6 +61,9 @@ class Gaia:
         # Live proactive senders (connector name → object with ``send_to``); the launcher
         # populates this same dict once connectors are running (empty outside the daemon).
         self.connectors: dict[str, Any] = self.container.connectors()
+        # Soul elicitations awaiting a user answer, keyed by user id: the channel by which
+        # ``delegate_to_soul`` hands a paused soul's question to the handler (P2). One per user.
+        self.elicitations: dict[str, SoulPending] = {}
         self._closed = False
 
     async def close(self) -> None:
@@ -226,6 +230,8 @@ class Gaia:
                 f"<USER_PROFILE>\n{profile}\n</USER_PROFILE>"
             )
 
+        from google.adk.tools.long_running_tool import LongRunningFunctionTool
+
         from gaia.core.acl_toolset import AclToolset
         from gaia.souls import make_delegate
         from gaia.tools.command import make_run_command
@@ -251,7 +257,9 @@ class Gaia:
             instruction=instruction,
             tools=[
                 AclToolset(self),
-                make_delegate(self),
+                # Long-running: a delegated soul may call ask_user, pausing the root until the
+                # user answers (handler resumes it). Normal completions return their dict as usual.
+                LongRunningFunctionTool(func=make_delegate(self)),
                 make_run_command(self, handler),
                 make_message_user(self.users, self.connectors, lambda: self.memory_service),
                 make_manage_permission(self),

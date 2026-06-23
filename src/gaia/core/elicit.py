@@ -9,20 +9,53 @@ ADK-free module so the resolve logic is unit-testable without a runner.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 #: The ``ask_user`` tool id (mirrors ``gaia.tools.ask_user.NAME``). Duplicated as a plain
 #: literal so the handler need not import the tool module (which pulls in ADK at import).
 ASK_USER_TOOL = "ask_user"
 
+#: The ``delegate_to_soul`` tool id (mirrors ``gaia.souls.delegate.NAME``). The handler treats
+#: a long-running pause on this tool as a *soul* asking the user (P2), via :class:`SoulPending`.
+DELEGATE_TOOL = "delegate_to_soul"
+
+
+@dataclass
+class SoulPending:
+    """A delegated soul's ``ask_user`` pause — enough to resume that exact soul run.
+
+    A soul runs in a nested Runner inside ``delegate_to_soul``; when it calls ``ask_user`` its
+    run ends at the pause. This captures which warm session/soul/workspace to re-enter and the
+    soul's own ``ask_user`` call id, so the answer resumes the *same* run (see
+    ``gaia.souls.run.resume_soul``). ``before`` is the workspace snapshot taken before the soul
+    first ran, carried across the pause so the final file diff is cumulative.
+    """
+
+    warm_key: str  # (soul, project) key to re-acquire the warm session
+    soul_key: str  # which soul spec to rebuild
+    project: str  # workspace/<project> slug
+    soul_fc_id: str  # the soul's ask_user function_call id to resume
+    question: str
+    options: tuple[str, ...] = ()
+    secret: bool = False
+    soul_name: str = ""
+    user_id: str = ""
+    before: dict[str, float] = field(default_factory=dict)
+
 
 @dataclass(frozen=True)
 class Pending:
-    """A question awaiting the user's reply, keyed to the paused ``ask_user`` call."""
+    """A question awaiting the user's reply, keyed to the paused call.
 
-    fc_id: str  # the ask_user function_call id to resume with a FunctionResponse
+    ``soul`` is None for a root ``ask_user`` (P1): ``fc_id`` is the ask_user call to resume.
+    When ``soul`` is set (P2), ``fc_id`` is the root ``delegate_to_soul`` call, and the answer
+    first resumes the nested soul; only when the soul finishes is the delegate call resumed.
+    """
+
+    fc_id: str
     options: tuple[str, ...] = ()
     secret: bool = False
+    soul: SoulPending | None = None
 
 
 def resolve_answer(pending: Pending, text: str) -> str:
