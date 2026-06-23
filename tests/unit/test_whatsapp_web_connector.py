@@ -79,6 +79,9 @@ class _FakeClient:
         self.reads: list[tuple[str, Any, Any, Any]] = []
         self.presence: list[tuple[Any, Any, Any]] = []  # (chat, state, media)
         self.availability: list[Any] = []
+        self.polls: list[tuple[str, list[str], Any]] = []  # (name, options, selectable_count)
+        self.sent_messages: list[tuple[Any, Any]] = []  # (to, message) from send_message
+        self.poll_vote: Any = None  # canned decrypt_poll_vote result (None → raises)
 
     async def connect(self) -> None:
         self.connected = True
@@ -131,6 +134,20 @@ class _FakeClient:
     async def send_presence(self, presence: Any) -> None:
         self.availability.append(presence)
 
+    async def build_poll_vote_creation(
+        self, name: str, options: list[str], selectable_count: Any
+    ) -> Any:
+        self.polls.append((name, list(options), selectable_count))
+        return SimpleNamespace(name=name, options=list(options), selectable_count=selectable_count)
+
+    async def send_message(self, to: Any, message: Any) -> None:
+        self.sent_messages.append((to, message))
+
+    async def decrypt_poll_vote(self, message: Any) -> Any:
+        if self.poll_vote is None:  # mimic neonize raising when it can't decrypt
+            raise RuntimeError("no poll key")
+        return self.poll_vote
+
 
 @pytest.fixture
 def fake_neonize(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
@@ -155,12 +172,17 @@ def fake_neonize(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     )
     utils_mod.Presence = SimpleNamespace(AVAILABLE="available")  # type: ignore[attr-defined]
 
+    # neonize.utils.enum.VoteType — selected by _send_poll for single vs multi-select.
+    enum_mod = ModuleType("neonize.utils.enum")
+    enum_mod.VoteType = SimpleNamespace(SINGLE=1, MULTIPLE=0)  # type: ignore[attr-defined]
+
     for name, mod in {
         "neonize": ModuleType("neonize"),
         "neonize.aioze": ModuleType("neonize.aioze"),
         "neonize.aioze.client": client_mod,
         "neonize.aioze.events": events_mod,
         "neonize.utils": utils_mod,
+        "neonize.utils.enum": enum_mod,
     }.items():
         monkeypatch.setitem(sys.modules, name, mod)
 
@@ -813,3 +835,100 @@ async def test_presence_disabled_makes_no_calls(
     await client.handlers[fake_neonize["MessageEv"]](client, _msg(conversation="hello"))
 
     assert client.reads == [] and client.presence == [] and client.availability == []
+
+
+def _poll_vote_msg() -> SimpleNamespace:
+    """A fake MessageEv carrying a native poll vote (pollUpdateMessage, no text/media)."""
+    context = SimpleNamespace(quotedMessage=None, mentionedJID=[], participant="")
+    return SimpleNamespace(
+        Message=SimpleNamespace(
+            conversation="",
+            extendedTextMessage=SimpleNamespace(text="", contextInfo=context),
+            pollUpdateMessage=SimpleNamespace(pollCreationMessageKey=SimpleNamespace(ID="POLLID")),
+        ),
+        Info=SimpleNamespace(
+            ID="VOTEID", MessageSource=SimpleNamespace(Chat="chat-jid", Sender="sender-jid")
+        ),
+    )
+
+
+async def test_question_with_options_sent_as_native_poll(
+    fake_neonize: dict[str, Any], tmp_path: Path
+) -> None:
+    from gaia.connectors.base import Question
+
+    async def dispatch(_s: str, _n: str, _i: Inbound, send: Send) -> None:
+        await send(Question(text="Lunch?", options=("Pizza", "Sushi")))
+
+    client = WhatsAppWebConnector(tmp_path / "wa.db", dispatch).build_client()
+    await client.handlers[fake_neonize["MessageEv"]](client, _msg(conversation="hi"))
+
+    assert client.polls == [("Lunch?", ["Pizza", "Sushi"], 1)]  # VoteType.SINGLE
+    assert len(client.sent_messages) == 1 and client.sent_messages[0][0] == "chat-jid"
+    assert client.replies == []  # a native poll, not the numbered-text fallback
+
+
+async def test_multi_select_question_uses_multiple_vote_type(
+    fake_neonize: dict[str, Any], tmp_path: Path
+) -> None:
+    from gaia.connectors.base import Question
+
+    async def dispatch(_s: str, _n: str, _i: Inbound, send: Send) -> None:
+        await send(Question(text="Toppings?", options=("a", "b"), multi=True))
+
+    client = WhatsAppWebConnector(tmp_path / "wa.db", dispatch).build_client()
+    await client.handlers[fake_neonize["MessageEv"]](client, _msg(conversation="hi"))
+
+    assert client.polls[0][2] == 0  # VoteType.MULTIPLE
+
+
+async def test_poll_send_failure_falls_back_to_numbered_text(
+    fake_neonize: dict[str, Any], tmp_path: Path
+) -> None:
+    from gaia.connectors.base import Question
+
+    async def dispatch(_s: str, _n: str, _i: Inbound, send: Send) -> None:
+        await send(Question(text="Pick", options=("apple", "banana")))
+
+    client = WhatsAppWebConnector(tmp_path / "wa.db", dispatch).build_client()
+
+    async def boom(*_a: Any, **_k: Any) -> Any:
+        raise RuntimeError("poll send broke")
+
+    client.build_poll_vote_creation = boom  # type: ignore[method-assign]
+    await client.handlers[fake_neonize["MessageEv"]](client, _msg(conversation="hi"))
+
+    assert client.replies and "1. apple" in client.replies[0][0]  # degraded to numbered text
+
+
+async def test_native_poll_vote_decoded_to_hash_text(
+    fake_neonize: dict[str, Any], tmp_path: Path
+) -> None:
+    import hashlib
+
+    seen: list[str] = []
+
+    async def dispatch(_s: str, _n: str, inbound: Inbound, _send: Send) -> None:
+        seen.append(inbound.text)
+
+    client = WhatsAppWebConnector(tmp_path / "wa.db", dispatch).build_client()
+    client.poll_vote = SimpleNamespace(selectedOptions=[hashlib.sha256(b"Pizza").digest()])
+
+    await client.handlers[fake_neonize["MessageEv"]](client, _poll_vote_msg())
+
+    assert seen == ["[poll:" + hashlib.sha256(b"Pizza").hexdigest() + "]"]
+
+
+async def test_undecryptable_poll_vote_is_dropped(
+    fake_neonize: dict[str, Any], tmp_path: Path
+) -> None:
+    seen: list[str] = []
+
+    async def dispatch(_s: str, _n: str, inbound: Inbound, _send: Send) -> None:
+        seen.append(inbound.text)
+
+    client = WhatsAppWebConnector(tmp_path / "wa.db", dispatch).build_client()
+    # poll_vote stays None → decrypt_poll_vote raises → no text → message dropped (stays paused)
+    await client.handlers[fake_neonize["MessageEv"]](client, _poll_vote_msg())
+
+    assert seen == []

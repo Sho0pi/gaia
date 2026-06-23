@@ -70,13 +70,14 @@ class Question:
     Emitted when the model calls the ``ask_user`` tool. ``options`` (when present) make
     it multiple-choice; a connector may render a native menu/poll, but every connector
     degrades to numbered text via :func:`as_text`, so the user can always reply with the
-    option number. ``secret`` marks the answer sensitive (an API key): the handler keeps
-    it out of long-term memory and logs.
+    option number. ``multi`` allows picking more than one. ``secret`` marks the answer
+    sensitive (an API key): the handler keeps it out of long-term memory and logs.
     """
 
     text: str
     options: tuple[str, ...] = ()
     secret: bool = False
+    multi: bool = False
 
 
 @dataclass(frozen=True)
@@ -132,6 +133,10 @@ def as_text(reply: Reply) -> str:
         if not reply.options:
             return reply.text
         lines = [reply.text, *(f"  {i}. {opt}" for i, opt in enumerate(reply.options, 1))]
-        lines.append("(reply with the number)")
+        lines.append(
+            "(reply with the number(s), e.g. 1 or 1,3)"
+            if reply.multi
+            else "(reply with the number)"
+        )
         return "\n".join(lines)
     return reply

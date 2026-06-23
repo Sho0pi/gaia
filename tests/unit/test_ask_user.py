@@ -8,6 +8,7 @@ ask_user call, then canned continuation events).
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
 from typing import Any
@@ -17,6 +18,12 @@ from gaia.core.elicit import Pending, resolve_answer
 from gaia.core.handler import GaiaHandler
 from gaia.tools.ask_user import make_ask_user
 
+
+def _poll(*labels: str) -> str:
+    """The "[poll:…]" text a WhatsApp poll vote for ``labels`` decodes to."""
+    return "[poll:" + ",".join(hashlib.sha256(label.encode()).hexdigest() for label in labels) + "]"
+
+
 # --- the tool: returns None to pause, turns off result summarization ----------------
 
 
@@ -25,7 +32,7 @@ def test_ask_user_pauses_and_skips_summarization() -> None:
     assert tool.is_long_running is True  # ADK marks the call so run_async completes (pauses)
 
     ctx = SimpleNamespace(actions=SimpleNamespace(skip_summarization=False))
-    result = tool.func(question="pick one", options=["a", "b"], tool_context=ctx)
+    result = tool.func(question="pick one", options=["a", "b"], multi=True, tool_context=ctx)
 
     assert result is None  # a falsy return is what makes ADK emit no function-response
     assert ctx.actions.skip_summarization is True  # model continues straight from the answer
@@ -54,6 +61,27 @@ def test_resolve_answer_free_text_passthrough() -> None:
     assert resolve_answer(pending, "sk-abc123") == "sk-abc123"
 
 
+def test_resolve_answer_native_poll_vote_single() -> None:
+    pending = Pending(fc_id="x", options=("Pizza", "Sushi", "Tacos"))
+    assert resolve_answer(pending, _poll("Sushi")) == "Sushi"
+
+
+def test_resolve_answer_native_poll_vote_multi_keeps_option_order() -> None:
+    pending = Pending(fc_id="x", options=("Pizza", "Sushi", "Tacos"))
+    # vote arrives Tacos-then-Pizza; answer is joined in the question's option order
+    assert resolve_answer(pending, _poll("Tacos", "Pizza")) == "Pizza, Tacos"
+
+
+def test_resolve_answer_numbered_multi_select() -> None:
+    pending = Pending(fc_id="x", options=("Pizza", "Sushi", "Tacos"))
+    assert resolve_answer(pending, "1,3") == "Pizza, Tacos"  # text-channel multi pick
+
+
+def test_resolve_answer_poll_no_match_falls_through() -> None:
+    pending = Pending(fc_id="x", options=("Pizza",))
+    assert resolve_answer(pending, _poll("Sushi")) == _poll("Sushi")  # unknown hash → verbatim
+
+
 # --- as_text: every connector can render a Question as numbered text -----------------
 
 
@@ -79,13 +107,19 @@ def _event(*texts: str, final: bool = True) -> SimpleNamespace:
 
 
 def _pause_event(
-    fc_id: str, question: str, *, options: Any = None, secret: bool = False, preface: str = ""
+    fc_id: str,
+    question: str,
+    *,
+    options: Any = None,
+    secret: bool = False,
+    multi: bool = False,
+    preface: str = "",
 ) -> SimpleNamespace:
     """A fake event where the model called ask_user (a long-running pause)."""
     call = SimpleNamespace(
         id=fc_id,
         name="ask_user",
-        args={"question": question, "options": options, "secret": secret},
+        args={"question": question, "options": options, "secret": secret, "multi": multi},
     )
     parts: list[Any] = []
     if preface:
@@ -141,6 +175,18 @@ async def test_pause_surfaces_question_and_records_pending() -> None:
     assert isinstance(question, Question)
     assert question.text == "Which fruit?" and question.options == ("apple", "banana")
     assert handler._pending is not None and handler._pending.fc_id == "fc1"
+
+
+async def test_multi_select_flag_flows_to_the_question() -> None:
+    handler = GaiaHandler(SimpleNamespace(memory_service=None))
+    handler._runner = _FakeRunner(
+        [_pause_event("fc1", "Toppings?", options=["a", "b"], multi=True)]
+    )
+
+    sent = await _collect(handler, "build me a pizza")
+
+    question = next(r for r in sent if isinstance(r, Question))
+    assert question.multi is True
 
 
 async def test_reply_resumes_the_run_with_a_function_response() -> None:

@@ -26,6 +26,7 @@ def make_ask_user() -> LongRunningFunctionTool:
         question: str,
         options: list[str] | None = None,
         secret: bool = False,
+        multi: bool = False,
         *,
         tool_context: ToolContext,
     ) -> None:
@@ -38,6 +39,8 @@ def make_ask_user() -> LongRunningFunctionTool:
             options: choices to offer for a multiple-choice answer; omit for free text.
             secret: true if the answer is sensitive (e.g. an API key) so it is kept out
                 of long-term memory and logs.
+            multi: true to let the user pick more than one of ``options`` (the answer
+                comes back as the chosen labels joined by ", "); ignored without options.
         """
         tool_context.actions.skip_summarization = True
         return None

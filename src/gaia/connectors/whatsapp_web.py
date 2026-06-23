@@ -24,6 +24,7 @@ from gaia.connectors.base import (
     Inbound,
     InboundMedia,
     Media,
+    Question,
     Reply,
     as_text,
     current_chat,
@@ -291,6 +292,19 @@ async def _send_media(client: Any, to: Any, media: Media) -> None:
         await method(to, str(media.path), caption=media.caption or None)
 
 
+async def _send_poll(client: Any, to: Any, question: Question) -> None:
+    """Send a Question's options as a native (tappable) WhatsApp poll.
+
+    ``multi`` picks ``VoteType.MULTIPLE`` (more than one tap). The vote comes back
+    encrypted and is decoded in :meth:`_poll_vote_text`.
+    """
+    from neonize.utils.enum import VoteType
+
+    vote_type = VoteType.MULTIPLE if question.multi else VoteType.SINGLE
+    poll = await client.build_poll_vote_creation(question.text, list(question.options), vote_type)
+    await client.send_message(to, poll)
+
+
 class WhatsAppWebConnector:
     """Bridges regular-account WhatsApp messages to the dispatcher (per-sender identity).
 
@@ -392,11 +406,15 @@ class WhatsAppWebConnector:
                     media = (item,)
                     text = text or (getattr(proto, "caption", "") or "")
             elif not text:
-                voice = await self._transcribe_voice(client, message)
-                if voice:
-                    text, was_voice = voice, True  # a (transcribed) voice note
+                vote = await self._poll_vote_text(client, message)
+                if vote:
+                    text = vote  # a native poll tap → "[poll:<hash>,…]" for resolve_answer
                 else:
-                    text = _describe_special(message)  # location/contact → a text proxy
+                    voice = await self._transcribe_voice(client, message)
+                    if voice:
+                        text, was_voice = voice, True  # a (transcribed) voice note
+                    else:
+                        text = _describe_special(message)  # location/contact → a text proxy
             if text or media:
                 if not await self._should_handle(client, message, source):
                     return  # a group message Gaia wasn't addressed in (mention/reply)
@@ -407,13 +425,19 @@ class WhatsAppWebConnector:
                 current_chat.set((self.NAME, _deliverable_chat(source)))
 
                 async def send(reply: Reply) -> None:
-                    # A media reply goes out as the real file (image/video/audio/document);
-                    # text and questions quote the inbound message — a Question degrades to
-                    # numbered text via as_text, so the user replies with the option number.
+                    # Media → the real file. A Question with options → a native tappable
+                    # poll (falling back to numbered text if the poll send fails). Plain
+                    # text and free-text questions quote the inbound message.
                     if isinstance(reply, Media):
                         await _send_media(client, chat, reply)
-                    else:
-                        await client.reply_message(as_text(reply), message)
+                        return
+                    if isinstance(reply, Question) and reply.options:
+                        try:
+                            await _send_poll(client, chat, reply)
+                            return
+                        except Exception:  # pragma: no cover - degrade to text on any poll error
+                            logger.warning("native poll send failed; using text", exc_info=True)
+                    await client.reply_message(as_text(reply), message)
 
                 # Acknowledge the moment work starts: blue-tick the message and start the
                 # "typing…" indicator (best-effort; never blocks or breaks the turn).
@@ -566,6 +590,26 @@ class WhatsAppWebConnector:
             return ""
         # The prefix tells Gaia the modality, so it answers the spoken content naturally.
         return f"[voice message] {transcript}"
+
+    async def _poll_vote_text(self, client: Any, message: Any) -> str:
+        """A native poll tap as ``"[poll:<hex>,<hex>]"`` (sha256 of the chosen option
+        names), or ``""`` when it isn't a poll vote / can't be decrypted.
+
+        whatsmeow returns the picked options as sha256 digests of their names (it holds
+        the poll's key because we created the poll); :func:`gaia.core.elicit.resolve_answer`
+        matches those digests back to the question's options. A failed/empty decode returns
+        ``""`` so the message is dropped and the conversation stays paused for a retry.
+        """
+        update = getattr(message.Message, "pollUpdateMessage", None)
+        if update is None or not getattr(update, "pollCreationMessageKey", None):
+            return ""
+        try:
+            vote = await client.decrypt_poll_vote(message.Message)
+        except Exception:
+            logger.debug("poll vote decrypt failed", exc_info=True)
+            return ""
+        hexes = ",".join(b.hex() for b in getattr(vote, "selectedOptions", None) or ())
+        return f"[poll:{hexes}]" if hexes else ""
 
     async def _download_media(
         self, client: Any, message: Any, proto: Any, kind: str

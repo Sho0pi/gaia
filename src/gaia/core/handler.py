@@ -291,11 +291,16 @@ class GaiaHandler:
         args = call.args or {}
         options = tuple(args.get("options") or ())
         secret = bool(args.get("secret", False))
+        multi = bool(args.get("multi", False))
         self._pending = Pending(fc_id=call.id, options=options, secret=secret)
         log_event(
             "elicit_asked", user=self._user_id, options=len(options) or None, secret=secret or None
         )
-        await send(Question(text=str(args.get("question", "")), options=options, secret=secret))
+        await send(
+            Question(
+                text=str(args.get("question", "")), options=options, secret=secret, multi=multi
+            )
+        )
 
     async def _emit_reply(self, events: list[Any], texts: list[str], send: Send) -> None:
         """Send the turn's reply: an image (with the text as its caption) when a screenshot

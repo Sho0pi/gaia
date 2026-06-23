@@ -9,6 +9,7 @@ ADK-free module so the resolve logic is unit-testable without a runner.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 
 #: The ``ask_user`` tool id (mirrors ``gaia.tools.ask_user.NAME``). Duplicated as a plain
@@ -28,19 +29,32 @@ class Pending:
 def resolve_answer(pending: Pending, text: str) -> str:
     """Map the user's raw reply to the answer string fed back to the model.
 
-    For a multiple-choice question a numbered reply ("2") selects that option, and a
-    WhatsApp interactive tap (arriving as ``"[Selected: X]"``) matches an option by
-    label; anything else — and every free-text/secret answer — passes through verbatim.
+    For a multiple-choice question: a native WhatsApp poll vote arrives as
+    ``"[poll:<hex>,<hex>]"`` (sha256 digests of the chosen option names — see
+    ``whatsapp_web``) and is matched back to labels; a numbered reply ("2", or "1,3" for
+    multi-select) selects by position; a button/list tap arrives as ``"[Selected: X]"``
+    and matches by label. Multiple picks join with ", ". Anything else — and every
+    free-text/secret answer — passes through verbatim, so a user can always type instead.
     """
     raw = text.strip()
     if pending.options:
+        if raw.startswith("[poll:") and raw.endswith("]"):
+            chosen = {h for h in raw[len("[poll:") : -1].split(",") if h}
+            picked = [
+                opt for opt in pending.options if hashlib.sha256(opt.encode()).hexdigest() in chosen
+            ]
+            if picked:
+                return ", ".join(picked)
         if raw.startswith("[Selected:") and raw.endswith("]"):
             label = raw[len("[Selected:") : -1].strip().casefold()
             for opt in pending.options:
                 if opt.strip().casefold() == label:
                     return opt
-        if raw.isdigit():
-            idx = int(raw) - 1
-            if 0 <= idx < len(pending.options):
-                return pending.options[idx]
+        nums = [p.strip() for p in raw.split(",")]
+        if nums and all(p.isdigit() for p in nums):
+            picked = [
+                pending.options[int(p) - 1] for p in nums if 1 <= int(p) <= len(pending.options)
+            ]
+            if picked:
+                return ", ".join(picked)
     return raw
