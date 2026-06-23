@@ -16,7 +16,14 @@ from typing import TYPE_CHECKING, Any
 
 from gaia import constants
 from gaia.connectors.base import Inbound, Question, Send, inbound_attachments
-from gaia.core.elicit import ASK_USER_TOOL, Pending, resolve_answer
+from gaia.core.elicit import (
+    ASK_USER_TOOL,
+    DELEGATE_TOOL,
+    Pending,
+    SoulPending,
+    resolve_answer,
+    soul_elicitation_sink,
+)
 from gaia.logs import log_event
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -181,10 +188,11 @@ class GaiaHandler:
         await self._drive(content, send, secret=False, yield_user_message=True)
 
     async def _resume(self, inbound: Inbound, send: Send) -> None:
-        """Resume a run paused on ``ask_user`` by feeding the reply as its tool result.
+        """Resume a paused run with the user's reply.
 
-        ADK locates the original (long-running) ask_user call by id in the session events
-        and continues the same invocation, so the model picks up exactly where it paused.
+        P1 (``pending.soul is None``): feed the answer as the root ``ask_user`` tool result —
+        ADK finds the original call by id in the session events and continues the same
+        invocation. P2: route the answer into the nested soul first (see :meth:`_resume_soul`).
         ``yield_user_message=False`` keeps the synthetic function-response out of the
         memory-ingest stream; a secret answer also skips buffering entirely (see _drive).
         """
@@ -193,7 +201,15 @@ class GaiaHandler:
         pending, self._pending = self._pending, None
         assert pending is not None  # guarded by the caller
         answer = resolve_answer(pending, inbound.text)
-        log_event("elicit_answered", user=self._user_id, secret=pending.secret or None)
+        soul_key = pending.soul.soul_key if pending.soul else None
+        log_event(
+            "elicit_answered", user=self._user_id, soul=soul_key, secret=pending.secret or None
+        )
+
+        if pending.soul is not None:
+            await self._resume_soul(pending, answer, send)
+            return
+
         content = types.Content(
             role="user",
             parts=[
@@ -205,6 +221,56 @@ class GaiaHandler:
             ],
         )
         await self._drive(content, send, secret=pending.secret, yield_user_message=False)
+
+    async def _resume_soul(self, pending: Pending, answer: str, send: Send) -> None:
+        """Feed the answer to the paused soul; finish or re-pause.
+
+        If the soul asks a further question it re-pauses (the root stays paused on the same
+        ``delegate_to_soul`` call); when the soul finishes, its result dict resumes that call so
+        the root model continues as if delegate had just returned.
+        """
+        from google.genai import types
+
+        from gaia.souls.run import resume_soul, soul_result
+
+        assert pending.soul is not None  # guarded by the caller
+        try:
+            run = await resume_soul(self._gaia, pending.soul, answer)
+        except Exception as exc:
+            logging.getLogger(constants.LOGGER_NAME).exception("soul resume failed")
+            log_event("turn_error", user=self._user_id, error=type(exc).__name__)
+            self._gaia.soul_sessions.unpin(pending.soul.warm_key)
+            await send(_friendly_error(exc))
+            return
+
+        if run.pending is not None:  # the soul asked something else — keep the root paused
+            await self._surface_soul(pending.fc_id, run.pending, send)
+            return
+
+        # Soul finished: unpin its session and resume the ROOT delegate call with the result.
+        self._gaia.soul_sessions.unpin(pending.soul.warm_key)
+        content = types.Content(
+            role="user",
+            parts=[
+                types.Part(
+                    function_response=types.FunctionResponse(
+                        id=pending.fc_id, name=DELEGATE_TOOL, response=soul_result(run)
+                    )
+                )
+            ],
+        )
+        await self._drive(content, send, secret=pending.secret, yield_user_message=False)
+
+    async def _surface_soul(self, root_fc_id: str, soul: SoulPending, send: Send) -> None:
+        """Record + send a delegated soul's question (the root stays paused on ``root_fc_id``)."""
+        self._pending = Pending(
+            fc_id=root_fc_id, options=soul.options, secret=soul.secret, soul=soul
+        )
+        text = f"*{soul.soul_name}* asks: {soul.question}" if soul.soul_name else soul.question
+        log_event(
+            "elicit_asked", user=self._user_id, soul=soul.soul_key, secret=soul.secret or None
+        )
+        await send(Question(text=text, options=soul.options, secret=soul.secret))
 
     async def _drive(
         self, content: Any, send: Send, *, secret: bool, yield_user_message: bool
@@ -218,6 +284,10 @@ class GaiaHandler:
         turn_events: list[Any] = []
         texts: list[str] = []
         ask_call: Any | None = None
+        # A paused delegate_to_soul appends its SoulPending here (the tool can't return it — it
+        # returns None to pause). A fresh list per turn; read after the loop.
+        sink: list[SoulPending] = []
+        token = soul_elicitation_sink.set(sink)
         try:
             async for event in runner.run_async(
                 user_id=self._user_id,
@@ -226,7 +296,7 @@ class GaiaHandler:
                 yield_user_message=yield_user_message,
             ):
                 turn_events.append(event)
-                call = self._ask_call(event)
+                call = self._paused_call(event)
                 if call is not None:
                     # The run paused on ask_user. Record it but DON'T break the loop: a
                     # long-running tool emits no function-response, so run_async ends on its
@@ -253,28 +323,43 @@ class GaiaHandler:
             log_event("turn_error", user=self._user_id, error=type(exc).__name__)
             await send(_friendly_error(exc))
             return
+        finally:
+            soul_elicitation_sink.reset(token)
 
         if ask_call is not None:
-            # Paused: stream any preface text, surface the question, record what we await.
+            # Paused: stream any preface text, then surface the question.
             await self._emit_texts(texts, send)
-            await self._begin_elicitation(ask_call, send)
+            if ask_call.name == DELEGATE_TOOL:
+                soul = sink[-1] if sink else None
+                if soul is None:  # shouldn't happen — fail safe rather than hang the conversation
+                    logging.getLogger(constants.LOGGER_NAME).warning(
+                        "delegate paused with no elicitation"
+                    )
+                    await send(
+                        "(The delegated task is waiting on something, but I lost the question.)"
+                    )
+                else:
+                    await self._surface_soul(ask_call.id, soul, send)
+            else:
+                await self._begin_elicitation(ask_call, send)
         else:
             await self._emit_reply(turn_events, texts, send)
         if not secret:
             await self._buffer_turn(turn_events)
 
-    def _ask_call(self, event: Any) -> Any | None:
-        """The ask_user function call in ``event`` if it paused the run, else None.
+    def _paused_call(self, event: Any) -> Any | None:
+        """The long-running call in ``event`` that paused the run for the user, else None.
 
-        A long-running tool call is flagged on ``event.long_running_tool_ids``; we match
-        the one named ask_user so an unrelated long-running tool never looks like a pause.
+        Either a direct ``ask_user`` (P1) or a ``delegate_to_soul`` whose nested soul paused on
+        ask_user (P2); both surface as a long-running call flagged on
+        ``event.long_running_tool_ids``. Other long-running tools never look like a pause.
         """
         ids = getattr(event, "long_running_tool_ids", None)
         if not ids or not (event.content and event.content.parts):
             return None
         for part in event.content.parts:
             call = getattr(part, "function_call", None)
-            if call is not None and call.id in ids and call.name == ASK_USER_TOOL:
+            if call is not None and call.id in ids and call.name in (ASK_USER_TOOL, DELEGATE_TOOL):
                 return call
         return None
 
@@ -293,7 +378,11 @@ class GaiaHandler:
                 await send(text)
 
     async def _begin_elicitation(self, call: Any, send: Send) -> None:
-        """Record the pending question from an ask_user call and surface it to the user."""
+        """Record the pending question from a root ``ask_user`` call (P1) and surface it.
+
+        (A delegated soul's question — P2 — is surfaced by :meth:`_surface_soul` from the
+        per-turn sink in :meth:`_drive`, since the question lives in the soul, not this call.)
+        """
         args = call.args or {}
         options = tuple(args.get("options") or ())
         secret = bool(args.get("secret", False))
@@ -353,7 +442,19 @@ class GaiaHandler:
         self._runner_config = None
         self._buffer = []
         self._buffer_started = None
+        self._clear_elicitation()  # unpin a paused soul's warm session before wiping the session
         self._pending = None  # drop any unanswered question; /reset starts clean
+
+    def _clear_elicitation(self) -> None:
+        """If a delegated soul is paused awaiting an answer, unpin its warm session.
+
+        Defensive ``getattr`` so the lightweight fakes in unit tests (a bare gaia namespace)
+        don't need a ``soul_sessions`` attribute.
+        """
+        soul = self._pending.soul if self._pending else None
+        sessions = getattr(self._gaia, "soul_sessions", None)
+        if soul is not None and sessions is not None:
+            sessions.unpin(soul.warm_key)
 
     async def _maybe_run_command(self, text: str, send: Send) -> bool:
         """If ``text`` is a slash command, run it and reply; return whether it was one."""

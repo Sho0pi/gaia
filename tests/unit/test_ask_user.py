@@ -12,8 +12,10 @@ from collections.abc import AsyncIterator
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 from gaia.connectors.base import Inbound, Question, as_text
-from gaia.core.elicit import Pending, resolve_answer
+from gaia.core.elicit import Pending, SoulPending, resolve_answer
 from gaia.core.handler import GaiaHandler
 from gaia.tools.ask_user import make_ask_user
 
@@ -222,3 +224,129 @@ async def test_reset_clears_a_pending_question() -> None:
     handler.reset_session()
 
     assert handler._pending is None
+
+
+# --- P2: a delegated soul asks the user (delegate_to_soul pauses the root) -------------
+
+
+def _delegate_pause_event(fc_id: str) -> SimpleNamespace:
+    """A fake event where the root paused on a long-running delegate_to_soul call."""
+    call = SimpleNamespace(id=fc_id, name="delegate_to_soul", args={})
+    return SimpleNamespace(
+        content=SimpleNamespace(parts=[SimpleNamespace(text=None, function_call=call)]),
+        is_final_response=lambda: True,
+        long_running_tool_ids={fc_id},
+    )
+
+
+class _DelegatePauseRunner:
+    """Mimics a turn where delegate_to_soul paused: it appends the soul's pending to the
+    handler-installed sink (as the real tool does) then yields the delegate pause event."""
+
+    def __init__(self, fc_id: str, soul: SoulPending) -> None:
+        self._fc_id = fc_id
+        self._soul = soul
+
+    async def run_async(self, **_kwargs: Any) -> AsyncIterator[SimpleNamespace]:
+        from gaia.core.elicit import soul_elicitation_sink
+
+        sink = soul_elicitation_sink.get()
+        if sink is not None:
+            sink.append(self._soul)
+        yield _delegate_pause_event(self._fc_id)
+
+
+def _soul_pending(**kw: Any) -> SoulPending:
+    base = dict(
+        warm_key="web_designer/p",
+        soul_key="web_designer",
+        project="p",
+        soul_fc_id="sfc",
+        question="What's your API key?",
+        soul_name="Web Designer",
+        user_id="gaia-user",
+    )
+    return SoulPending(**{**base, **kw})
+
+
+def _p2_gaia(unpinned: list[str] | None = None) -> SimpleNamespace:
+    sink = unpinned if unpinned is not None else []
+    return SimpleNamespace(
+        memory_service=None,
+        soul_sessions=SimpleNamespace(pin=lambda _k: None, unpin=lambda k: sink.append(k)),
+    )
+
+
+async def test_delegated_soul_pause_surfaces_prefixed_question() -> None:
+    soul = _soul_pending(secret=True)
+    handler = GaiaHandler(_p2_gaia())
+    handler._runner = _DelegatePauseRunner("D", soul)
+
+    sent = await _collect(handler, "build me an app")
+
+    question = next(r for r in sent if isinstance(r, Question))
+    assert question.text == "*Web Designer* asks: What's your API key?" and question.secret is True
+    assert handler._pending is not None
+    assert (
+        handler._pending.soul is soul and handler._pending.fc_id == "D"
+    )  # root paused on delegate
+
+
+async def test_soul_answer_resumes_the_root_when_the_soul_finishes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from gaia.souls.run import SoulRun
+
+    unpinned: list[str] = []
+    handler = GaiaHandler(_p2_gaia(unpinned))
+    handler._runner = _DelegatePauseRunner("D", _soul_pending())
+    await _collect(handler, "build me an app")  # paused on D, awaiting the soul
+
+    async def fake_resume(_g: Any, pending: Any, answer: str) -> SoulRun:
+        assert answer == "sk-1"  # the user's reply reached the soul
+        return SoulRun(
+            ok=True, soul_key="web_designer", soul_name="WD", created=False, summary="done sk-1"
+        )
+
+    monkeypatch.setattr("gaia.souls.run.resume_soul", fake_resume)
+    resume = _CapturingRunner([_event("All set — your app is ready.")])
+    handler._runner = resume
+
+    sent = await _collect(handler, "sk-1")
+
+    assert handler._pending is None and sent == ["All set — your app is ready."]
+    fr = resume.captured["new_message"].parts[0].function_response
+    assert fr.id == "D" and fr.name == "delegate_to_soul" and fr.response["summary"] == "done sk-1"
+    assert resume.captured["yield_user_message"] is False
+    assert unpinned == ["web_designer/p"]  # the soul's warm session is released
+
+
+async def test_soul_can_ask_a_second_question_keeping_the_root_paused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from gaia.souls.run import SoulRun
+
+    handler = GaiaHandler(_p2_gaia())
+    handler._runner = _DelegatePauseRunner("D", _soul_pending(soul_fc_id="sfc1", question="q1"))
+    await _collect(handler, "build me an app")
+
+    again = _soul_pending(soul_fc_id="sfc2", question="q2")
+
+    async def fake_resume(_g: Any, _p: Any, _a: str) -> SoulRun:
+        return SoulRun(
+            ok=False, soul_key="web_designer", soul_name="WD", created=False, pending=again
+        )
+
+    monkeypatch.setattr("gaia.souls.run.resume_soul", fake_resume)
+    resume = _CapturingRunner([_event("should not run")])
+    handler._runner = resume
+
+    sent = await _collect(handler, "first answer")
+
+    question = next(r for r in sent if isinstance(r, Question))
+    assert question.text == "*Web Designer* asks: q2"
+    assert handler._pending is not None
+    assert (
+        handler._pending.soul is again and handler._pending.fc_id == "D"
+    )  # still paused on delegate
+    assert resume.captured == {}  # the root was NOT resumed — run_async never called

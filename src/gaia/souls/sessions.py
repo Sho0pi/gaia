@@ -51,6 +51,9 @@ class SoulSessionManager:
     def __init__(self, idle_seconds: float | Callable[[], float] = 1800.0) -> None:
         self._idle = idle_seconds
         self._sessions: dict[str, WarmSession] = {}
+        #: Keys the reaper must never evict — a soul paused on ``ask_user`` whose session must
+        #: survive until the user answers (however long that takes). See :meth:`pin`.
+        self._pinned: set[str] = set()
         self._reaper: asyncio.Task[None] | None = None
 
     async def acquire(
@@ -80,6 +83,14 @@ class SoulSessionManager:
         warm.last_access = time.monotonic()
         return warm
 
+    def pin(self, key: str) -> None:
+        """Protect ``key`` from the idle reaper (a soul paused on ``ask_user`` awaits the user)."""
+        self._pinned.add(key)
+
+    def unpin(self, key: str) -> None:
+        """Lift a :meth:`pin` (the question was answered, or the conversation was reset)."""
+        self._pinned.discard(key)
+
     def active(self) -> list[tuple[str, float]]:
         """Live sessions as ``(key, idle_seconds)``, most-recently-used first — for ``/souls``."""
         now = time.monotonic()
@@ -103,7 +114,12 @@ class SoulSessionManager:
         """Drop every session untouched for longer than the idle window; next call rebuilds cold."""
         cutoff = self._idle_seconds()
         now = time.monotonic()
-        for key in [k for k, w in self._sessions.items() if now - w.last_access > cutoff]:
+        stale = [
+            k
+            for k, w in self._sessions.items()
+            if k not in self._pinned and now - w.last_access > cutoff
+        ]
+        for key in stale:
             self._sessions.pop(key, None)
             logger.info("soul session evicted (idle): %s", key)
 

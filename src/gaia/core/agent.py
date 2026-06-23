@@ -226,6 +226,8 @@ class Gaia:
                 f"<USER_PROFILE>\n{profile}\n</USER_PROFILE>"
             )
 
+        from google.adk.tools.long_running_tool import LongRunningFunctionTool
+
         from gaia.core.acl_toolset import AclToolset
         from gaia.souls import make_delegate
         from gaia.tools.command import make_run_command
@@ -251,7 +253,9 @@ class Gaia:
             instruction=instruction,
             tools=[
                 AclToolset(self),
-                make_delegate(self),
+                # Long-running: a delegated soul may call ask_user, pausing the root until the
+                # user answers (handler resumes it). Normal completions return their dict as usual.
+                LongRunningFunctionTool(func=make_delegate(self)),
                 make_run_command(self, handler),
                 make_message_user(self.users, self.connectors, lambda: self.memory_service),
                 make_manage_permission(self),

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncGenerator
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -16,7 +17,7 @@ from gaia import constants
 from gaia.agents import AgentSpec
 from gaia.config import Settings
 from gaia.core import Gaia
-from gaia.souls.run import decide_soul, execute_decision, run_soul_agent
+from gaia.souls.run import _AgentTurn, decide_soul, execute_decision, run_soul_agent
 from gaia.souls.smith import SoulDecision
 
 
@@ -261,9 +262,9 @@ async def test_execute_decision_seeds_session_state(
         *,
         state: Any = None,
         warm_key: Any = None,
-    ) -> tuple[str, list[str]]:
+    ) -> _AgentTurn:
         seen["state"] = state
-        return "done", []
+        return _AgentTurn("done", [])
 
     monkeypatch.setattr("gaia.souls.run.run_soul_agent", spy)
 
@@ -315,10 +316,84 @@ async def test_run_soul_agent_never_closes_shared_toolsets(
     soul = LlmAgent(
         name="writer", model=FakeLlm(responses=[_text("done")]), tools=[TrackingToolset()]
     )
-    text, media = await run_soul_agent(gaia, soul, "writer", "do it", user_id="i")
+    turn = await run_soul_agent(gaia, soul, "writer", "do it", user_id="i")
 
-    assert text == "done" and media == []
+    assert turn.text == "done" and turn.media == []
     assert closed == []  # shared toolset survived — bug 4 regression guard
+
+
+async def test_resume_soul_feeds_answer_and_finishes(
+    gaia: Gaia, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # resume_soul re-enters the soul session with the answer as the ask_user function-response,
+    # skipping the smith, and returns a finished SoulRun.
+    from gaia.core.elicit import SoulPending
+    from gaia.souls import run as run_mod
+
+    _install(monkeypatch, FakeLlm(responses=[]))  # soul built but not run (_run_soul_content faked)
+    gaia.souls.save(_FORGE.spec)
+    captured: dict[str, Any] = {}
+
+    async def fake_content(
+        g: Any,
+        soul: Any,
+        key: str,
+        user_id: str,
+        content: Any,
+        *,
+        state: Any = None,
+        warm_key: Any = None,
+    ) -> _AgentTurn:
+        captured["content"] = content
+        captured["warm_key"] = warm_key
+        return _AgentTurn("ready with sk-9", [], paused=None)
+
+    monkeypatch.setattr(run_mod, "_run_soul_content", fake_content)
+    pending = SoulPending(
+        warm_key=f"{_FORGE.spec.key}/p",
+        soul_key=_FORGE.spec.key,
+        project="p",
+        soul_fc_id="sfc",
+        question="key?",
+        user_id="u",
+        before={},
+    )
+
+    out = await run_mod.resume_soul(gaia, pending, "sk-9")
+
+    assert out.ok and out.summary == "ready with sk-9"
+    fr = captured["content"].parts[0].function_response
+    assert fr.id == "sfc" and fr.name == "ask_user" and fr.response == {"answer": "sk-9"}
+    assert captured["warm_key"] == f"{_FORGE.spec.key}/p"  # the same warm session is re-entered
+
+
+async def test_resume_soul_can_pause_again(gaia: Gaia, monkeypatch: pytest.MonkeyPatch) -> None:
+    from gaia.core.elicit import SoulPending
+    from gaia.souls import run as run_mod
+
+    _install(monkeypatch, FakeLlm(responses=[]))
+    gaia.souls.save(_FORGE.spec)
+
+    async def fake_content(*_a: Any, **_k: Any) -> _AgentTurn:
+        call = SimpleNamespace(id="sfc2", args={"question": "anything else?", "options": None})
+        return _AgentTurn("", [], paused=call)
+
+    monkeypatch.setattr(run_mod, "_run_soul_content", fake_content)
+    before = {"index.html": 1.0}
+    pending = SoulPending(
+        warm_key=f"{_FORGE.spec.key}/p",
+        soul_key=_FORGE.spec.key,
+        project="p",
+        soul_fc_id="sfc",
+        question="key?",
+        user_id="u",
+        before=before,
+    )
+
+    out = await run_mod.resume_soul(gaia, pending, "sk-9")
+
+    assert out.pending is not None and out.pending.soul_fc_id == "sfc2"
+    assert out.pending.before is before  # the baseline is carried forward for a cumulative diff
 
 
 async def test_decide_soul_roundtrips_through_json(
