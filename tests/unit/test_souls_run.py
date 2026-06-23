@@ -161,7 +161,7 @@ async def test_same_project_reuses_a_warm_session(
     first = gaia.soul_sessions._sessions["writer/shop"]
     events_after_1 = len(
         (
-            await first.service.get_session(  # type: ignore[union-attr]
+            await first.session_service.get_session(  # type: ignore[union-attr]
                 app_name=constants.APP_NAME, user_id="i", session_id=first.session_id
             )
         ).events
@@ -171,7 +171,7 @@ async def test_same_project_reuses_a_warm_session(
     second = gaia.soul_sessions._sessions["writer/shop"]
     events_after_2 = len(
         (
-            await second.service.get_session(  # type: ignore[union-attr]
+            await second.session_service.get_session(  # type: ignore[union-attr]
                 app_name=constants.APP_NAME, user_id="i", session_id=second.session_id
             )
         ).events

@@ -15,6 +15,7 @@ under it.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -23,15 +24,17 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from google.adk.sessions import InMemorySessionService
 
+logger = logging.getLogger(__name__)
+
 #: How often the reaper wakes to look for idle sessions.
 _REAP_INTERVAL = 60.0
 
 
 @dataclass
 class WarmSession:
-    """One soul's live ADK session: its service, session id, a turn lock, and last-touch time."""
+    """One soul's live ADK session: session service, session id, a turn lock, last-touch time."""
 
-    service: InMemorySessionService
+    session_service: InMemorySessionService
     session_id: str
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     last_access: float = field(default_factory=time.monotonic)
@@ -63,16 +66,25 @@ class SoulSessionManager:
         if warm is None:
             from google.adk.sessions import InMemorySessionService
 
-            service = InMemorySessionService()  # type: ignore[no-untyped-call]
+            session_service = InMemorySessionService()  # type: ignore[no-untyped-call]
             session_id = f"soul-{key}"
-            await service.create_session(
+            await session_service.create_session(
                 app_name=app_name, user_id=user_id, session_id=session_id, state=state or {}
             )
-            warm = WarmSession(service=service, session_id=session_id)
+            warm = WarmSession(session_service=session_service, session_id=session_id)
             self._sessions[key] = warm
             self._ensure_reaper()
+            logger.info("soul session started: %s (warm, %d live)", key, len(self._sessions))
+        else:
+            logger.debug("soul session resumed: %s", key)
         warm.last_access = time.monotonic()
         return warm
+
+    def active(self) -> list[tuple[str, float]]:
+        """Live sessions as ``(key, idle_seconds)``, most-recently-used first — for ``/souls``."""
+        now = time.monotonic()
+        rows = [(key, now - w.last_access) for key, w in self._sessions.items()]
+        return sorted(rows, key=lambda r: r[1])
 
     def _idle_seconds(self) -> float:
         return self._idle() if callable(self._idle) else self._idle
@@ -93,9 +105,12 @@ class SoulSessionManager:
         now = time.monotonic()
         for key in [k for k, w in self._sessions.items() if now - w.last_access > cutoff]:
             self._sessions.pop(key, None)
+            logger.info("soul session evicted (idle): %s", key)
 
     async def close_all(self) -> None:
         """Cancel the reaper and drop every session; called by Gaia.close on the live loop."""
         if self._reaper is not None and not self._reaper.done():
             self._reaper.cancel()
+        if self._sessions:
+            logger.info("closing %d warm soul session(s)", len(self._sessions))
         self._sessions.clear()

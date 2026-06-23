@@ -224,7 +224,7 @@ async def run_soul_agent(
         warm = await gaia.soul_sessions.acquire(
             warm_key, app_name=constants.APP_NAME, user_id=user_id, state=state
         )
-        session_service, session_id, lock = warm.service, warm.session_id, warm.lock
+        session_service, session_id, lock = warm.session_service, warm.session_id, warm.lock
     else:
         session_service = InMemorySessionService()  # type: ignore[no-untyped-call]
         session_id = f"soul-{key}"
