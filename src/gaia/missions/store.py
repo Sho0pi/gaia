@@ -52,6 +52,7 @@ class TaskStatus(StrEnum):
     RUNNING = "running"
     BLOCKED = "blocked"
     AWAITING_APPROVAL = "awaiting_approval"
+    AWAITING_INPUT = "awaiting_input"  # paused mid-run on ask_user, awaiting the user's answer (P3)
     REVIEW = "review"
     DONE = "done"
     FAILED = "failed"
@@ -65,6 +66,7 @@ A2A_STATE: dict[TaskStatus, str] = {
     TaskStatus.RUNNING: "working",
     TaskStatus.BLOCKED: "working",
     TaskStatus.AWAITING_APPROVAL: "input_required",  # gated classes → auth_required (P3)
+    TaskStatus.AWAITING_INPUT: "input_required",  # a soul paused on ask_user, awaiting an answer
     TaskStatus.REVIEW: "working",
     TaskStatus.DONE: "completed",
     TaskStatus.FAILED: "failed",
@@ -105,6 +107,11 @@ class Task(BaseModel):
     # falls back to the owner's identity, then the cron.deliver default. (P2 notify.)
     notify_channel: str = ""
     notify_chat: str = ""
+    # A soul paused mid-run on ask_user (P3): ``pending`` is the JSON-serialized SoulPending
+    # (the question + everything needed to resume), ``pending_answer`` the user's reply once
+    # given. Both empty otherwise; cleared when the run resolves.
+    pending: str = ""
+    pending_answer: str = ""
     created_at: str = Field(default_factory=_now)
     updated_at: str = Field(default_factory=_now)
 
@@ -112,7 +119,7 @@ class Task(BaseModel):
 _COLUMNS = (
     "id, mission_id, parent_id, title, spec, status, assignee, blocked_by, depth, "
     "artifacts, result, notes, owner, created_by, approval_class, budget_used, "
-    "notify_channel, notify_chat, created_at, updated_at, workspace"
+    "notify_channel, notify_chat, created_at, updated_at, workspace, pending, pending_answer"
 )
 
 #: Columns added after the initial P1 ship — applied to an existing db via idempotent ALTER.
@@ -120,6 +127,8 @@ _MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("notify_channel", "TEXT NOT NULL DEFAULT ''"),
     ("notify_chat", "TEXT NOT NULL DEFAULT ''"),
     ("workspace", "TEXT NOT NULL DEFAULT ''"),
+    ("pending", "TEXT NOT NULL DEFAULT ''"),
+    ("pending_answer", "TEXT NOT NULL DEFAULT ''"),
 )
 
 _SCHEMA = """
@@ -144,7 +153,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     notify_chat TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    workspace TEXT NOT NULL DEFAULT ''
+    workspace TEXT NOT NULL DEFAULT '',
+    pending TEXT NOT NULL DEFAULT '',
+    pending_answer TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_mission ON tasks(mission_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_owner ON tasks(owner);
@@ -355,6 +366,8 @@ def _to_row(task: Task) -> tuple[Any, ...]:
         task.created_at,
         task.updated_at,
         task.workspace,
+        task.pending,
+        task.pending_answer,
     )
 
 

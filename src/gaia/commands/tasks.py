@@ -14,12 +14,14 @@ from gaia.missions import CLOSED, TaskStatus, TaskStore
 
 class TasksCommand(Command):
     name = "tasks"
-    summary = "List your open missions/tasks. Usage: /tasks [approve|reject <id>]."
-    usage = "[approve|reject <id>]"
+    summary = "List your open missions/tasks. Usage: /tasks [approve|reject|answer <id> …]."
+    usage = "[approve|reject <id> | answer <id> <text>]"
 
     async def run(self, ctx: CommandContext) -> str:
         store = ctx.gaia.tasks  # the DI-shared board the dispatcher polls
         verb, _, rest = ctx.args.strip().partition(" ")
+        if verb == "answer":
+            return self._answer(ctx, store, rest.strip())
         if verb in {"approve", "reject"}:
             return await self._decide(ctx, store, verb, rest.strip())
 
@@ -60,3 +62,20 @@ class TasksCommand(Command):
 
         await notify_rejected(ctx.gaia, task)
         return f"Rejected — task {task_id} won't run."
+
+    def _answer(self, ctx: CommandContext, store: TaskStore, rest: str) -> str:
+        """Answer a background mission paused on ``ask_user`` (P3) → the dispatcher resumes it."""
+        task_id, _, answer = rest.partition(" ")
+        task_id, answer = task_id.strip(), answer.strip()
+        if not task_id or not answer:
+            return "Usage: /tasks answer <id> <your answer>"
+        task = store.get(task_id)
+        if task is None or (ctx.role != "admin" and task.owner != ctx.user_id):
+            return f"No task {task_id!r}."  # unknown or not yours
+        if task.status is not TaskStatus.AWAITING_INPUT:
+            return f"Task {task_id} isn't waiting on you (it's {task.status.value})."
+        # Record the answer + release to inbox; the dispatcher's next poll resumes the soul.
+        task.pending_answer = answer
+        task.status = TaskStatus.INBOX
+        store.update(task)
+        return f"Got it — task {task_id} will continue with your answer."

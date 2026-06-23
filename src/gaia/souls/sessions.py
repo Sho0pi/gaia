@@ -83,6 +83,15 @@ class SoulSessionManager:
         warm.last_access = time.monotonic()
         return warm
 
+    def has(self, key: str) -> bool:
+        """Whether a warm session for ``key`` is still live in this process.
+
+        The P3 dispatcher checks this *before* resuming a parked soul: a live session → resume
+        the exact paused run; a missing one (process restarted, or evicted) → re-run instead.
+        Don't call :meth:`acquire` to test — it would create a fresh empty session.
+        """
+        return key in self._sessions
+
     def pin(self, key: str) -> None:
         """Protect ``key`` from the idle reaper (a soul paused on ``ask_user`` awaits the user)."""
         self._pinned.add(key)

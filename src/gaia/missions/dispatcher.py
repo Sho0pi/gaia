@@ -20,11 +20,13 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from gaia.core.elicit import soul_pending_from_json, soul_pending_to_json
 from gaia.logs import log_event
-from gaia.missions.notify import notify_approval, notify_paused, notify_result
+from gaia.missions.notify import notify_approval, notify_ask_user, notify_paused, notify_result
 from gaia.missions.present import present_result
 from gaia.missions.store import Task, TaskStatus, TaskStore
-from gaia.souls.run import SoulRun, decide_soul, execute_decision
+from gaia.souls.run import SoulRun, decide_soul, execute_decision, resume_soul
+from gaia.souls.smith import SoulDecision
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from gaia.core.agent import Gaia
@@ -182,6 +184,11 @@ class MissionDispatcher:
             self._inflight.discard(task_id)
 
     async def _execute(self, task: Task) -> SoulRun:
+        # A task answered after a mid-run ask_user pause (P3) resumes the soul rather than
+        # starting a fresh smith decision — see _resume_execute for the hybrid (exact vs re-run).
+        if task.pending and task.pending_answer:
+            return await self._resume_execute(task)
+
         deps = [d for d in (self._store.get(b) for b in task.blocked_by) if d is not None]
         upstream = _format_upstream(deps)
         # Re-run-with-results: a parent re-dispatched after its subtasks finished gets its
@@ -205,7 +212,66 @@ class MissionDispatcher:
             self._gaia, decision, soul_input, user_id, attachments=attachments, state=state
         )
 
+    async def _resume_execute(self, task: Task) -> SoulRun:
+        """Resume a soul that paused on ``ask_user`` (P3), now that the user has answered.
+
+        Hybrid: if the warm session is still live in this process, resume the exact paused run
+        (keeps its workspace + progress). After a restart it's gone, so re-run the *same* soul
+        in its *same* workspace with the Q&A folded into the prompt — the files survive on disk
+        and the parked state survives in the db, so the answer is never lost.
+        """
+        pending = soul_pending_from_json(task.pending)
+        answer = task.pending_answer
+        if self._gaia.soul_sessions.has(pending.warm_key):
+            return await resume_soul(self._gaia, pending, answer)
+
+        log_event("task_resume_cold", task=task.id, soul=pending.soul_key)
+        soul_input = "\n\n".join(
+            p
+            for p in (
+                task.spec,
+                f"Your earlier notes:\n{task.notes}" if task.notes else "",
+                f"Earlier you asked the user: {pending.question}\n"
+                f"They answered: {answer}\nContinue from your workspace using that answer.",
+            )
+            if p
+        )
+        decision = SoulDecision(
+            action="reuse", reason="resume after restart", soul_key=pending.soul_key
+        )
+        state = {"task_id": task.id, "owner": task.owner, "mission_id": task.mission_id}
+        return await execute_decision(
+            self._gaia,
+            decision,
+            soul_input,
+            task.owner or "gaia",
+            project=pending.project,
+            state=state,
+        )
+
     def _finish(self, task: Task, run: SoulRun) -> None:
+        if run.pending is not None:
+            # The soul asked the user mid-run (first time, or a follow-up during a resume).
+            # Park the task durably, pin the warm session for an in-process resume, and ask
+            # out-of-band. The user replies via /tasks answer, which re-dispatches here.
+            task.pending = soul_pending_to_json(run.pending)
+            task.pending_answer = ""
+            task.status = TaskStatus.AWAITING_INPUT
+            self._store.update(task)
+            self._gaia.soul_sessions.pin(run.pending.warm_key)
+            log_event("task_awaiting_input", task=task.id, soul=run.pending.soul_key)
+            self._spawn(
+                notify_ask_user(self._gaia, task, run.pending.question, run.pending.options)
+            )
+            return
+        if task.pending:  # a resume just finished — release the pinned session, clear the slot
+            self._gaia.soul_sessions.unpin(soul_pending_from_json(task.pending).warm_key)
+            task.pending = ""
+            task.pending_answer = ""
+            self._store.update(task)
+        self._finish_terminal(task, run)
+
+    def _finish_terminal(self, task: Task, run: SoulRun) -> None:
         if run.ok:
             # A soul may have filed subtasks and yielded; don't complete the parent — block
             # it on those children so ready_tasks re-dispatches it (with their results) once
