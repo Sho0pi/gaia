@@ -21,12 +21,20 @@ NAME = "generate_image"
 
 
 def make_generate_image(
-    provider: str = "gemini", model: str = ""
+    provider: str = "gemini", model: str = "", *, options: dict[str, Any] | None = None
 ) -> Callable[..., Awaitable[dict[str, Any]]]:
-    """Return the ADK ``generate_image`` tool bound to a backend ``provider``/``model``."""
+    """Return the ADK ``generate_image`` tool bound to a backend ``provider``/``model``.
+
+    ``options`` is backend-specific config (the cloudflare worker url + SDXL knobs); the SDK
+    backends ignore it.
+    """
 
     async def generate_image(
-        prompt: str, aspect_ratio: str = "1:1", *, tool_context: ToolContext
+        prompt: str,
+        aspect_ratio: str = "1:1",
+        negative_prompt: str = "",
+        *,
+        tool_context: ToolContext,
     ) -> dict[str, Any]:
         """Generate an image from a text prompt and show it to the user.
 
@@ -36,21 +44,32 @@ def make_generate_image(
         Args:
             prompt: a detailed description of the image to create.
             aspect_ratio: one of 1:1, 3:4, 4:3, 16:9 (default 1:1).
+            negative_prompt: things to avoid in the image (used by the cloudflare/SDXL backend;
+                ignored by others).
         """
         from gaia.tools.image.providers import generate_images
 
         if not prompt.strip():
             return {"status": "error", "error_message": "prompt must not be empty"}
         try:
-            images = await generate_images(provider, prompt, aspect_ratio=aspect_ratio, model=model)
+            images = await generate_images(
+                provider,
+                prompt,
+                aspect_ratio=aspect_ratio,
+                model=model,
+                negative_prompt=negative_prompt,
+                options=options,
+            )
         except Exception as exc:  # tools never raise to the model
             return {"status": "error", "error_message": f"image generation failed: {exc}"}
         if not images:
             return {"status": "error", "error_message": "the model returned no image"}
 
-        # Land the PNG in the calling agent's own workspace (same dir screenshots use).
+        # Land the image in the calling agent's own workspace (same dir screenshots use). Name it
+        # by its real format — SDXL returns jpeg — so media delivery sends the right type.
+        ext = "jpg" if images[0][:2] == b"\xff\xd8" else "png"
         workspace = sandbox_for(constants.AGENTS_DIR, tool_context.agent_name).primary
-        target = workspace / f"image-{int(time.time() * 1000)}.png"
+        target = workspace / f"image-{int(time.time() * 1000)}.{ext}"
         target.write_bytes(images[0])
         return {"status": "success", "path": str(target), "prompt": prompt}
 

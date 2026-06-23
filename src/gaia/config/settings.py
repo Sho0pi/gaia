@@ -82,6 +82,12 @@ class Settings(BaseSettings):
         default=constants.APP_NAME, validation_alias=f"{constants.ENV_PREFIX}MEM0_COLLECTION"
     )
 
+    # Bearer token for the custom Cloudflare AI Worker image backend
+    # (tools.generate_image.provider: cloudflare). The worker URL is non-secret (gaia.yaml).
+    cloudflare_ai_token: str | None = Field(
+        default=None, validation_alias=f"{constants.ENV_PREFIX}CLOUDFLARE_AI_TOKEN"
+    )
+
     @property
     def has_whatsapp_business(self) -> bool:
         """True when Cloud-API (pywa) creds are present; selects the business backend."""
@@ -128,3 +134,5 @@ def configure_adk_env(settings: Settings) -> None:
         os.environ.setdefault("GOOGLE_API_KEY", settings.google_api_key)
     if settings.openai_api_key:
         os.environ.setdefault("OPENAI_API_KEY", settings.openai_api_key)
+    if settings.cloudflare_ai_token:
+        os.environ.setdefault("CLOUDFLARE_AI_TOKEN", settings.cloudflare_ai_token)

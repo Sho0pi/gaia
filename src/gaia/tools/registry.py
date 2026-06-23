@@ -309,7 +309,18 @@ def default_registry(
     if _is_enabled(config, image.NAME):
         provider = _tool_setting(config, image.NAME, "provider") or "gemini"
         model = _tool_setting(config, image.NAME, "model") or ""
-        registry.register(image.NAME, image.make_generate_image(str(provider), str(model)))
+        options: dict[str, Any] | None = None
+        if provider == "cloudflare":
+            # The Worker url (non-secret) + optional SDXL knobs live in gaia.yaml; the token is an
+            # env secret read by the backend. Only keys the user set are forwarded.
+            options = {"url": _tool_setting(config, image.NAME, "cloudflare_url")}
+            for key in ("num_steps", "guidance", "width", "height", "seed"):
+                value = _tool_setting(config, image.NAME, key)
+                if value is not None:
+                    options[key] = value
+        registry.register(
+            image.NAME, image.make_generate_image(str(provider), str(model), options=options)
+        )
 
     # Missions task board (P1): the five task_* tools share one TaskStore so they all hit
     # the same ~/.gaia/tasks.db. Gaia-only for now; souls get them in P3.
