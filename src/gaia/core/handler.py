@@ -16,7 +16,14 @@ from typing import TYPE_CHECKING, Any
 
 from gaia import constants
 from gaia.connectors.base import Inbound, Question, Send, inbound_attachments
-from gaia.core.elicit import ASK_USER_TOOL, DELEGATE_TOOL, Pending, SoulPending, resolve_answer
+from gaia.core.elicit import (
+    ASK_USER_TOOL,
+    DELEGATE_TOOL,
+    Pending,
+    SoulPending,
+    resolve_answer,
+    soul_elicitation_sink,
+)
 from gaia.logs import log_event
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -277,6 +284,10 @@ class GaiaHandler:
         turn_events: list[Any] = []
         texts: list[str] = []
         ask_call: Any | None = None
+        # A paused delegate_to_soul appends its SoulPending here (the tool can't return it — it
+        # returns None to pause). A fresh list per turn; read after the loop.
+        sink: list[SoulPending] = []
+        token = soul_elicitation_sink.set(sink)
         try:
             async for event in runner.run_async(
                 user_id=self._user_id,
@@ -312,11 +323,25 @@ class GaiaHandler:
             log_event("turn_error", user=self._user_id, error=type(exc).__name__)
             await send(_friendly_error(exc))
             return
+        finally:
+            soul_elicitation_sink.reset(token)
 
         if ask_call is not None:
-            # Paused: stream any preface text, surface the question, record what we await.
+            # Paused: stream any preface text, then surface the question.
             await self._emit_texts(texts, send)
-            await self._begin_elicitation(ask_call, send)
+            if ask_call.name == DELEGATE_TOOL:
+                soul = sink[-1] if sink else None
+                if soul is None:  # shouldn't happen — fail safe rather than hang the conversation
+                    logging.getLogger(constants.LOGGER_NAME).warning(
+                        "delegate paused with no elicitation"
+                    )
+                    await send(
+                        "(The delegated task is waiting on something, but I lost the question.)"
+                    )
+                else:
+                    await self._surface_soul(ask_call.id, soul, send)
+            else:
+                await self._begin_elicitation(ask_call, send)
         else:
             await self._emit_reply(turn_events, texts, send)
         if not secret:
@@ -353,23 +378,11 @@ class GaiaHandler:
                 await send(text)
 
     async def _begin_elicitation(self, call: Any, send: Send) -> None:
-        """Record the pending question from a paused call and surface it to the user.
+        """Record the pending question from a root ``ask_user`` call (P1) and surface it.
 
-        ``ask_user`` (P1): the question is in the call's args. ``delegate_to_soul`` (P2): the
-        soul's question was stashed on ``gaia.elicitations`` by the tool; we read it from there
-        and prefix the soul's name so the user knows who is asking.
+        (A delegated soul's question — P2 — is surfaced by :meth:`_surface_soul` from the
+        per-turn sink in :meth:`_drive`, since the question lives in the soul, not this call.)
         """
-        if call.name == DELEGATE_TOOL:
-            soul = self._gaia.elicitations.pop(self._user_id, None)
-            if soul is None:  # shouldn't happen; fail safe rather than hang the conversation
-                logging.getLogger(constants.LOGGER_NAME).warning(
-                    "delegate paused with no elicitation"
-                )
-                await send("(The delegated task is waiting on something, but I lost the question.)")
-                return
-            await self._surface_soul(call.id, soul, send)
-            return
-
         args = call.args or {}
         options = tuple(args.get("options") or ())
         secret = bool(args.get("secret", False))
@@ -429,20 +442,17 @@ class GaiaHandler:
         self._runner_config = None
         self._buffer = []
         self._buffer_started = None
-        self._clear_elicitation()  # unpin any paused soul session + drop the channel entry
+        self._clear_elicitation()  # unpin a paused soul's warm session before wiping the session
         self._pending = None  # drop any unanswered question; /reset starts clean
 
     def _clear_elicitation(self) -> None:
-        """Forget any pending soul elicitation: clear the channel entry and unpin its session.
+        """If a delegated soul is paused awaiting an answer, unpin its warm session.
 
         Defensive ``getattr`` so the lightweight fakes in unit tests (a bare gaia namespace)
-        don't need the ``elicitations``/``soul_sessions`` attributes.
+        don't need a ``soul_sessions`` attribute.
         """
-        gaia = self._gaia
-        elics = getattr(gaia, "elicitations", None)
-        channel = elics.pop(self._user_id, None) if elics is not None else None
-        soul = (self._pending.soul if self._pending else None) or channel
-        sessions = getattr(gaia, "soul_sessions", None)
+        soul = self._pending.soul if self._pending else None
+        sessions = getattr(self._gaia, "soul_sessions", None)
         if soul is not None and sessions is not None:
             sessions.unpin(soul.warm_key)
 

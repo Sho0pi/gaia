@@ -33,7 +33,6 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from google.adk.agents import LlmAgent
 
     from gaia.config import GaiaConfig
-    from gaia.core.elicit import SoulPending
     from gaia.memory import Mem0MemoryService
 
 
@@ -61,9 +60,6 @@ class Gaia:
         # Live proactive senders (connector name → object with ``send_to``); the launcher
         # populates this same dict once connectors are running (empty outside the daemon).
         self.connectors: dict[str, Any] = self.container.connectors()
-        # Soul elicitations awaiting a user answer, keyed by user id: the channel by which
-        # ``delegate_to_soul`` hands a paused soul's question to the handler (P2). One per user.
-        self.elicitations: dict[str, SoulPending] = {}
         self._closed = False
 
     async def close(self) -> None:

@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 from google.adk.tools.tool_context import ToolContext
 
+from gaia.core.elicit import soul_elicitation_sink
 from gaia.souls.run import SoulRun, execute_decision, existing_souls, soul_result
 from gaia.souls.smith import SoulDecision, build_soul_smith
 
@@ -72,10 +73,13 @@ def make_delegate(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any] | None]]
             gaia, decision, task, user_id, project=project, attachments=attachments
         )
         if run.pending is not None:
-            # The soul asked the user mid-task. Stash the pause for the handler (keyed by user)
-            # and pin its warm session so the reaper can't drop it before the answer; return None
-            # so this long-running tool pauses the root run.
-            gaia.elicitations[user_id] = run.pending
+            # The soul asked the user mid-task. Hand the pause up to the handler via the per-turn
+            # sink (a contextvar-carried list — robust to tool_context.user_id mismatches), pin its
+            # warm session so the reaper can't drop it, and return None so this long-running tool
+            # pauses the root run.
+            sink = soul_elicitation_sink.get()
+            if sink is not None:
+                sink.append(run.pending)
             gaia.soul_sessions.pin(run.pending.warm_key)
             return None
         return soul_result(run)

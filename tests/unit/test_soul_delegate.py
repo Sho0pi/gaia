@@ -48,7 +48,6 @@ def _gaia(registry: SoulRegistry) -> Any:
         settings=SimpleNamespace(model="m"),
         souls=registry,
         factory=_FakeFactory(registry),
-        elicitations={},
         soul_sessions=SimpleNamespace(pin=lambda _k: None, unpin=lambda _k: None),
     )
 
@@ -221,11 +220,13 @@ async def test_passes_invocation_user_id_to_the_soul(
     assert seen["user_id"] == "alice"  # the soul reads/writes the real user's memory
 
 
-async def test_soul_pause_returns_none_and_stashes_elicitation(
+async def test_soul_pause_returns_none_and_appends_to_the_sink(
     env: tuple[Any, list[Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # When the soul calls ask_user, the run pauses: delegate_to_soul returns None (so the
-    # long-running root pauses), stashes the question on gaia.elicitations, and pins the session.
+    # long-running root pauses), appends the question to the per-turn sink, and pins the session.
+    from gaia.core.elicit import soul_elicitation_sink
+
     gaia, _ = env
     _stub_decision(monkeypatch, SoulDecision(action="forge", reason="r", spec=_SPEC))
     pinned: list[str] = []
@@ -239,12 +240,16 @@ async def test_soul_pause_returns_none_and_stashes_elicitation(
         return _AgentTurn("", [], paused=call)
 
     monkeypatch.setattr("gaia.souls.run.run_soul_agent", fake_run)
-    ctx = SimpleNamespace(user_id="alice")
-
-    out = await make_delegate(gaia)("build an app", "proj", tool_context=ctx)
+    sink: list[Any] = []
+    token = soul_elicitation_sink.set(sink)  # the handler installs this before each turn
+    try:
+        out = await make_delegate(gaia)("build an app", "proj", tool_context=SimpleNamespace())
+    finally:
+        soul_elicitation_sink.reset(token)
 
     assert out is None  # long-running pause, not a result dict
-    soul = gaia.elicitations["alice"]
+    assert len(sink) == 1
+    soul = sink[0]
     assert soul.question == "What is your API key?" and soul.secret is True
     assert soul.soul_key == _SPEC.key and soul.soul_fc_id == "soul-fc"
     assert pinned == [soul.warm_key]  # its warm session is protected from the reaper

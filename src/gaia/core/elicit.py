@@ -9,6 +9,7 @@ ADK-free module so the resolve logic is unit-testable without a runner.
 
 from __future__ import annotations
 
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 
 #: The ``ask_user`` tool id (mirrors ``gaia.tools.ask_user.NAME``). Duplicated as a plain
@@ -41,6 +42,16 @@ class SoulPending:
     soul_name: str = ""
     user_id: str = ""
     before: dict[str, float] = field(default_factory=dict)
+
+
+#: Per-turn channel from a paused ``delegate_to_soul`` up to the handler. The handler installs a
+#: fresh list before each model turn; if the delegated soul pauses on ``ask_user``, the tool
+#: appends its :class:`SoulPending` here. A contextvar-carried *shared list* (mutated by the tool,
+#: read by the handler) instead of a user-keyed dict makes it robust to ADK's
+#: ``ToolContext.user_id`` not matching the session user — the bug that dropped soul answers.
+soul_elicitation_sink: ContextVar[list[SoulPending] | None] = ContextVar(
+    "soul_elicitation_sink", default=None
+)
 
 
 @dataclass(frozen=True)

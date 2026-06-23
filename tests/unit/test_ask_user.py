@@ -239,6 +239,23 @@ def _delegate_pause_event(fc_id: str) -> SimpleNamespace:
     )
 
 
+class _DelegatePauseRunner:
+    """Mimics a turn where delegate_to_soul paused: it appends the soul's pending to the
+    handler-installed sink (as the real tool does) then yields the delegate pause event."""
+
+    def __init__(self, fc_id: str, soul: SoulPending) -> None:
+        self._fc_id = fc_id
+        self._soul = soul
+
+    async def run_async(self, **_kwargs: Any) -> AsyncIterator[SimpleNamespace]:
+        from gaia.core.elicit import soul_elicitation_sink
+
+        sink = soul_elicitation_sink.get()
+        if sink is not None:
+            sink.append(self._soul)
+        yield _delegate_pause_event(self._fc_id)
+
+
 def _soul_pending(**kw: Any) -> SoulPending:
     base = dict(
         warm_key="web_designer/p",
@@ -252,20 +269,18 @@ def _soul_pending(**kw: Any) -> SoulPending:
     return SoulPending(**{**base, **kw})
 
 
-def _p2_gaia(soul: SoulPending, unpinned: list[str] | None = None) -> SimpleNamespace:
+def _p2_gaia(unpinned: list[str] | None = None) -> SimpleNamespace:
     sink = unpinned if unpinned is not None else []
     return SimpleNamespace(
         memory_service=None,
-        elicitations={"gaia-user": soul},
         soul_sessions=SimpleNamespace(pin=lambda _k: None, unpin=lambda k: sink.append(k)),
     )
 
 
 async def test_delegated_soul_pause_surfaces_prefixed_question() -> None:
     soul = _soul_pending(secret=True)
-    gaia = _p2_gaia(soul)
-    handler = GaiaHandler(gaia)
-    handler._runner = _FakeRunner([_delegate_pause_event("D")])
+    handler = GaiaHandler(_p2_gaia())
+    handler._runner = _DelegatePauseRunner("D", soul)
 
     sent = await _collect(handler, "build me an app")
 
@@ -275,7 +290,6 @@ async def test_delegated_soul_pause_surfaces_prefixed_question() -> None:
     assert (
         handler._pending.soul is soul and handler._pending.fc_id == "D"
     )  # root paused on delegate
-    assert "gaia-user" not in gaia.elicitations  # the channel entry was consumed
 
 
 async def test_soul_answer_resumes_the_root_when_the_soul_finishes(
@@ -284,9 +298,8 @@ async def test_soul_answer_resumes_the_root_when_the_soul_finishes(
     from gaia.souls.run import SoulRun
 
     unpinned: list[str] = []
-    gaia = _p2_gaia(_soul_pending(), unpinned)
-    handler = GaiaHandler(gaia)
-    handler._runner = _FakeRunner([_delegate_pause_event("D")])
+    handler = GaiaHandler(_p2_gaia(unpinned))
+    handler._runner = _DelegatePauseRunner("D", _soul_pending())
     await _collect(handler, "build me an app")  # paused on D, awaiting the soul
 
     async def fake_resume(_g: Any, pending: Any, answer: str) -> SoulRun:
@@ -313,9 +326,8 @@ async def test_soul_can_ask_a_second_question_keeping_the_root_paused(
 ) -> None:
     from gaia.souls.run import SoulRun
 
-    gaia = _p2_gaia(_soul_pending(soul_fc_id="sfc1", question="q1"))
-    handler = GaiaHandler(gaia)
-    handler._runner = _FakeRunner([_delegate_pause_event("D")])
+    handler = GaiaHandler(_p2_gaia())
+    handler._runner = _DelegatePauseRunner("D", _soul_pending(soul_fc_id="sfc1", question="q1"))
     await _collect(handler, "build me an app")
 
     again = _soul_pending(soul_fc_id="sfc2", question="q2")
