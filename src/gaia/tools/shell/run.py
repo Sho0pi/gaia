@@ -57,7 +57,6 @@ def make_exec(
             background: run a long-lived background process instead of waiting.
             port: loopback port a background server binds (0 = none/auto-detect).
         """
-        command, workdir = command or "", workdir or ""  # a model may send null, not the default
         agent = tool_context.agent_name
 
         policy_error = check_command(command, security=security, allowlist=allowlist)

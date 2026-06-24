@@ -63,11 +63,6 @@ def make_manage_permission(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any]
         if caller is not None and not can(caller, MANAGE_USERS, gaia.config):
             return err("only an admin can manage permissions")
 
-        user, action, capability = (
-            user or "",
-            action or "",
-            capability or "",
-        )  # a model may send null, not the default
         act = action.strip().lower()
         if act not in ("grant", "revoke"):
             return err("action must be 'grant' or 'revoke'")

@@ -69,6 +69,16 @@ def _dumps(value: Any) -> str:
     return json.dumps(value, default=_jsonable)
 
 
+def _call_args(arguments: str | None) -> dict[str, Any]:
+    """Parse a function-call ``arguments`` JSON, dropping null values.
+
+    gpt-5.x emits an explicit ``null`` for an *omitted* optional tool arg (Gemini just leaves it
+    out). Passing that ``None`` through to ADK would override the tool's default (e.g. ``""``) and
+    crash its string ops — so drop nulls here and let the default apply, matching Gemini.
+    """
+    return {key: value for key, value in json.loads(arguments or "{}").items() if value is not None}
+
+
 def _shrink(value: Any) -> Any:
     """Drop/truncate heavy bits of a tool result so the replayed history stays small.
 
@@ -376,7 +386,7 @@ class ChatGptOAuthLlm(BaseLlm):
                                 function_call=types.FunctionCall(
                                     id=item.get("call_id"),
                                     name=item.get("name"),
-                                    args=json.loads(item.get("arguments") or "{}"),
+                                    args=_call_args(item.get("arguments")),
                                 )
                             )
                         )

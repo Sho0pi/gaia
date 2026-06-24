@@ -62,7 +62,6 @@ def make_serve(
                 (they always get one).
         """
         try:
-            path = path or ""  # a model may send null, not the default
             site, url = await manager.serve(path.strip())
         except ServeError as exc:
             return err(str(exc))
@@ -121,7 +120,6 @@ def make_serve_stop(
             target: the port number, or the workspace path, of the server to stop.
         """
         try:
-            target = target or ""  # a model may send null, not the default
             site = await manager.stop(target.strip())
         except Exception as exc:  # tools never raise to the model
             return err(f"could not stop: {exc}")

@@ -24,7 +24,6 @@ def make_exec_poll(manager: ProcessManager) -> Callable[..., Awaitable[dict[str,
         """
         agent = tool_context.agent_name
 
-        process_id = process_id or ""  # a model may send null, not the default
         managed = manager.get(agent, process_id.strip())
         if managed is None:
             return err(f"unknown process {process_id!r} (it may belong to another agent)")

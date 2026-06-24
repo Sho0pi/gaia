@@ -39,7 +39,6 @@ def make_remember() -> Callable[..., Any]:
         Args:
             fact: a short, self-contained statement (e.g. "the user's timezone is IST").
         """
-        fact = fact or ""  # a model may send null, not the default
         cleaned = fact.strip()
 
         if not cleaned:

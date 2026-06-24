@@ -42,7 +42,6 @@ def make_send_file() -> Callable[..., Awaitable[dict[str, Any]]]:
             path: the file to send (anything inside your sandbox).
             caption: optional message sent with the file.
         """
-        path, caption = path or "", caption or ""  # a model may send null, not the default
         # No self-logging: ToolLoggingPlugin records one tool_used event per call.
         from gaia.connectors.base import media_kind
         from gaia.tools.fs.base import SandboxError, sandbox_for

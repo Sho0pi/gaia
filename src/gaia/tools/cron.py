@@ -55,13 +55,6 @@ def make_cron(store: CronStore | None = None) -> Callable[..., dict[str, Any]]:
             job_id: target job for get/update/remove/enable/disable.
         """
         try:
-            action, schedule, message, name, job_id = (
-                action or "",
-                schedule or "",
-                message or "",
-                name or "",
-                job_id or "",
-            )  # a model may send null, not the default
             if action == "add":
                 if not schedule or not message:
                     return err("add needs both schedule and message")

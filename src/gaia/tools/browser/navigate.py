@@ -76,7 +76,6 @@ def make_browser_navigate(
             url: an http(s) URL, or a local ``file://`` path to one of your workspace
                 deliverables (e.g. a built ``index.html``) to preview it.
         """
-        url = url or ""  # a model may send null, not the default
         cleaned = url.strip()
         agent = tool_context.agent_name
 

@@ -120,16 +120,6 @@ def make_task_create(
             blocked_by: comma-separated task ids that must finish first.
             approval_class: spend | book | send_as_me | destructive — if it needs a human ok.
         """
-        # A model may send explicit null for an omitted optional arg (gpt-5.x does; Gemini omits
-        # it) — it arrives as None and overrides the "" default, so coerce before the str ops below.
-        title, spec, mission_id, parent_id, blocked_by, approval_class = (
-            title or "",
-            spec or "",
-            mission_id or "",
-            parent_id or "",
-            blocked_by or "",
-            approval_class or "",
-        )
         if not title.strip():
             return err("title must not be empty")
         state = _state(tool_context)
@@ -402,7 +392,6 @@ def make_task_complete(store: TaskStore) -> Callable[..., dict[str, Any]]:
             result: a short summary of the outcome.
             artifacts: comma-separated workspace paths the task produced.
         """
-        result, artifacts = result or "", artifacts or ""  # a model may send null, not the default
         task_id = task_id or _state(tool_context).get("task_id", "")
         if _owned(store, task_id, _owner(tool_context)) is None:
             return err(f"no task {task_id!r}")

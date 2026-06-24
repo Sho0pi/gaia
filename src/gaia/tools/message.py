@@ -209,11 +209,6 @@ def make_message_user(
                 recipient or the current conversation when omitted.
         """
         # No self-logging: ToolLoggingPlugin records one tool_used event per call.
-        recipient, text, channel = (
-            recipient or "",
-            text or "",
-            channel or "",
-        )  # a model may send null, not the default
         if not text.strip():
             return err("text must not be empty")
 

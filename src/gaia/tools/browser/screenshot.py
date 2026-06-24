@@ -38,7 +38,6 @@ def make_browser_screenshot(
         target: Path = workspace / f"screenshot-{int(time.time() * 1000)}.png"
         try:
             session = await manager.get(agent)
-            ref = ref or ""  # a model may send null, not the default
             if ref.strip():
                 # Screenshot a single element (the rest of the page is excluded).
                 locator = resolve_locator(session, ref.strip())
