@@ -17,7 +17,7 @@ from gaia.cli import (
     root,
     skill,
     soul,
-    tasks,
+    task,
 )
 
 # The full command tree, composed explicitly in one place.
@@ -27,7 +27,7 @@ app.add_typer(llm.app, name="llm")
 app.add_typer(grow.app, name="grow")
 app.add_typer(skill.app, name="skill")
 app.add_typer(soul.app, name="soul")
-app.add_typer(tasks.app, name="tasks")
+app.add_typer(task.app, name="task")
 app.command()(connect.connect)
 app.command()(daemon.serve)
 app.command()(daemon.start)

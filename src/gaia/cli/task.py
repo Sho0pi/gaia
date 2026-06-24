@@ -1,9 +1,9 @@
-"""``gaia tasks`` command group — inspect the missions task board from the terminal.
+"""``gaia task`` command group — inspect the missions task board from the terminal.
 
 Read-only over the same ``~/.gaia/tasks.db`` the ``task_*`` tools and (later) the dispatcher
 use; WAL means a `list` here is safe while a chat turn writes. The local operator owns the
 machine, so the CLI sees every owner by default (``--user`` narrows). Per-user scoping lives
-on the chat side (the `/tasks` command), not here.
+on the chat side (the `/task` command), not here.
 
 Lazy-import rule (repo convention): typer + stdlib (+ cli siblings) at module level.
 """
@@ -17,7 +17,7 @@ import typer
 from gaia.cli._console import console, emit_json
 from gaia.cli._options import state
 
-app = typer.Typer(name="tasks", help="Inspect the missions task board.", no_args_is_help=True)
+app = typer.Typer(name="task", help="Inspect the missions task board.", no_args_is_help=True)
 
 # Argument/option types named once so the command signatures below stay readable.
 MissionOpt = Annotated[str, typer.Option("--mission", help="Only this mission's tasks.")]

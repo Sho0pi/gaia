@@ -36,7 +36,7 @@ voice in/out, group gating, proactive push) and tick the checklist at the end.
    Confirm health: `uv run gaia status` and `uv run gaia doctor`.
 5. Watch while you demo (separate terminals):
    - `uv run gaia logs --follow --events`
-   - `uv run gaia tasks list` (re-run to see the board move)
+   - `uv run gaia task list` (re-run to see the board move)
 
 ## Scenarios
 
@@ -67,7 +67,7 @@ your paired number.
 - **Pass:** the dispatcher forges a trainer soul + a frontend soul; a soul **consults** an
   expert or files a **subtask and yields**, and the parent re-runs with the result
   (`running → blocked → … → done`). The site is **presented once** (screenshot + summary);
-  internal steps are not pushed. Check `uv run gaia tasks list` (the tree) and
+  internal steps are not pushed. Check `uv run gaia task list` (the tree) and
   `~/.gaia/agents/<soul>/workspace/` (the files). Events: `task_blocked_on_children`,
   `consult_soul`.
 

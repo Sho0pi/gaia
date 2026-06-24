@@ -7,7 +7,7 @@ survive a restart); the dispatcher, schedules and approval *release* are later p
 
 SQLite (not the json the cron/user stores use) because the board is relational — filtered
 queries (by mission, status, owner), a ``blocked_by`` dependency check, and concurrent
-readers (a ``gaia tasks`` CLI while a chat turn writes). **WAL** makes that last case safe.
+readers (a ``gaia task`` CLI while a chat turn writes). **WAL** makes that last case safe.
 A connection is opened per call (sqlite3 is cheap; no shared mutable singleton), and the
 schema is created idempotently with ``CREATE TABLE IF NOT EXISTS`` — no migration framework
 until rows in the wild justify one.
