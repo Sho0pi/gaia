@@ -16,6 +16,11 @@ from gaia.agents import AgentSpec, SoulRegistry
 # Make the home .env (GEMINI_API_KEY / GEMINI_MODEL) visible to tests and skip-guards.
 load_dotenv(constants.ENV_FILE)
 
+# Auto-accept the first-run usage terms in tests (the CLI's persistent pre-run gate, #251) — the
+# CliRunner is non-interactive, so without this every CLI/daemon test would refuse. Harmless: it
+# records into each test's isolated tmp home.
+os.environ.setdefault("GAIA_ACCEPT_TERMS", "1")
+
 
 #: HOME_DIR-derived path constants to redirect into a per-test tmp home. Stores/Settings read
 #: these at construction/call time, so patching them isolates every store a test builds (directly
