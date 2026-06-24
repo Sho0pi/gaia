@@ -2,15 +2,15 @@
 
     uv run python scripts/gen_reference.py
 
-Writes ``docs/src/content/docs/reference/{cli,commands,config,tools}.md`` from the Typer app, the
-chat-command registry, the config schema, and the tool registry — so the reference never drifts
-from the code. ``tests/unit/test_docs_fresh.py`` re-runs this into a temp dir and diffs, failing CI
-if a generated page is stale or hand-edited.
+Writes ``docs/src/content/docs/reference/{cli,commands,config}.md`` from the Typer app, the
+chat-command registry, and the config schema — so the reference never drifts from the code.
+``tests/unit/test_docs_fresh.py`` re-runs this and diffs, failing CI if a page is stale or
+hand-edited. (Tools are intentionally not generated — their registry is gated on binaries/config,
+so it isn't environment-deterministic.)
 """
 
 from __future__ import annotations
 
-import inspect
 from pathlib import Path
 
 REF_DIR = Path(__file__).resolve().parent.parent / "docs" / "src" / "content" / "docs" / "reference"
@@ -96,33 +96,12 @@ def gen_config() -> str:
     return _page("Config", "The gaia.yaml schema — the commented default, from the schema.", body)
 
 
-def gen_tools() -> str:
-    from gaia.tools.registry import default_registry
-
-    registry = default_registry()
-    rows = [
-        "Tools are what gaia and its souls call to act. On by default; gated by "
-        "`tools.<id>.enabled`. The model invokes these — you don't.\n",
-        "| Tool | What it does |",
-        "|---|---|",
-    ]
-    for name in registry.names():
-        tool = registry.get(name)
-        target = getattr(tool, "func", tool)
-        doc = (inspect.getdoc(target) or "").strip().split("\n")[0]
-        rows.append(f"| `{name}` | {doc} |")
-    return _page(
-        "Tools", "The tools gaia and its souls can call, from the tool registry.", "\n".join(rows)
-    )
-
-
 def main() -> None:
     REF_DIR.mkdir(parents=True, exist_ok=True)
     pages = {
         "cli.md": gen_cli(),
         "commands.md": gen_commands(),
         "config.md": gen_config(),
-        "tools.md": gen_tools(),
     }
     for filename, content in pages.items():
         (REF_DIR / filename).write_text(content)

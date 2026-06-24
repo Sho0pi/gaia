@@ -26,11 +26,10 @@ def _gen() -> dict[str, str]:
         "cli.md": module.gen_cli(),
         "commands.md": module.gen_commands(),
         "config.md": module.gen_config(),
-        "tools.md": module.gen_tools(),
     }
 
 
-@pytest.mark.parametrize("name", ["cli.md", "commands.md", "config.md", "tools.md"])
+@pytest.mark.parametrize("name", ["cli.md", "commands.md", "config.md"])
 def test_reference_page_is_fresh(name: str) -> None:
     expected = _gen()[name]
     actual = (_REF / name).read_text()
