@@ -8,19 +8,12 @@ from typing import Any
 
 import pytest
 
+from _fakes import FakeSender as _FakeSender
 from gaia.connectors.base import Media
 from gaia.missions import Task
 from gaia.missions.notify import notify_result
 from gaia.souls.run import SoulRun
 from gaia.users import UserStore
-
-
-class _FakeSender:
-    def __init__(self) -> None:
-        self.sent: list[tuple[str, Any]] = []
-
-    async def send_to(self, chat: str, reply: Any) -> None:
-        self.sent.append((chat, reply))
 
 
 def _gaia(connectors: dict[str, Any], users: UserStore, deliver: tuple[str, str] = ("", "")) -> Any:
