@@ -1,13 +1,12 @@
-"""``/memories`` — list what Gaia remembers about the user."""
+"""``/memory`` — list what Gaia remembers about the user."""
 
 from __future__ import annotations
 
 from gaia.commands.base import Command, CommandContext
 
 
-class MemoriesCommand(Command):
-    name = "memories"
-    aliases = ("memory",)
+class MemoryCommand(Command):
+    name = "memory"
     summary = "List what Gaia remembers about you long-term."
 
     async def run(self, ctx: CommandContext) -> str:

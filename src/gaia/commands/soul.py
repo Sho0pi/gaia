@@ -1,4 +1,4 @@
-"""``/souls`` — list the specialist subagents (souls) Gaia has learned, and which are live."""
+"""``/soul`` — list the specialist subagents (souls) Gaia has learned, and which are live."""
 
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ def _idle(seconds: float) -> str:
     return f"{seconds / 3600:.1f}h"
 
 
-class SoulsCommand(Command):
-    name = "souls"
+class SoulCommand(Command):
+    name = "soul"
     summary = "List the souls Gaia has learned, and the ones live right now (warm sessions)."
 
     async def run(self, ctx: CommandContext) -> str:

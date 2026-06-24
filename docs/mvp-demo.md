@@ -46,7 +46,7 @@ your paired number.
 ### 1. Memory — "it knows me"
 - Say: *"Remember my girlfriend's name is Grace and I'm cutting on an A/B gym split."*
 - Then `/reset`, then: *"What's my girlfriend's name and my training split?"*
-- **Pass:** recalls **Grace** + the **A/B split**; `/memories` lists both.
+- **Pass:** recalls **Grace** + the **A/B split**; `/memory` lists both.
 
 ### 2. Voice — "talk to it, it talks back"
 - Send a **voice note**: *"give me a one-paragraph summary of today's AI news."*
@@ -74,9 +74,9 @@ your paired number.
 ### 6. Approval gate — "it pauses for me on risky actions"
 - Say: *"Research a TLV→NYC flight next Tuesday and book the cheapest one."*
 - **Pass:** research runs; the booking task **parks** and pushes
-  *"⏸ … needs approval (spend) … /tasks approve `<id>`"*. Reply `/tasks approve <id>` → it
-  proceeds; `/tasks reject <id>` → it fails and you get a notice.
-- **Restart proof:** while it's parked, `uv run gaia restart`, then `/tasks` — still
+  *"⏸ … needs approval (spend) … /task approve `<id>`"*. Reply `/task approve <id>` → it
+  proceeds; `/task reject <id>` → it fails and you get a notice.
+- **Restart proof:** while it's parked, `uv run gaia restart`, then `/task` — still
   `awaiting_approval`; approve → it runs. (The board survives reboots.)
 
 ### 7. (optional) Runaway cap — set `missions.max_tasks: 4` first

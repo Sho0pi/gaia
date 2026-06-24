@@ -254,7 +254,7 @@ class MissionsConfig(BaseModel):
         default_factory=list,
         description="Action classes that require human approval before a task runs "
         "(e.g. spend, book, send_as_me, destructive). A gated task parks in awaiting_approval "
-        "and pushes you an 'approve?' — release with /tasks approve <id>.",
+        "and pushes you an 'approve?' — release with /task approve <id>.",
     )
 
 

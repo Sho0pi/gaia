@@ -101,7 +101,7 @@ class SoulSessionManager:
         self._pinned.discard(key)
 
     def active(self) -> list[tuple[str, float]]:
-        """Live sessions as ``(key, idle_seconds)``, most-recently-used first — for ``/souls``."""
+        """Live sessions as ``(key, idle_seconds)``, most-recently-used first — for ``/soul``."""
         now = time.monotonic()
         rows = [(key, now - w.last_access) for key, w in self._sessions.items()]
         return sorted(rows, key=lambda r: r[1])

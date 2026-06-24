@@ -131,7 +131,7 @@ class MissionDispatcher:
             if missions.max_hours > 0 and self._over_budget(task, missions.max_hours):
                 continue
             # Approval gate: a task in a gated class parks for a human before it runs. It
-            # leaves the ready set (ready_tasks ignores awaiting_approval) until /tasks
+            # leaves the ready set (ready_tasks ignores awaiting_approval) until /task
             # approve releases it → inbox. Doesn't consume a worker slot.
             if task.approval_class and task.approval_class in gated:
                 self._store.update_status(task.id, TaskStatus.AWAITING_APPROVAL)
@@ -253,7 +253,7 @@ class MissionDispatcher:
         if run.pending is not None:
             # The soul asked the user mid-run (first time, or a follow-up during a resume).
             # Park the task durably, pin the warm session for an in-process resume, and ask
-            # out-of-band. The user replies via /tasks answer, which re-dispatches here.
+            # out-of-band. The user replies via /task answer, which re-dispatches here.
             task.pending = soul_pending_to_json(run.pending)
             task.pending_answer = ""
             task.status = TaskStatus.AWAITING_INPUT

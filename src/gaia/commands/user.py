@@ -43,8 +43,8 @@ def _find(ctx: CommandContext, ref: str) -> str | None:
     return None
 
 
-class UsersCommand(Command):
-    name = "users"
+class UserCommand(Command):
+    name = "user"
     capability = "manage_users"
     summary = "List known users, their roles, and the channels that reach them (admin)."
 
@@ -74,7 +74,7 @@ class ApproveCommand(Command):
             return f"Usage: /approve <id|channel:sender> <{'/'.join(_ROLES)}>"
         user_id = _find(ctx, ref.strip())
         if user_id is None:
-            return f"No user matching {ref.strip()!r} (try /users)."
+            return f"No user matching {ref.strip()!r} (try /user)."
         updated = ctx.gaia.users.set_role(user_id, role)  # type: ignore[arg-type]
         assert updated is not None
         return f"{updated.id} is now {updated.role}."
@@ -93,7 +93,7 @@ class RemoveCommand(Command):
             return "Usage: /remove <id|channel:sender>"
         user_id = _find(ctx, ref)
         if user_id is None:
-            return f"No user matching {ref!r} (try /users)."
+            return f"No user matching {ref!r} (try /user)."
         if user_id == ctx.user_id:
             return "You can't remove yourself."
         removed = ctx.gaia.users.remove(user_id)
@@ -113,7 +113,7 @@ class NameCommand(Command):
             return "Usage: /name <id|channel:sender> <name>"
         user_id = _find(ctx, ref.strip())
         if user_id is None:
-            return f"No user matching {ref.strip()!r} (try /users)."
+            return f"No user matching {ref.strip()!r} (try /user)."
         updated = ctx.gaia.users.set_name(user_id, name.strip())
         assert updated is not None
         return f"{updated.id} is now named {updated.name!r}."
@@ -132,5 +132,5 @@ class LinkCommand(Command):
             return "Usage: /link <id> <channel:sender>"
         updated = ctx.gaia.users.link(user_id.strip(), channel, sender)
         if updated is None:
-            return f"No user {user_id.strip()!r} (try /users)."
+            return f"No user {user_id.strip()!r} (try /user)."
         return f"Linked {channel}:{sender} → {updated.id}."

@@ -211,7 +211,7 @@ Memory is strictly per-person, and shared across that person's channels:
 In-chat surface:
 
 - **`/remember <fact>`** — same as the tool: store a fact verbatim.
-- **`/memories`** (aka `/memory`) — list everything stored for you (`list_memories`).
+- **`/memory`** (aka `/memory`) — list everything stored for you (`list_memories`).
 - **`/forget`** — wipe all of *your* long-term memory (`forget`); short-term untouched.
 
 `gaia.yaml` `memory:` reference (`src/gaia/config/schema.py` → `MemoryConfig`):
@@ -242,7 +242,7 @@ In-chat surface:
 | `load_memory` tool | ADK `load_memory_tool` (registered in `src/gaia/tools/registry.py`) |
 | Prompt wiring + `memory_service` enabled-gate + profile injection | `src/gaia/core/agent.py` |
 | Per-user routing / isolation | `src/gaia/core/dispatch.py` |
-| `/remember` `/memories` `/forget` | `src/gaia/commands/` |
+| `/remember` `/memory` `/forget` | `src/gaia/commands/` |
 | Config schema | `src/gaia/config/schema.py` (`MemoryConfig`) |
 
 > This document describes the memory subsystem as it lands across PRs #60 (config

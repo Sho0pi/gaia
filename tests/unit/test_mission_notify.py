@@ -143,4 +143,4 @@ async def test_notify_ask_user_pushes_the_question(tmp_path: Path) -> None:
 
     assert wa.sent and wa.sent[0][0] == "972@x"
     text = wa.sent[0][1]
-    assert "Which city?" in text and "/tasks answer t1" in text and "1. TLV" in text
+    assert "Which city?" in text and "/task answer t1" in text and "1. TLV" in text
