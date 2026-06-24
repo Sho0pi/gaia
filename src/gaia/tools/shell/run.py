@@ -46,15 +46,12 @@ def make_exec(
         """Run a shell command in your workspace (install deps, build, test, CLIs).
 
         Set background=True for a long-running process (dev server, long build): returns a
-        process_id; then exec_poll reads output, exec_kill stops it, exec_list lists them.
-        For a background dev server, pass the port it binds (e.g. 'vite --port 5173' +
-        port=5173) so you can browser_navigate to it.
+        process_id for exec_poll/exec_kill/exec_list. For a background dev server, pass its
+        port (e.g. 'vite --port 5173' + port=5173) so you can browser_navigate to it.
 
         Args:
-            command: the shell command to run.
             timeout_seconds: foreground only — max seconds to wait (1-300).
-            workdir: subdirectory to run in (must stay inside your workspace).
-            background: run a long-lived background process instead of waiting.
+            workdir: a subdirectory inside your workspace.
             port: loopback port a background server binds (0 = none/auto-detect).
         """
         agent = tool_context.agent_name

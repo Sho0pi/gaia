@@ -105,20 +105,16 @@ def make_task_create(
         *,
         tool_context: ToolContext,
     ) -> dict[str, Any]:
-        """File a new task on the board (status ``inbox``). Use this to track real work —
-        a deliverable, a long job, a step that must wait for another — that should survive
-        beyond this turn. When a soul calls this mid-task it is filed as a SUBTASK of the
-        soul's current task automatically (it then saves notes and yields; it is re-run with
-        the subtask's results once done).
+        """File a task on the board to track real work that should outlive this turn — a
+        deliverable, a long job, or a step that waits on another. A soul calling this files
+        a SUBTASK of its current task and yields (re-run with the subtask's result). For a
+        multi-step mission, prefer task_plan.
 
         Args:
-            title: a short label for the task.
-            spec: the full instruction for whoever will run it.
-            mission_id: the mission this belongs to; omit to start a new mission.
-            parent_id: the parent task id when this is a subtask (defaults to the caller's
-                own task when a soul files it).
-            blocked_by: comma-separated task ids that must finish first.
-            approval_class: spend | book | send_as_me | destructive — if it needs a human ok.
+            spec: the full instruction for whoever runs it.
+            mission_id: omit to start a new mission.
+            blocked_by: comma-separated ids of tasks that must finish first.
+            approval_class: spend | book | send_as_me | destructive — when it needs a human ok.
         """
         if not title.strip():
             return err("title must not be empty")
@@ -237,19 +233,14 @@ def make_task_plan(store: TaskStore, *, max_tasks: int = 20) -> Callable[..., di
     """Return the ``task_plan`` tool bound to ``store`` (Gaia-only — files a whole mission)."""
 
     def task_plan(plan: str, *, tool_context: ToolContext) -> dict[str, Any]:
-        """File a whole multi-step mission at once, wiring real dependency edges.
-
-        Use this for any task that needs another task's output (chains, fan-out, fan-in) —
-        it avoids the broken pattern of guessing an upstream id mid-turn. The dispatcher
-        runs each task on a soul; a task runs as soon as its dependencies are done, and the
-        finished dependencies' results + files are fed into it.
+        """File a whole multi-step mission at once, wiring real dependency edges. Use whenever
+        a task needs another's output (chains, fan-out/in) — never guess an upstream id
+        mid-turn. Each task runs once its dependencies finish, receiving their results + files.
 
         Args:
-            plan: a JSON array of tasks. Each: {"ref": "<local label>", "title": "...",
-                "spec": "<full instruction>", "depends_on": ["<ref>", ...]}. ``depends_on``
-                lists the local refs (NOT ids) this task waits for; omit it for tasks that
-                can start immediately (they run in parallel). Example:
-                [{"ref":"program","title":"Design the A/B gym program","spec":"..."},
+            plan: a JSON array of {"ref","title","spec","depends_on":[refs]} objects.
+                depends_on lists local refs (not ids) to wait for; omit it to start now. E.g.
+                [{"ref":"program","title":"Design the gym program","spec":"..."},
                  {"ref":"site","title":"Build the site","spec":"...","depends_on":["program"]}]
         """
         items = _parse_plan(plan)
