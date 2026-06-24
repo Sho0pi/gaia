@@ -1,9 +1,10 @@
 # gaia
 
-[![CI](https://github.com/Sho0pi/gaia/actions/workflows/ci.yml/badge.svg)](https://github.com/Sho0pi/gaia/actions/workflows/ci.yml)
-[![Docs](https://img.shields.io/badge/docs-gaia--agent.com-2b5c44)](https://docs.gaia-agent.com)
-[![License: MIT](https://img.shields.io/github/license/Sho0pi/gaia?color=blue)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
+[![CI](https://img.shields.io/github/actions/workflow/status/Sho0pi/gaia/ci.yml?branch=master&style=flat&logo=githubactions&logoColor=white&label=CI&labelColor=0F172A)](https://github.com/Sho0pi/gaia/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-gaia--agent.com-22F0A8?style=flat&logo=astro&logoColor=white&labelColor=0F172A)](https://docs.gaia-agent.com)
+[![License](https://img.shields.io/github/license/Sho0pi/gaia?style=flat&logo=opensourceinitiative&logoColor=white&label=license&labelColor=0F172A&color=22F0A8)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.11+-22F0A8?style=flat&logo=python&logoColor=white&labelColor=0F172A)](https://www.python.org/)
+[![google-adk](https://img.shields.io/badge/built%20on-google--adk-22F0A8?style=flat&logo=google&logoColor=white&labelColor=0F172A)](https://github.com/google/adk-python)
 
 > I hate python — here is Gaia, the best agent you will ever use.
 
