@@ -37,7 +37,9 @@ def _gaia(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, yaml: str) -> Gaia:
     return Gaia(Settings(agent_registry_dir=tmp_path / "reg", config_path=config_path))
 
 
-async def _poll_until(store: TaskStore, done: Any, *, tries: int = 200) -> None:
+async def _poll_until(store: TaskStore, done: Any, *, tries: int = 500) -> None:
+    # 10s budget (was 4s): the multi-hop re-dispatch chain can exceed 4s under full-suite CPU
+    # contention, which flaked this test intermittently in a parallel run.
     for _ in range(tries):
         if done():
             return
