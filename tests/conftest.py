@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -102,6 +104,48 @@ def _isolate_home(
     monkeypatch.setattr(constants, "HOME_DIR", home)  # mem0 chroma reads this at call time
     for name, leaf in _HOME_PATHS.items():
         monkeypatch.setattr(constants, name, home / leaf)
+
+
+#: Codex model id for the ChatGPT path (valid: gpt-5.5 / gpt-5.4* / chat-latest — not gpt-5).
+_CHATGPT_TEST_MODEL = "gpt-5.4-mini"
+
+
+@pytest.fixture(autouse=True)
+def _route_to_chatgpt(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch, _isolate_home: None
+) -> None:
+    """`GAIA_TEST_MODEL=chatgpt` → run the live (model) system tests through the local
+    Sign-in-with-ChatGPT backend instead of Gemini, so they can be exercised live without a
+    Gemini key. Copies the real OAuth token into the ISOLATED tmp home (real ~/.gaia untouched)
+    and reroutes ``resolve_model`` at every import site to ``ChatGptOAuthLlm(gpt-5.4-mini)``.
+
+    No-op unless the env var is set; only touches ``system``-marked tests (the model-driven ones).
+    """
+    if os.environ.get("GAIA_TEST_MODEL", "").lower() != "chatgpt":
+        return
+    if request.node.get_closest_marker("system") is None:
+        return
+    token = Path.home() / f".{constants.APP_NAME}" / "openai_chatgpt.json"
+    if not token.exists():
+        pytest.skip("GAIA_TEST_MODEL=chatgpt but no token (run: uv run gaia llm auth openai)")
+    dest = (
+        constants.HOME_DIR / "openai_chatgpt.json"
+    )  # HOME_DIR is the tmp home (see _isolate_home)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(token, dest)
+
+    from gaia.providers.openai import ChatGptOAuthLlm
+
+    def _chatgpt(*_args: Any, **_kwargs: Any) -> Any:
+        return ChatGptOAuthLlm(model=_CHATGPT_TEST_MODEL)
+
+    # The three sites agents resolve their model through (root agent, soul factory, smith).
+    for target in (
+        "gaia.models.resolve_model",
+        "gaia.core.agent.resolve_model",
+        "gaia.agents.factory.resolve_model",
+    ):
+        monkeypatch.setattr(target, _chatgpt, raising=False)
 
 
 @pytest.fixture
