@@ -1,17 +1,25 @@
 name: CI
 on:
   push:
+    branches: [master] # post-merge only — a PR branch is covered by pull_request below
   pull_request:
-  workflow_dispatch: # also unlocks the on-demand live `system` job below
+  schedule:
+    - cron: "0 4 * * *" # nightly live tier (system-live)
+  workflow_dispatch: # on-demand live run
+
+# One in-flight run per ref; a new push cancels the previous run instead of double-running.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  # Required: the full offline tier — lint, types, and every test that needs no
-  # external resource (the system marker gates keys/native libs/network).
+  # Offline tier: lint, types, and every test that needs no external resource.
   check:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
       - run: uv sync --all-groups
@@ -20,18 +28,33 @@ jobs:
       - run: uv run mypy src
       - run: uv run pytest -m "not system" --cov=src/gaia
 
-  # On-demand: the live tier (model key, native libs). Run manually from the Actions
-  # tab when GEMINI_API_KEY is configured as a repo secret — instead of these tests
-  # silently skipping forever.
+  # System tier WITHOUT secrets, on every PR + master push. The key/browser/voice/whatsapp
+  # tests self-skip (skipif/importorskip), so only the real-backend ones (fs/exec/serve/task)
+  # run — zero model quota used. This is the always-on "PR subset".
   system:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --all-groups
+      - run: uv run pytest -m system
+
+  # Full live tier WITH secrets: nightly + on-demand. A present-but-exhausted key (429),
+  # an overloaded model (503), or a bad key makes the model tests SKIP (conftest hook), so a
+  # quota-out night is yellow, not red. Installs chromium so the browser tests run too.
+  system-live:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     env:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
       - run: uv sync --all-groups
+      - run: uv run playwright install --with-deps chromium
       - run: uv run pytest -m system
