@@ -12,6 +12,20 @@
 for reuse** (never recreating), and grows to you over time. Inspired by openclaw, hermes-agent,
 and picoclaw.
 
+## ⚠️ Disclaimer
+
+Gaia is autonomous software that runs **LLM-driven actions on your machine** — it can execute shell
+commands, control a browser, read and write files, and send messages on your behalf. A model can be
+wrong or be manipulated, so Gaia may take **unintended or destructive actions**. **Use it entirely at
+your own risk.**
+
+Gaia is provided **"AS IS", without warranty of any kind**. To the maximum extent permitted by law,
+the authors and contributors are **not liable** for any damage, data loss, financial cost, or other
+harm arising from its use — this is the legally binding [MIT License](LICENSE). **You alone are
+responsible** for where you run it, what credentials and access you give it, and everything it does.
+Read the [security model](SECURITY.md) and the permission/sandbox docs, and keep it on least
+privilege, before pointing it at anything you care about.
+
 ## 📚 Documentation
 
 Full docs — install, concepts, guides, and the CLI/config reference — live at
@@ -30,12 +44,22 @@ uv run gaia                     # inline terminal chat
 See [Getting started](https://docs.gaia-agent.com/getting-started/) for connecting Telegram /
 WhatsApp.
 
-## Stack
+## Built on
 
-[google-adk](https://github.com/google/adk-python) · [a2a-sdk](https://a2a-protocol.org) ·
-[mem0ai](https://github.com/mem0ai/mem0) ·
-[python-telegram-bot](https://github.com/python-telegram-bot/python-telegram-bot) ·
-[pywa](https://github.com/david-lev/pywa). Managed with [uv](https://docs.astral.sh/uv/).
+Gaia stands on these open-source projects — each remains under **its own license**, held by its
+respective authors:
+
+- [google-adk](https://github.com/google/adk-python) — agent runtime + LLM skeleton
+- [a2a-sdk](https://a2a-protocol.org) — agent-to-agent protocol
+- [mem0ai](https://github.com/mem0ai/mem0) — long-term memory
+- [python-telegram-bot](https://github.com/python-telegram-bot/python-telegram-bot) ·
+  [pywa](https://github.com/david-lev/pywa) · [neonize](https://github.com/krypton-byte/neonize) —
+  connectors
+- [Typer](https://typer.tiangolo.com) · [Textual](https://textual.textualize.io) · the docs site on
+  [Astro Starlight](https://starlight.astro.build)
+- Managed with [uv](https://docs.astral.sh/uv/).
+
+Gaia's own code is [MIT-licensed](LICENSE); the dependencies above keep their original licenses.
 
 ## Develop
 
