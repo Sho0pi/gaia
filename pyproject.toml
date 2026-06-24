@@ -6,32 +6,32 @@ readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "sho0pi" }]
 dependencies = [
-    "google-adk>=1.0",
-    "a2a-sdk>=0.3",
+    "google-adk>=2.3.0",
+    "a2a-sdk>=1.1.0",
     # >=2.0.6: 2.0.4's chroma search fed raw L2 distance to a higher-is-better hybrid
     # ranker, inverting recall order (relevant facts buried); 2.0.6 converts distance to
     # a similarity score (1/(1+d)) so search_memory ranks correctly. See PR for triage.
-    "mem0ai>=2.0.6",
-    "python-telegram-bot>=22.0",
-    "pywa>=2.0",
+    "mem0ai>=2.0.7",
+    "python-telegram-bot>=22.8",
+    "pywa>=4.2.0",
     # 0.3.18 ships protobuf-7.34 gencode but only needs baseline wire features, so
     # it runs on the protobuf<7 runtime adk/mem0/a2a pin once the gencode version
     # guard is neutralised (see connectors/whatsapp_web.py).
-    "neonize>=0.3.18",
-    "pydantic>=2.0",
-    "pydantic-settings>=2.0",
-    "pyyaml>=6.0",
+    "neonize>=0.3.18.post0",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.14.2",
+    "pyyaml>=6.0.3",
     "python-json-logger>=4.1.0",
     # The gaia console command (Typer = click + rich help + shell completion).
-    "typer>=0.12",
-    "rich>=13.0",
-    "prompt-toolkit>=3.0",
-    "apscheduler>=3.10",
+    "typer>=0.26.7",
+    "rich>=15.0.0",
+    "prompt-toolkit>=3.0.52",
+    "apscheduler>=3.11.2",
     # Small pure-Python DI container (providers.Singleton = lazy build-once,
     # providers.Callable for hot-reloaded values). Houses Gaia's build-once
     # services (transcriber, memory, mcp/skill toolsets, registries) in
     # `gaia.di.Container`; see CLAUDE.md "Service lifecycle & DI".
-    "dependency-injector>=4.41",
+    "dependency-injector>=4.49.1",
     "ruamel-yaml>=0.19.1",
 ]
 
@@ -40,38 +40,38 @@ gaia = "gaia.cli:main"
 
 [dependency-groups]
 dev = [
-    "pytest>=8.0",
-    "pytest-asyncio>=0.24",
-    "pytest-cov>=6.0",
-    "ruff>=0.9",
-    "mypy>=1.14",
-    "types-PyYAML>=6.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.19",
+    "mypy>=2.1.0",
+    "types-PyYAML>=6.0.12.20260518",
 ]
 tools = [
-    "binaryornot>=0.4.4",
+    "binaryornot>=0.6.0",
     "ddgs>=9.14.4",
-    "httpx>=0.27",
-    "trafilatura>=1.8",
+    "httpx>=0.28.1",
+    "trafilatura>=2.1.0",
 ]
 # Long-term memory backend. mem0 (a core dep) orchestrates the LLM+embedder via
 # google-genai (already pulled by google-adk); only the embedded vector store is
 # extra. chroma is file-backed and serverless, so it runs anywhere — down to a Pi.
 memory = [
-    "chromadb>=0.5",
+    "chromadb>=1.5.9",
 ]
 # Non-Gemini model providers: OpenAI/GPT etc. via ADK's LiteLLM wrapper, and "Sign in
 # with ChatGPT" (httpx for the OAuth flow + Responses backend). Only needed when
 # gaia.yaml sets a non-gemini llm.provider; lazy-imported.
 llm = [
-    "litellm>=1.0",
-    "httpx>=0.27",
+    "litellm>=1.89.3",
+    "httpx>=0.28.1",
 ]
 # Headless browser automation (the browser_* tools). Playwright drives a real
 # Chromium over CDP; async-native, ships the accessibility snapshot we hand the
 # model. Lazy-imported, so gaia imports without it. After installing the group, run
 # `uv run playwright install chromium` once to fetch the browser binary.
 browser = [
-    "playwright>=1.40",
+    "playwright>=1.60.0",
 ]
 # External MCP (Model Context Protocol) servers, consumed via ADK's McpToolset.
 # `mcp` is the Python SDK ADK's mcp_tool imports. Lazy-imported and only touched when
@@ -81,14 +81,14 @@ browser = [
 # needs this group AND bun on PATH (`brew install bun` / https://bun.sh). Without either,
 # the backend falls back to the native browser tools (the 'browser' group).
 mcp = [
-    "mcp>=1.0",
+    "mcp>=1.28.0",
 ]
 # Inbound voice messages: local speech-to-text via faster-whisper (CTranslate2
 # Whisper, CPU int8 — Pi-viable). Decodes WhatsApp's ogg/opus through its bundled
 # PyAV, so no ffmpeg binary is needed. Model weights download from Hugging Face on
 # the first transcription. Lazy-imported; gaia runs without it (voice notes ignored).
 voice = [
-    "faster-whisper>=1.0",
+    "faster-whisper>=1.2.1",
 ]
 
 [build-system]
