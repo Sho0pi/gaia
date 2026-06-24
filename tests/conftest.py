@@ -38,6 +38,49 @@ def pytest_configure(config: pytest.Config) -> None:
     )
 
 
+#: Error signatures that mean "the model backend is unavailable" (no quota, overloaded, bad or
+#: expired key) — an *infra* problem, not a test failure. Mirrors ``core/handler._friendly_error``.
+_MODEL_UNAVAILABLE = (
+    "resource_exhausted",
+    "429",
+    "rate limit",
+    "quota",
+    "unavailable",
+    "503",
+    "overloaded",
+    "permission_denied",
+    "api key not valid",
+    "api_key_invalid",
+    "unauthenticated",
+    "401",
+    "403",
+)
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]) -> pytest.TestReport:
+    """Turn a model-backend outage in a ``system`` test into a SKIP, not a failure.
+
+    So the nightly live tier goes yellow (skipped) when the key is exhausted/overloaded/invalid,
+    instead of red — a real assertion failure (a genuine logic break) still fails as normal.
+    """
+    report = yield
+    if (
+        report.when == "call"
+        and report.failed
+        and item.get_closest_marker("system") is not None
+        and call.excinfo is not None
+    ):
+        message = str(call.excinfo.value).lower()
+        if any(sign in message for sign in _MODEL_UNAVAILABLE):
+            report.outcome = "skipped"
+            # The terminal's skip summary expects a (path, lineno, reason) tuple longrepr.
+            path, lineno, _ = item.location
+            reason = f"Skipped: model backend unavailable — {str(call.excinfo.value)[:160]}"
+            report.longrepr = (path, (lineno or 0) + 1, reason)
+    return report
+
+
 @pytest.fixture(autouse=True)
 def _isolate_home(
     request: pytest.FixtureRequest, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
