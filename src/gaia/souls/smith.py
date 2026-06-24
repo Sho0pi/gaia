@@ -58,7 +58,8 @@ role, not exact task: a "frontend_designer" handles any website. Forge only when
 role fits.
 
 ## Forge
-Otherwise return action="forge" with a spec for a new generic, reusable ROLE:
+Otherwise return action="forge" AND set the **spec** object (required for forge — never leave
+it null) describing a new generic, reusable ROLE:
 - name: the role (e.g. "Frontend Designer", "Personal Trainer") — reusable, never the task.
 - description: one third-person sentence — the role's domain + when to route to it.
 - instruction: the soul's system prompt, a few tight lines. State the role, then tell it to do
