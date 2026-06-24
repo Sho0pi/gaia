@@ -183,3 +183,29 @@ def test_create_captures_current_chat_as_notify_target(tmp_path: Path) -> None:
 
     assert out["task"]["notify_channel"] == "whatsapp"
     assert out["task"]["notify_chat"] == "972@s.whatsapp.net"
+
+
+def test_create_tolerates_null_optional_args(tmp_path: Path) -> None:
+    # A model (gpt-5.x) may send explicit null for an omitted optional arg, which arrives as
+    # None and overrides the "" default — task_create must not crash on the str ops (issue: a
+    # live ChatGPT turn hit `approval_class.strip()` on None).
+    store = _store(tmp_path)
+    out = make_task_create(store)(
+        "buy oat milk",
+        spec=None,
+        mission_id=None,
+        parent_id=None,
+        blocked_by=None,
+        approval_class=None,
+        tool_context=_ctx("itay"),
+    )
+    assert out["status"] == "success" and out["task"]["title"] == "buy oat milk"
+
+
+def test_complete_tolerates_null_args(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    created = make_task_create(store)("ship it", tool_context=_ctx("itay"))
+    out = make_task_complete(store)(
+        task_id=created["task"]["id"], result=None, artifacts=None, tool_context=_ctx("itay")
+    )
+    assert out["status"] == "success"
