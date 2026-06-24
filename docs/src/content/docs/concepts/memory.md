@@ -1,5 +1,7 @@
-# Memory — how Gaia remembers
-
+---
+title: Memory
+description: "How Gaia remembers: two-tier (session + mem0)."
+---
 **Question.** How does Gaia remember anything — within a conversation, and across days
 and channels — without leaking one person's memory into another's?
 
@@ -14,7 +16,7 @@ and channels — without leaking one person's memory into another's?
 Short-term is ADK's job; long-term is mem0's job; the profile is the bridge that makes
 long-term memory *present* without the model having to go fetch it.
 
-![memory flow](diagrams/memory-flow.svg)
+![memory flow](/diagrams/memory-flow.svg)
 
 ---
 

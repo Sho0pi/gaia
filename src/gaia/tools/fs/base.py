@@ -5,7 +5,7 @@ per agent — the agent's workspace (``~/.gaia/agents/<agent>/workspace``) and a
 scratch dir (``/tmp/gaia/<agent>``) — realpath-resolved once so any path that escapes
 them (via ``..``, an absolute path, or a symlink) is rejected. The root orchestrator
 alone also gets the whole agents tree as a root (hierarchical access — see
-``docs/workspace-design.md``), so it can open the deliverables its souls produce while
+``concepts/workspace``), so it can open the deliverables its souls produce while
 each soul stays sealed inside its own workspace.
 """
 
@@ -111,7 +111,7 @@ def _safe_dir(agent_name: str) -> str:
 def sandbox_for(agents_dir: Path, agent_name: str) -> Sandbox:
     """The sandbox for ``agent_name``: its workspace plus a scoped ``/tmp`` scratch dir.
 
-    Hierarchical access (issue #121, design in ``docs/workspace-design.md``): the **root
+    Hierarchical access (issue #121, design in ``concepts/workspace``): the **root
     orchestrator** additionally gets the whole agents tree as a **read-only** root, so it can
     read/verify/relay the deliverables ``delegate_to_soul`` reports (each soul's own
     workspace) but never edit them — changing a soul's project is the soul's job, reached by

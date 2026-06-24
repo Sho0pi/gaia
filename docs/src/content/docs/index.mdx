@@ -1,0 +1,43 @@
+---
+title: Gaia
+description: An AI agent that forges task-specific subagents on demand, stores them for reuse, and grows to you over time.
+template: splash
+hero:
+  tagline: An AI agent that forges specialist subagents on demand, stores them for reuse, and grows to you over time.
+  image:
+    file: ../../assets/gaia-icon.png
+  actions:
+    - text: Get started
+      link: /getting-started/
+      icon: right-arrow
+    - text: View on GitHub
+      link: https://github.com/Sho0pi/gaia
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+**Gaia** answers simple things itself and delegates the rest to **souls** — specialist
+subagents it forges once and **reuses** (never recreates). It remembers you across channels
+with two-tier memory, runs long jobs as **missions**, and reaches you on Telegram, WhatsApp,
+or your terminal.
+
+<CardGrid stagger>
+	<Card title="Souls, not one-offs" icon="seti:robot">
+		A task gets the right specialist — forged the first time, **reused** every time after.
+		See [Concepts → Missions](/concepts/missions/).
+	</Card>
+	<Card title="Two-tier memory" icon="seti:db">
+		Short-term ADK session state + long-term [mem0](https://github.com/mem0ai/mem0) that
+		grows day by day. See [Concepts → Memory](/concepts/memory/).
+	</Card>
+	<Card title="Meet it where you are" icon="comment">
+		Telegram, WhatsApp, or a local terminal chat — one identity, shared memory across
+		channels. See [Guides → Connectors](/guides/connectors/).
+	</Card>
+	<Card title="Drive it from the terminal" icon="seti:powershell">
+		Inspect souls, tasks, users, memory, and config from the `gaia` CLI. See
+		[Reference → CLI](/reference/cli/).
+	</Card>
+</CardGrid>
