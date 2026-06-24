@@ -1,0 +1,60 @@
+/* Gaia brand — mirrors gaia-agent.com (src/layouts/Layout.astro): dark-default nature palette,
+   Cinzel / Fraunces / Inter / JetBrains Mono. Overrides Starlight's CSS custom properties. */
+
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+	--sl-font: 'Inter', system-ui, sans-serif;
+	--sl-font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+/* Dark (default) — bg #0B1612, ink #EFE7D2, accents moss/sea/glow/gold. */
+:root,
+:root[data-theme='dark'] {
+	--sl-color-accent-low: #11211b;
+	--sl-color-accent: #2b5c44;
+	--sl-color-accent-high: #7bc79f;
+	--sl-color-white: #f7f2e4;
+	--sl-color-gray-1: #efe7d2;
+	--sl-color-gray-2: #a8b5ac;
+	--sl-color-gray-3: #5a8a72;
+	--sl-color-gray-4: #234034;
+	--sl-color-gray-5: #11211b;
+	--sl-color-gray-6: #0b1612;
+	--sl-color-black: #070f0c;
+	--sl-color-text-accent: #22f0a8; /* glow */
+}
+
+/* Light */
+:root[data-theme='light'] {
+	--sl-color-accent-low: #eae2d0;
+	--sl-color-accent: #2b5c44;
+	--sl-color-accent-high: #0e1a14;
+	--sl-color-white: #0e1a14;
+	--sl-color-gray-1: #1c2a22;
+	--sl-color-gray-2: #3d4a40;
+	--sl-color-gray-3: #6b7a6f;
+	--sl-color-gray-4: #c9bfa3;
+	--sl-color-gray-5: #eae2d0;
+	--sl-color-gray-6: #f2ede0;
+	--sl-color-gray-7: #fbf7ec;
+	--sl-color-black: #fbf7ec;
+	--sl-color-text-accent: #0e7490; /* sea */
+}
+
+/* Headings in the display serif, the brand wordmark in Cinzel — like the marketing site. */
+:root {
+	--sl-font-headings: 'Fraunces', Georgia, serif;
+}
+.sl-markdown-content h1,
+.sl-markdown-content h2,
+.sl-markdown-content h3,
+h1.hero-title {
+	font-family: 'Fraunces', Georgia, serif;
+	font-optical-sizing: auto;
+}
+.site-title {
+	font-family: 'Cinzel', serif;
+	font-weight: 900;
+	letter-spacing: 0.06em;
+}

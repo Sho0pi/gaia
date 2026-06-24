@@ -1,5 +1,7 @@
-# Workspace design report — per-soul vs shared, and who sees what
-
+---
+title: Workspace
+description: Per-soul vs shared files, and who sees what.
+---
 **Question.** Should every agent (Gaia + each soul) keep its own workspace, should they all
 share one, or should it be hierarchical — Gaia sees all workspaces, each soul sees only its
 own? Workspaces hold tmp data and screenshots today, and will later hold per-soul state

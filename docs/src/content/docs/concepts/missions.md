@@ -1,5 +1,7 @@
-# Missions — multi-agent orchestration design
-
+---
+title: Missions
+description: Multi-agent task orchestration.
+---
 **Question.** How do agents delegate to each other dynamically? Chains
 (PT → web-dev), deep nesting (agent → agent → agent), long-running work, schedules
 ("every morning read me the news"), real-world actions needing approval ("book a
@@ -12,7 +14,7 @@ for quick expert answers inside a turn) and `task_create` (board, asynchronous, 
 work products, parallelism, approvals and arbitrary nesting). A2A stays at the edge as
 the interop layer for *external* agents, not the internal bus.
 
-![architecture](diagrams/missions.svg)
+![architecture](/diagrams/missions.svg)
 
 ---
 
@@ -61,7 +63,7 @@ A **mission** is a root task plus its tree (`parent_id` chain). Artifacts are
 workspace paths — hierarchical workspaces (see `workspace-design.md`) already let Gaia
 read every soul's output, so handing T1's deliverable to T2 is just a path.
 
-![task lifecycle](diagrams/task-states.svg)
+![task lifecycle](/diagrams/task-states.svg)
 
 ### The dispatcher (in `gaia serve`)
 
@@ -131,7 +133,7 @@ per mission is a follow-up once cost plumbing exists.
 
 ### "Build a website focusing on gym improvement in my A/B plan"
 
-![gym trace](diagrams/gym-trace.svg)
+![gym trace](/diagrams/gym-trace.svg)
 
 Note the two delegation kinds in one mission: the PT *consults* the nutritionist
 (quick answer, no board hop), while Gaia used *board tasks* for the real deliverables

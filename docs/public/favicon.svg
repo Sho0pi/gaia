@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0E7490"/>
+      <stop offset="100%" stop-color="#2B5C44"/>
+    </linearGradient>
+  </defs>
+  <circle cx="16" cy="16" r="15" fill="url(#g)"/>
+  <text x="16" y="21" text-anchor="middle" font-family="serif" font-size="16" font-weight="900" fill="white" letter-spacing="1">Γ</text>
+</svg>

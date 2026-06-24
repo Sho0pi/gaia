@@ -1,5 +1,7 @@
-# Gaia MVP demo & acceptance script
-
+---
+title: Demo walkthrough
+description: See gaia run end-to-end.
+---
 A repeatable, end-to-end walkthrough that proves the MVP works **from a user's seat** — not
 unit tests, the real app. Run it on **WhatsApp Web** (the channel with the most to show:
 voice in/out, group gating, proactive push) and tick the checklist at the end.

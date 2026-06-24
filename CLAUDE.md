@@ -47,14 +47,14 @@ unsure which library, delegate to `lib-researcher` subagent.
 - `memory/` — `backend.py` builds mem0, `service.py` adapts it to ADK's
   `BaseMemoryService` (auto-ingest batching + `remember`/`load_memory` tools);
   `profile.py` distils the session-start `<USER_PROFILE>`. Full design:
-  `docs/memory-design.md`.
+  `concepts/memory`.
 - `missions/` — task board + engine. `store.py` (stdlib sqlite3/WAL, `~/.gaia/tasks.db`):
   `Task` rows + `TaskStore` CRUD/`ready_tasks`. Per-user `owner` (≠ `created_by` agent).
   `dispatcher.py` `MissionDispatcher` (P2) runs in daemon: polls ready tasks → runs each
   on soul via `souls/run.py:execute_decision` → posts result+artifacts → dependents consume
   upstream results; `notify.py` pushes result to task's notify target (chat→owner→
   cron default). Surfaced by `task_*`, `/tasks`, `gaia tasks`. Missions epic (#134, design
-  `docs/missions-design.md`); status enum maps to A2A `TaskState` (P5 bridge).
+  `concepts/missions`); status enum maps to A2A `TaskState` (P5 bridge).
 - `connectors/` — thin I/O adapters only (cli TUI, telegram, whatsapp, whatsapp_web);
   each extracts sender id + display name, calls channel-bound `Dispatch`
   callable `(sender_id, name, text, send)` from `base.py` (dispatcher resolves

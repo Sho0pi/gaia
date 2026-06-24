@@ -2,7 +2,7 @@
 
 A *task* is one row of the company's state; a *mission* is a root task plus its tree
 (``parent_id`` chain). This is the durable blackboard the missions epic builds on (design:
-``docs/missions-design.md``): P1 ships a manual board (Gaia files/lists/completes tasks that
+``concepts/missions``): P1 ships a manual board (Gaia files/lists/completes tasks that
 survive a restart); the dispatcher, schedules and approval *release* are later phases.
 
 SQLite (not the json the cron/user stores use) because the board is relational — filtered
