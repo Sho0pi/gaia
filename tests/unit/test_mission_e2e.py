@@ -10,54 +10,21 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
 
 import pytest
-from google.adk.models.base_llm import BaseLlm
-from google.adk.models.llm_response import LlmResponse
-from google.genai import types
 
 import gaia.missions.dispatcher as disp_mod
+from _fakes import FakeLlm, forge_response
+from _fakes import FakeSender as _Sender
+from _fakes import text_response as _text
 from gaia import constants
-from gaia.agents import AgentSpec
 from gaia.config import Settings
 from gaia.core import Gaia
 from gaia.missions import TaskStatus, TaskStore
 from gaia.missions.dispatcher import MissionDispatcher
-from gaia.souls.smith import SoulDecision
 from gaia.tools.task import make_task_plan
-
-
-class FakeLlm(BaseLlm):
-    model: str = "fake-model"
-    responses: list[LlmResponse]
-
-    async def generate_content_async(
-        self, llm_request: Any, stream: bool = False
-    ) -> AsyncGenerator[LlmResponse, None]:
-        yield self.responses.pop(0)
-
-
-def _text(text: str) -> LlmResponse:
-    return LlmResponse(content=types.Content(role="model", parts=[types.Part(text=text)]))
-
-
-def _forge(name: str) -> str:
-    return SoulDecision(
-        action="forge",
-        reason=f"need a {name}",
-        spec=AgentSpec(name=name, description=f"a {name}", instruction="Do it.", model="fake"),
-    ).model_dump_json()
-
-
-class _Sender:
-    def __init__(self) -> None:
-        self.sent: list[str] = []
-
-    async def send_to(self, chat: str, reply: Any) -> None:
-        self.sent.append(reply if isinstance(reply, str) else f"[media {reply.path}]")
 
 
 def _ctx(user_id: str) -> Any:
@@ -82,9 +49,9 @@ async def test_gym_site_mission_runs_two_souls_with_handoff(
     # then site task (smith→forge frontend, soul writes index.html using the program).
     fake = FakeLlm(
         responses=[
-            _text(_forge("Personal Trainer")),
+            forge_response("Personal Trainer"),
             _text("Wrote the A/B split to program.md"),
-            _text(_forge("Frontend Designer")),
+            forge_response("Frontend Designer"),
             _text("Built the site in index.html"),
         ]
     )

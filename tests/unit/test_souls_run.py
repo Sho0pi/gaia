@@ -3,48 +3,24 @@
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncGenerator
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from google.adk.models.base_llm import BaseLlm
-from google.adk.models.llm_response import LlmResponse
-from google.genai import types
 
+from _fakes import FakeLlm
+from _fakes import text_response as _text
 from gaia import constants
 from gaia.agents import AgentSpec
-from gaia.config import Settings
 from gaia.core import Gaia
 from gaia.souls.run import _AgentTurn, decide_soul, execute_decision, run_soul_agent
 from gaia.souls.smith import SoulDecision
 
 
-class FakeLlm(BaseLlm):
-    """Scripted model: yields one canned response per generate call, in order."""
-
-    model: str = "fake-model"
-    responses: list[LlmResponse]
-    calls: int = 0
-
-    async def generate_content_async(
-        self, llm_request: Any, stream: bool = False
-    ) -> AsyncGenerator[LlmResponse, None]:
-        self.calls += 1
-        yield self.responses.pop(0)
-
-
-def _text(text: str) -> LlmResponse:
-    return LlmResponse(content=types.Content(role="model", parts=[types.Part(text=text)]))
-
-
 @pytest.fixture
-def gaia(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Gaia:
-    monkeypatch.setattr(constants, "AGENTS_DIR", tmp_path / "agents")
-    config_path = tmp_path / "gaia.yaml"
-    config_path.write_text("memory:\n  enabled: false\n")
-    return Gaia(Settings(agent_registry_dir=tmp_path / "reg", config_path=config_path))
+async def gaia(make_gaia: Any) -> Gaia:
+    return make_gaia()  # isolated, memory off, closed on teardown (tests use constants.AGENTS_DIR)
 
 
 def _install(monkeypatch: pytest.MonkeyPatch, fake: FakeLlm) -> None:

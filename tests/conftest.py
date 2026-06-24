@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 from dotenv import load_dotenv
@@ -101,6 +102,32 @@ def _isolate_home(
     monkeypatch.setattr(constants, "HOME_DIR", home)  # mem0 chroma reads this at call time
     for name, leaf in _HOME_PATHS.items():
         monkeypatch.setattr(constants, name, home / leaf)
+
+
+@pytest.fixture
+async def make_gaia(tmp_path: Path) -> Any:
+    """Factory for an isolated ``Gaia`` that is **closed on teardown**.
+
+    ``make_gaia()`` (optionally with a ``gaia.yaml`` ``config`` string) builds a real Gaia on the
+    tmp home (`_isolate_home`); every instance is ``await gaia.close()``d when the test ends, so
+    the heavier stateful tests (and the system suite) don't leak tool managers / mcp children or
+    re-roll the build + teardown by hand. Memory defaults off (no model key needed to construct).
+    """
+    from gaia.config import Settings
+    from gaia.core import Gaia
+
+    built: list[Gaia] = []
+
+    def _make(config: str = "memory:\n  enabled: false\n") -> Gaia:
+        cfg = tmp_path / f"gaia-{len(built)}.yaml"
+        cfg.write_text(config)
+        gaia = Gaia(Settings(config_path=cfg, agent_registry_dir=tmp_path / f"reg-{len(built)}"))
+        built.append(gaia)
+        return gaia
+
+    yield _make
+    for gaia in built:
+        await gaia.close()
 
 
 @pytest.fixture

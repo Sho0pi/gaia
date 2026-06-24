@@ -2,44 +2,22 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from google.adk.models.base_llm import BaseLlm
-from google.adk.models.llm_response import LlmResponse
-from google.genai import types
 
-from gaia import constants
+from _fakes import FakeLlm
+from _fakes import text_response as _text
 from gaia.agents import AgentSpec
-from gaia.config import Settings
 from gaia.core import Gaia
 from gaia.souls.consult import make_consult_soul
 from gaia.souls.smith import SoulDecision
 
 
-class FakeLlm(BaseLlm):
-    model: str = "fake-model"
-    responses: list[LlmResponse]
-
-    async def generate_content_async(
-        self, llm_request: Any, stream: bool = False
-    ) -> AsyncGenerator[LlmResponse, None]:
-        yield self.responses.pop(0)
-
-
-def _text(text: str) -> LlmResponse:
-    return LlmResponse(content=types.Content(role="model", parts=[types.Part(text=text)]))
-
-
 @pytest.fixture
-def gaia(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Gaia:
-    monkeypatch.setattr(constants, "AGENTS_DIR", tmp_path / "agents")
-    config_path = tmp_path / "gaia.yaml"
-    config_path.write_text("memory:\n  enabled: false\n")
-    return Gaia(Settings(agent_registry_dir=tmp_path / "reg", config_path=config_path))
+async def gaia(make_gaia: Any) -> Gaia:
+    return make_gaia()  # isolated, memory off, closed on teardown
 
 
 def _install(monkeypatch: pytest.MonkeyPatch, fake: FakeLlm) -> None:
