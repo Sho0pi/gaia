@@ -1,4 +1,5 @@
-"""Unit tests for skill loading + attachment (ADK loader, no model backend)."""
+"""Unit tests for the skill library (no model backend): loading + attachment + the ADK
+toolset, writing a skill folder, and the skill_author draft parser."""
 
 from __future__ import annotations
 
@@ -8,8 +9,9 @@ from pathlib import Path
 import pytest
 
 from gaia import constants
+from gaia.agents.skill_author import _parse_draft
 from gaia.config import GaiaConfig
-from gaia.skills import attach_skills, load_skill, resolve_skills_dir
+from gaia.skills import attach_skills, load_skill, resolve_skills_dir, skill_id_for, write_skill
 
 
 def _make_skill(skills_dir: Path, name: str, body: str, description: str = "A test skill.") -> None:
@@ -104,3 +106,65 @@ def test_build_skill_toolset_skips_malformed_skill(tmp_path: Path) -> None:
     toolset = build_skill_toolset(tmp_path)  # the good one still yields a toolset
 
     assert toolset is not None
+
+
+# --- write_skill (was test_skills_write.py) ----------------------------------------------
+
+
+def test_write_skill_roundtrips_through_adk_loader(tmp_path: Path) -> None:
+    folder = write_skill(tmp_path, "Web Research", "Search then fetch.", "Always search first.")
+
+    assert folder == tmp_path / "web-research"  # kebab id == folder == frontmatter name
+    skill = load_skill(tmp_path, "web-research")
+    assert skill is not None
+    assert skill.frontmatter.name == "web-research"
+    assert "Always search first." in skill.instructions
+
+
+def test_write_skill_refuses_overwrite(tmp_path: Path) -> None:
+    write_skill(tmp_path, "dup", "d", "body")
+
+    with pytest.raises(FileExistsError):
+        write_skill(tmp_path, "dup", "d", "body")
+
+
+def test_skill_id_for_normalizes() -> None:
+    assert skill_id_for("Web Research!!") == "web-research"
+    assert skill_id_for("  ") == "skill"
+
+
+def test_write_skill_cleans_up_on_validation_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("gaia.skills.load_skill", lambda *a: None)  # force validation failure
+
+    with pytest.raises(ValueError, match="failed ADK validation"):
+        write_skill(tmp_path, "broken", "d", "body")
+    assert not (tmp_path / "broken").exists()  # no half-skill left behind
+
+
+# --- skill_author draft parser (was test_skill_author.py) --------------------------------
+
+
+def test_parse_first_line_description_rest_body() -> None:
+    desc, body = _parse_draft(
+        "Write tight tweets.\n\nKeep it under 280 chars.", fallback_description="x"
+    )
+    assert desc == "Write tight tweets."
+    assert body == "Keep it under 280 chars."
+
+
+def test_parse_strips_code_fences() -> None:
+    text = "```markdown\nSummarize PDFs.\n\nExtract the key points.\n```"
+    desc, body = _parse_draft(text, fallback_description="x")
+    assert desc == "Summarize PDFs." and body == "Extract the key points."
+
+
+def test_parse_strips_leading_heading_hashes() -> None:
+    desc, _ = _parse_draft("# A great skill\n\nbody", fallback_description="x")
+    assert desc == "A great skill"
+
+
+def test_parse_empty_uses_fallback() -> None:
+    desc, _ = _parse_draft("   \n  ", fallback_description="fallback")
+    assert desc == "fallback"

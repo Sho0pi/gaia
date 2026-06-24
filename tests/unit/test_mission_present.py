@@ -8,19 +8,12 @@ from typing import Any
 
 import pytest
 
+from _fakes import FakeSender as _FakeSender
 from gaia.connectors.base import Media
 from gaia.missions import Task
 from gaia.missions.present import present_result
 from gaia.souls.run import SoulRun
 from gaia.users import UserStore
-
-
-class _FakeSender:
-    def __init__(self) -> None:
-        self.sent: list[Any] = []
-
-    async def send_to(self, chat: str, reply: Any) -> None:
-        self.sent.append(reply)
 
 
 def _gaia(tmp_path: Path, connectors: dict[str, Any]) -> Any:
@@ -56,8 +49,9 @@ async def test_present_delivers_gaia_replies(
 
     await present_result(gaia, task, SoulRun(True, "s", "S", False, summary="built", files=[]))
 
-    assert "Here's your site." in wa.sent
-    assert any(isinstance(r, Media) for r in wa.sent)  # Gaia's screenshot delivered
+    replies = [reply for _chat, reply in wa.sent]
+    assert "Here's your site." in replies
+    assert any(isinstance(r, Media) for r in replies)  # Gaia's screenshot delivered
 
 
 async def test_no_connector_is_silent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

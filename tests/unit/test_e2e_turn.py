@@ -12,38 +12,20 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
 
 import pytest
-from google.adk.models.base_llm import BaseLlm
 from google.adk.models.llm_response import LlmResponse
 from google.genai import types
 
+from _fakes import FakeLlm
+from _fakes import text_response as _text
 from gaia import constants
 from gaia.config import Settings
 from gaia.connectors.base import Inbound
 from gaia.core import Gaia
 from gaia.core.handler import build_handler
-
-
-class FakeLlm(BaseLlm):
-    """Scripted model: yields one canned LlmResponse per generate call, in order."""
-
-    model: str = "fake-model"
-    responses: list[LlmResponse]
-    calls: int = 0
-
-    async def generate_content_async(
-        self, llm_request: Any, stream: bool = False
-    ) -> AsyncGenerator[LlmResponse, None]:
-        self.calls += 1
-        yield self.responses.pop(0)
-
-
-def _text(text: str) -> LlmResponse:
-    return LlmResponse(content=types.Content(role="model", parts=[types.Part(text=text)]))
 
 
 def _tool_call(name: str, **args: Any) -> LlmResponse:
