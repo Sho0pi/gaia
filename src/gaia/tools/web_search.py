@@ -77,6 +77,7 @@ def make_web_search(provider: SearchProvider) -> Callable[..., dict[str, Any]]:
             max_results: how many results (1-10).
             time_range: recency filter — 'day', 'week', 'month' or 'year'; empty = no limit.
         """
+        query = query or ""  # a model may send null, not the default
         cleaned = query.strip()
 
         if not cleaned:

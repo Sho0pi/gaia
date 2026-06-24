@@ -52,6 +52,7 @@ def make_run_command(
 
         # The model usually passes the whole line in `command`; split off the first token
         # as the command name and treat the rest (+ any `args`) as the arguments.
+        command, args = command or "", args or ""  # a model may send null, not the default
         name, _, inline = command.strip().lstrip("/").partition(" ")
         name = name.lower()
         full_args = " ".join(p for p in (inline.strip(), args.strip()) if p)

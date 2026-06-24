@@ -189,6 +189,7 @@ def make_web_fetch(fetcher: Fetcher) -> Callable[..., dict[str, Any]]:
         Args:
             url: the http(s) URL to fetch.
         """
+        url = url or ""  # a model may send null, not the default
         cleaned = url.strip()
 
         if not cleaned:

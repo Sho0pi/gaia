@@ -25,6 +25,7 @@ def make_browser_click(manager: BrowserSessionManager) -> Callable[..., Awaitabl
 
         try:
             session = await manager.get(agent)
+            ref = ref or ""  # a model may send null, not the default
             locator = resolve_locator(session, ref.strip())
             await locator.click()
         except BrowserError as exc:

@@ -29,6 +29,7 @@ def make_browser_type(manager: BrowserSessionManager) -> Callable[..., Awaitable
 
         try:
             session = await manager.get(agent)
+            ref, text = ref or "", text or ""  # a model may send null, not the default
             locator = resolve_locator(session, ref.strip())
             await locator.fill(text)
             if submit:
