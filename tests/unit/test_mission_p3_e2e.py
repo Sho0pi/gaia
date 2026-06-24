@@ -116,7 +116,7 @@ async def test_gated_task_waits_for_approval_and_survives_restart(
     d2.recover()
     assert store.get(t.id).status is TaskStatus.AWAITING_APPROVAL  # type: ignore[union-attr]
 
-    # Human approves via /tasks → it releases and runs to done.
+    # Human approves via /task → it releases and runs to done.
     ctx = CommandContext(
         args=f"approve {t.id}",
         gaia=gaia,
@@ -139,7 +139,7 @@ async def test_background_soul_asks_user_then_resumes_on_answer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The P3 acceptance: a soul running on the dispatcher calls ask_user → the task parks at
-    # AWAITING_INPUT and the question is pushed out-of-band → the user answers via /tasks →
+    # AWAITING_INPUT and the question is pushed out-of-band → the user answers via /task →
     # the dispatcher resumes the soul (exact, in-process) and it finishes.
     gaia = _gaia(tmp_path, monkeypatch, "memory:\n  enabled: false\n")
     fake = FakeLlm(

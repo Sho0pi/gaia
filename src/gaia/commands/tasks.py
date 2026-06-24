@@ -1,9 +1,9 @@
-"""The ``/tasks`` command: see and gate the missions task board from chat.
+"""The ``/task`` command: see and gate the missions task board from chat.
 
 Lists your open tasks (everything not yet ``done``/``failed``), grouped by mission. Scoped
-to the caller (per-user, #142); an admin sees every owner's board. ``/tasks approve <id>``
+to the caller (per-user, #142); an admin sees every owner's board. ``/task approve <id>``
 releases a task parked in ``awaiting_approval`` (a gated class — spend/book/…) back onto the
-board; ``/tasks reject <id>`` fails it and tells the owner.
+board; ``/task reject <id>`` fails it and tells the owner.
 """
 
 from __future__ import annotations
@@ -13,8 +13,8 @@ from gaia.missions import CLOSED, TaskStatus, TaskStore
 
 
 class TasksCommand(Command):
-    name = "tasks"
-    summary = "List your open missions/tasks. Usage: /tasks [approve|reject|answer <id> …]."
+    name = "task"
+    summary = "List your open missions/tasks. Usage: /task [approve|reject|answer <id> …]."
     usage = "[approve|reject <id> | answer <id> <text>]"
 
     async def run(self, ctx: CommandContext) -> str:
@@ -44,7 +44,7 @@ class TasksCommand(Command):
     async def _decide(self, ctx: CommandContext, store: TaskStore, verb: str, task_id: str) -> str:
         """Approve (→ inbox) or reject (→ failed) a task parked in ``awaiting_approval``."""
         if not task_id:
-            return f"Usage: /tasks {verb} <id>"
+            return f"Usage: /task {verb} <id>"
         task = store.get(task_id)
         if task is None or (ctx.role != "admin" and task.owner != ctx.user_id):
             return f"No task {task_id!r}."  # unknown or not yours
@@ -68,7 +68,7 @@ class TasksCommand(Command):
         task_id, _, answer = rest.partition(" ")
         task_id, answer = task_id.strip(), answer.strip()
         if not task_id or not answer:
-            return "Usage: /tasks answer <id> <your answer>"
+            return "Usage: /task answer <id> <your answer>"
         task = store.get(task_id)
         if task is None or (ctx.role != "admin" and task.owner != ctx.user_id):
             return f"No task {task_id!r}."  # unknown or not yours

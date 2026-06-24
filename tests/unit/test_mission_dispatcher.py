@@ -425,7 +425,7 @@ async def test_answer_resumes_exact_run_when_session_is_live(
     monkeypatch.setattr(disp_mod, "resume_soul", fake_resume)
     parked = store.get(t.id)
     assert parked is not None
-    parked.pending_answer, parked.status = "Tel Aviv", TaskStatus.INBOX  # /tasks answer did this
+    parked.pending_answer, parked.status = "Tel Aviv", TaskStatus.INBOX  # /task answer did this
     store.update(parked)
 
     await _drain(d)

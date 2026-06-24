@@ -14,17 +14,17 @@ def test_default_registry_has_every_builtin() -> None:
         "help",
         "reset",
         "whoami",
-        "souls",
+        "soul",
         "status",
         "remember",
-        "memories",
+        "memory",
         "forget",
-        "users",
+        "user",
         "approve",
         "remove",
         "name",
         "link",
-        "tasks",
+        "task",
         "grant",
         "revoke",
         "perms",
@@ -42,7 +42,6 @@ def test_aliases_resolve_to_their_command() -> None:
     assert registry.get("clear").name == "reset"
     assert registry.get("new").name == "reset"
     assert registry.get("stats").name == "status"
-    assert registry.get("memory").name == "memories"
 
 
 def test_lookup_is_case_insensitive_and_unknown_is_none() -> None:

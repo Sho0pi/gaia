@@ -7,7 +7,7 @@ artifacts (skills/souls), records it as a git commit in the ``~/.gaia`` state re
 (:mod:`gaia.state`). One commit per change = a per-change history that's auditable and
 revertable (``gaia improvements revert <sha>``), one change among many included. **Additive
 only**: never deletes; de-dupes against what's already on disk. Memory writes go to mem0 (not
-files), so they're applied + announced but not in the git history (see ``/memories``).
+files), so they're applied + announced but not in the git history (see ``/memory``).
 Best-effort: a failing proposal is logged and skipped, never aborting the rest.
 """
 

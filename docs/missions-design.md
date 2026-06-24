@@ -115,7 +115,7 @@ requests are pushed through it (cron missions use a configured default channel).
 
 Config lists gated action classes — `spend`, `book`, `send_as_me`, `destructive`. A
 task carrying a gated class parks in `awaiting_approval`; you get a push
-("⏸ purchase $420 — approve?"); `/tasks approve <id>` releases it. Everything else is
+("⏸ purchase $420 — approve?"); `/task approve <id>` releases it. Everything else is
 autonomous.
 
 ### Budgets and runaway guards
@@ -176,7 +176,7 @@ with a dependency edge (T2 `blocked_by` T1).
 ## 6. Phases
 
 - **P1 — the board**: `missions/store.py` (schema + CRUD), `task_*` tools (Gaia only),
-  `/tasks` command + `gaia task` CLI. Gaia can already run a manual kanban.
+  `/task` command + `gaia task` CLI. Gaia can already run a manual kanban.
 - **P2 — the engine**: dispatcher in the daemon, crash recovery, cron schedules
   (yaml + chat tools + `/schedules`), proactive push. Missions run unattended.
 - **P3 — the company**: `consult_soul` for souls, `task_create` for souls,

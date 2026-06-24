@@ -51,7 +51,7 @@ async def test_users_lists_everyone(tmp_path: Path) -> None:
     store.register("whatsapp", "111@s.whatsapp.net", "Itay", role="admin")
     store.register("whatsapp", "972@s.whatsapp.net", "Grace", role="guest")
 
-    out = await _run("users", _ctx(store))
+    out = await _run("user", _ctx(store))
 
     assert "itay" in out and "grace" in out and "[admin]" in out and "[guest]" in out
 

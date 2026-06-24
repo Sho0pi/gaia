@@ -44,7 +44,7 @@ class GrantCommand(Command):
             return "Usage: /grant <id|channel:sender> <capability> (e.g. shell, web, *)"
         user_id = _find(ctx, ref.strip())
         if user_id is None:
-            return f"No user matching {ref.strip()!r} (try /users)."
+            return f"No user matching {ref.strip()!r} (try /user)."
         updated = ctx.gaia.users.grant(user_id, cap)
         assert updated is not None
         return f"Granted {cap!r} to {updated.id} (grants: {', '.join(updated.grants) or '—'})."
@@ -63,7 +63,7 @@ class RevokeCommand(Command):
             return "Usage: /revoke <id|channel:sender> <capability>"
         user_id = _find(ctx, ref.strip())
         if user_id is None:
-            return f"No user matching {ref.strip()!r} (try /users)."
+            return f"No user matching {ref.strip()!r} (try /user)."
         updated = ctx.gaia.users.revoke(user_id, cap)
         assert updated is not None
         return f"Revoked {cap!r} from {updated.id} (denies: {', '.join(updated.denies) or '—'})."
@@ -84,7 +84,7 @@ class PermsCommand(Command):
                 return refusal
             user_id = _find(ctx, ref)
             if user_id is None:
-                return f"No user matching {ref!r} (try /users)."
+                return f"No user matching {ref!r} (try /user)."
         else:
             user_id = ctx.user_id
         user = ctx.gaia.users.get(user_id)

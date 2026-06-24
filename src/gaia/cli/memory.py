@@ -1,7 +1,7 @@
 """``gaia memory`` command group — inspect & clear long-term memory from the terminal.
 
 Memory is per-user (mem0 partitions by ``user_id``), so every command takes a user. Builds a real
-``Gaia`` to reach the same ``memory_service`` the chat ``/memories``/``/forget`` use; needs
+``Gaia`` to reach the same ``memory_service`` the chat ``/memory``/``/forget`` use; needs
 ``memory.enabled`` + a model key, and skips cleanly otherwise. (No ``search`` subcommand —
 ``gaia memory list <user> | grep …`` covers it.)
 
