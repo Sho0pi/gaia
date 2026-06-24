@@ -14,7 +14,7 @@ def _idle(seconds: float) -> str:
     return f"{seconds / 3600:.1f}h"
 
 
-class SoulsCommand(Command):
+class SoulCommand(Command):
     name = "soul"
     summary = "List the souls Gaia has learned, and the ones live right now (warm sessions)."
 

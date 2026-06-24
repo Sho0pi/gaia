@@ -14,7 +14,7 @@ from gaia.commands.effort import EffortCommand
 from gaia.commands.forget import ForgetCommand
 from gaia.commands.grow import GrowCommand
 from gaia.commands.help import HelpCommand
-from gaia.commands.memories import MemoriesCommand
+from gaia.commands.memory import MemoryCommand
 from gaia.commands.model import ModelCommand
 from gaia.commands.permissions import (
     AclCommand,
@@ -25,15 +25,15 @@ from gaia.commands.permissions import (
 from gaia.commands.remember import RememberCommand
 from gaia.commands.reset import ResetCommand
 from gaia.commands.skill import SkillCommand
-from gaia.commands.souls import SoulsCommand
+from gaia.commands.soul import SoulCommand
 from gaia.commands.status import StatusCommand
-from gaia.commands.tasks import TasksCommand
-from gaia.commands.users import (
+from gaia.commands.task import TaskCommand
+from gaia.commands.user import (
     ApproveCommand,
     LinkCommand,
     NameCommand,
     RemoveCommand,
-    UsersCommand,
+    UserCommand,
 )
 from gaia.commands.whoami import WhoamiCommand
 
@@ -45,17 +45,17 @@ _BUILTINS: tuple[Command, ...] = (
     HelpCommand(),
     ResetCommand(),
     WhoamiCommand(),
-    SoulsCommand(),
+    SoulCommand(),
     StatusCommand(),
     RememberCommand(),
-    MemoriesCommand(),
+    MemoryCommand(),
     ForgetCommand(),
-    UsersCommand(),
+    UserCommand(),
     ApproveCommand(),
     RemoveCommand(),
     NameCommand(),
     LinkCommand(),
-    TasksCommand(),
+    TaskCommand(),
     GrantCommand(),
     RevokeCommand(),
     PermsCommand(),

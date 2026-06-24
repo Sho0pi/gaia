@@ -12,7 +12,7 @@ from gaia.commands.base import Command, CommandContext
 from gaia.missions import CLOSED, TaskStatus, TaskStore
 
 
-class TasksCommand(Command):
+class TaskCommand(Command):
     name = "task"
     summary = "List your open missions/tasks. Usage: /task [approve|reject|answer <id> …]."
     usage = "[approve|reject <id> | answer <id> <text>]"

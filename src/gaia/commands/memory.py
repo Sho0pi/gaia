@@ -5,7 +5,7 @@ from __future__ import annotations
 from gaia.commands.base import Command, CommandContext
 
 
-class MemoriesCommand(Command):
+class MemoryCommand(Command):
     name = "memory"
     summary = "List what Gaia remembers about you long-term."
 

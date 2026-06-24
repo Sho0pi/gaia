@@ -22,7 +22,7 @@ from _fakes import reuse_response as _reuse
 from _fakes import text_response as _text
 from gaia import constants
 from gaia.commands.base import CommandContext
-from gaia.commands.tasks import TasksCommand
+from gaia.commands.task import TaskCommand
 from gaia.config import Settings
 from gaia.core import Gaia
 from gaia.missions import Task, TaskStatus, TaskStore
@@ -126,7 +126,7 @@ async def test_gated_task_waits_for_approval_and_survives_restart(
         session_id="s",
         role="user",
     )
-    assert "Approved" in await TasksCommand().run(ctx)
+    assert "Approved" in await TaskCommand().run(ctx)
 
     async with gaia:
         d2.start()
@@ -182,7 +182,7 @@ async def test_background_soul_asks_user_then_resumes_on_answer(
             session_id="s",
             role="user",
         )
-        assert "continue" in (await TasksCommand().run(ctx)).lower()
+        assert "continue" in (await TaskCommand().run(ctx)).lower()
 
         await _poll_until(store, lambda: store.get(t.id).status is TaskStatus.DONE)  # type: ignore[union-attr]
         await d.stop()

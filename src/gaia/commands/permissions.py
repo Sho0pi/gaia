@@ -9,7 +9,7 @@ admins hold it via ``*``; ``/perms`` with no arg is self-service for any user.
 from __future__ import annotations
 
 from gaia.commands.base import Command, CommandContext
-from gaia.commands.users import _find, require_manage_users
+from gaia.commands.user import _find, require_manage_users
 
 
 class AclCommand(Command):

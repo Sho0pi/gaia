@@ -43,7 +43,7 @@ def _find(ctx: CommandContext, ref: str) -> str | None:
     return None
 
 
-class UsersCommand(Command):
+class UserCommand(Command):
     name = "user"
     capability = "manage_users"
     summary = "List known users, their roles, and the channels that reach them (admin)."
