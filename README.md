@@ -1,5 +1,10 @@
 # gaia
 
+[![CI](https://github.com/Sho0pi/gaia/actions/workflows/ci.yml/badge.svg)](https://github.com/Sho0pi/gaia/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-gaia--agent.com-2b5c44)](https://docs.gaia-agent.com)
+[![License: MIT](https://img.shields.io/github/license/Sho0pi/gaia?color=blue)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
+
 > I hate python — here is Gaia, the best agent you will ever use.
 
 **Gaia** is an AI agent that forges task-specific subagents (**souls**) on demand, **stores them
