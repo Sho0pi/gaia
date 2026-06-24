@@ -123,10 +123,6 @@ def rm(ctx: typer.Context, job_id: JobIdArg) -> None:
     console().print(f"removed {job_id}")
 
 
-# `remove` is a visible alias for `rm`.
-app.command("remove")(rm)
-
-
 @app.command()
 def enable(ctx: typer.Context, job_id: JobIdArg) -> None:
     """Enable a disabled job."""

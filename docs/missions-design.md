@@ -176,7 +176,7 @@ with a dependency edge (T2 `blocked_by` T1).
 ## 6. Phases
 
 - **P1 — the board**: `missions/store.py` (schema + CRUD), `task_*` tools (Gaia only),
-  `/tasks` command + `gaia tasks` CLI. Gaia can already run a manual kanban.
+  `/tasks` command + `gaia task` CLI. Gaia can already run a manual kanban.
 - **P2 — the engine**: dispatcher in the daemon, crash recovery, cron schedules
   (yaml + chat tools + `/schedules`), proactive push. Missions run unattended.
 - **P3 — the company**: `consult_soul` for souls, `task_create` for souls,

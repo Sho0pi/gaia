@@ -207,10 +207,6 @@ def remove(
     out.print(f"removed {len(removed)} skill(s): {', '.join(removed)}")
 
 
-# `remove` is a visible alias for `rm`.
-app.command("remove")(remove)
-
-
 def _draft(ctx: typer.Context, name: str, brief: str) -> tuple[str, str]:
     """Build a Gaia so the skill author can research (tools + memory), then draft + close it."""
     import asyncio

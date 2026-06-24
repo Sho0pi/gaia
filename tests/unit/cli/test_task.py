@@ -1,4 +1,4 @@
-"""``gaia tasks``: list/show against a tmp board via CliRunner."""
+"""``gaia task``: list/show against a tmp board via CliRunner."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ def tasks_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def test_list_empty(tasks_db: Path) -> None:
-    result = runner.invoke(cli_app, ["tasks", "list"])
+    result = runner.invoke(cli_app, ["task", "list"])
     assert result.exit_code == 0
     assert "no tasks" in result.output
 
@@ -32,7 +32,7 @@ def test_list_json_reflects_db(tasks_db: Path) -> None:
     store.create(Task(title="research", owner="itay"))
     store.create(Task(title="purchase", owner="grace"))
 
-    result = runner.invoke(cli_app, ["--json", "tasks", "list"])
+    result = runner.invoke(cli_app, ["--json", "task", "list"])
     tasks = json.loads(result.output)["tasks"]
     assert {t["title"] for t in tasks} == {"research", "purchase"}  # CLI sees all owners
 
@@ -42,7 +42,7 @@ def test_list_filtered_by_user(tasks_db: Path) -> None:
     store.create(Task(title="mine", owner="itay"))
     store.create(Task(title="hers", owner="grace"))
 
-    result = runner.invoke(cli_app, ["--json", "tasks", "list", "--user", "itay"])
+    result = runner.invoke(cli_app, ["--json", "task", "list", "--user", "itay"])
     tasks = json.loads(result.output)["tasks"]
     assert [t["title"] for t in tasks] == ["mine"]
 
@@ -51,10 +51,10 @@ def test_show_one_task(tasks_db: Path) -> None:
     store = TaskStore(tasks_db)
     t = store.create(Task(title="research", owner="itay"))
 
-    result = runner.invoke(cli_app, ["--json", "tasks", "show", t.id])
+    result = runner.invoke(cli_app, ["--json", "task", "show", t.id])
     assert json.loads(result.output)["title"] == "research"
 
 
 def test_show_missing(tasks_db: Path) -> None:
-    result = runner.invoke(cli_app, ["tasks", "show", "nope"])
+    result = runner.invoke(cli_app, ["task", "show", "nope"])
     assert result.exit_code == 1
