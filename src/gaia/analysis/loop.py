@@ -35,8 +35,7 @@ async def analyze(gaia: Gaia) -> tuple[AnalysisReport | None, str | None]:
     try:
         report = await _run_analyst(gaia, render_digest(digest))
     except Exception as exc:
-        logger.warning("improve cycle: analyst failed: %s", exc)
-        log_error("improve_loop", exc)
+        log_error("improve_loop", exc)  # traceback -> system.log + structured event -> events.jsonl
         return None, None
     return report, _single_user(digest)
 

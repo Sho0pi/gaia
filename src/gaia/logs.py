@@ -307,6 +307,11 @@ def log_event(action: str, *, exc: BaseException | None = None, **fields: Any) -
         fields.setdefault("detail", detail)
         if where:
             fields.setdefault("where", where)
+        # One error call, two sinks (not a duplicate): the full traceback goes to system.log/
+        # errors.log for a human debugging; the structured event below goes to events.jsonl for the
+        # monitor. So a call site never needs its own logging.exception() next to this.
+        label = str(fields.get("source") or action)
+        logging.getLogger(constants.LOGGER_NAME).error("%s", label, exc_info=exc)
     safe = {(f"{k}_" if k in _STD_ATTRS else k): v for k, v in fields.items()}
     logging.getLogger(constants.EVENTS_LOGGER_NAME).info(action, extra=safe)
 

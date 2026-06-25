@@ -237,7 +237,7 @@ class GaiaHandler:
         try:
             run = await resume_soul(self._gaia, pending.soul, answer)
         except Exception as exc:
-            logging.getLogger(constants.LOGGER_NAME).exception("soul resume failed")
+            # log_event(exc=) writes the traceback to system.log AND the structured event.
             log_event("turn_error", user=self._user_id, exc=exc)
             self._gaia.soul_sessions.unpin(pending.soul.warm_key)
             await send(_friendly_error(exc))
@@ -318,8 +318,8 @@ class GaiaHandler:
                     texts.extend(self._event_texts(event))
         except Exception as exc:
             # A model error (rate limit, outage) or tool fault must not surface as a raw
-            # traceback to the user. Log the detail, send a short apology, end the turn.
-            logging.getLogger(constants.LOGGER_NAME).exception("gaia turn failed")
+            # traceback to the user. log_event(exc=) records the traceback (system.log) + the
+            # structured event; we send a short apology and end the turn.
             log_event("turn_error", user=self._user_id, exc=exc)
             await send(_friendly_error(exc))
             return
