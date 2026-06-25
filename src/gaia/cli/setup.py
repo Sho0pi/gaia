@@ -10,7 +10,7 @@ already-set value is shown masked and only replaced after a confirm.
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
@@ -232,3 +232,102 @@ def admin(ctx: typer.Context, admin_id: AdminIdOpt = None) -> None:
 
     set_config_value(cfg, "admin", [value])
     out.print(f"admin set to [bold]{value}[/] — monitor DMs + admin commands now target you.")
+
+
+BackendOpt = Annotated[str | None, typer.Option("--backend", help="Browser backend: mcp | native.")]
+HeadlessOpt = Annotated[
+    bool | None, typer.Option("--headless/--no-headless", help="Run the browser headless.")
+]
+
+
+@app.command()
+def browser(ctx: typer.Context, backend: BackendOpt = None, headless: HeadlessOpt = None) -> None:
+    """Configure the browser tool: backend (mcp / native) and headless mode."""
+    from gaia.cli._select import select_one
+    from gaia.cli._yamledit import set_config_value
+    from gaia.config import get_settings
+
+    out = console()
+    cfg = get_settings(state(ctx).env_file).config_path
+
+    be = (backend or "").strip().lower()
+    if not be:
+        be = (
+            select_one(
+                "Browser backend",
+                [
+                    ("mcp", "Playwright-MCP", "full tool surface, needs bun"),
+                    ("native", "Native", "gaia's built-in tools, per-agent isolation"),
+                ],
+                default="mcp",
+            )
+            or ""
+        )
+    if be not in ("mcp", "native"):
+        out.print("[red]backend must be 'mcp' or 'native'[/]")
+        raise typer.Exit(1)
+    set_config_value(cfg, "browser.backend", be)
+
+    hl = headless
+    if hl is None and backend is None:  # interactive run: ask
+        hl = typer.confirm("Run the browser headless (no visible window)?", default=True)
+    if hl is not None:
+        set_config_value(cfg, "browser.headless", hl)
+    out.print(
+        f"browser backend set to [bold]{be}[/]" + (f", headless={hl}" if hl is not None else "")
+    )
+
+
+@app.command()
+def mcp(
+    ctx: typer.Context,
+    name: Annotated[str | None, typer.Option("--name", help="Short server id.")] = None,
+    transport: Annotated[
+        str | None, typer.Option("--transport", help="stdio | http | sse.")
+    ] = None,
+    command: Annotated[str | None, typer.Option("--command", help="stdio: the executable.")] = None,
+    arg: Annotated[list[str] | None, typer.Option("--arg", help="stdio: arg (repeatable).")] = None,
+    url: Annotated[str | None, typer.Option("--url", help="http/sse: server URL.")] = None,
+) -> None:
+    """Add a custom MCP server to gaia.yaml (appends to mcp.servers; needs a daemon restart)."""
+    from gaia.cli._select import select_one
+    from gaia.cli._yamledit import set_config_value
+    from gaia.config import ConfigSupplier, get_settings
+
+    out = console()
+    cfg = get_settings(state(ctx).env_file).config_path
+
+    nm = (name or "").strip() or typer.prompt("Server name (short id)").strip()
+    if not nm:
+        out.print("[yellow]no name — cancelled[/]")
+        raise typer.Exit(1)
+    tr = (transport or "").strip().lower()
+    if not tr:
+        tr = (
+            select_one(
+                "Transport",
+                [
+                    ("stdio", "stdio", "local command"),
+                    ("http", "http", "remote URL"),
+                    ("sse", "sse", "remote URL"),
+                ],
+                default="stdio",
+            )
+            or "stdio"
+        )
+
+    server: dict[str, Any] = {"name": nm, "transport": tr}
+    if tr == "stdio":
+        server["command"] = (command or "").strip() or typer.prompt("Command (e.g. bunx)").strip()
+        args_list = list(arg or [])
+        if not args_list and name is None:  # interactive run
+            raw = typer.prompt("Args (space-separated)", default="").strip()
+            args_list = raw.split() if raw else []
+        if args_list:
+            server["args"] = args_list
+    else:
+        server["url"] = (url or "").strip() or typer.prompt("Server URL").strip()
+
+    current = [s.model_dump(exclude_defaults=True) for s in ConfigSupplier(cfg).current.mcp.servers]
+    set_config_value(cfg, "mcp.servers", [*current, server])
+    out.print(f"added MCP server [bold]{nm}[/] ({tr}) — restart the daemon to attach it.")

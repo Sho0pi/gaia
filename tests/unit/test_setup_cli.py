@@ -127,3 +127,33 @@ def test_admin_flag_sets_config(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     data = yaml.safe_load(constants.CONFIG_PATH.read_text()) or {}
     assert data["admin"] == ["telegram:12345"]
+
+
+def test_browser_flag_sets_backend(tmp_path: Path) -> None:
+    import yaml
+
+    from gaia import constants
+
+    result = runner.invoke(app, ["setup", "browser", "--backend", "native", "--no-headless"])
+    assert result.exit_code == 0, result.output
+    data = yaml.safe_load(constants.CONFIG_PATH.read_text()) or {}
+    assert data["browser"]["backend"] == "native" and data["browser"]["headless"] is False
+
+
+def test_mcp_flag_appends_server(tmp_path: Path) -> None:
+    import yaml
+
+    from gaia import constants
+
+    result = runner.invoke(
+        app,
+        ["setup", "mcp", "--name", "gh", "--transport", "stdio", "--command", "bunx", "--arg", "x"],
+    )
+    assert result.exit_code == 0, result.output
+    data = yaml.safe_load(constants.CONFIG_PATH.read_text()) or {}
+    servers = data["mcp"]["servers"]
+    assert (
+        servers[-1]["name"] == "gh"
+        and servers[-1]["command"] == "bunx"
+        and servers[-1]["args"] == ["x"]
+    )
