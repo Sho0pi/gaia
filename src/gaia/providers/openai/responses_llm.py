@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any
 from google.adk.models.base_llm import BaseLlm
 from google.adk.models.llm_response import LlmResponse
 from google.genai import types
+from pydantic import BaseModel
 
 from gaia.providers.openai import device_auth
 from gaia.providers.openai.store import Credentials, load_credentials
@@ -241,6 +242,25 @@ def _system_text(llm_request: LlmRequest) -> str:
     return ""
 
 
+def _output_format(llm_request: LlmRequest) -> dict[str, Any] | None:
+    """The Responses ``text.format`` for an agent's ``output_schema``, else None.
+
+    ADK's ``set_output_schema`` stores the pydantic model on ``config.response_schema``. Off Gemini
+    that schema was previously dropped (the model only saw it as instruction text → flaky JSON);
+    passing it as a json_schema format constrains the output. ``strict=False`` because our schemas
+    carry defaults/optional fields, which strict mode rejects.
+    """
+    schema = getattr(llm_request.config, "response_schema", None)
+    if isinstance(schema, type) and issubclass(schema, BaseModel):
+        return {
+            "type": "json_schema",
+            "name": schema.__name__,
+            "schema": _json_schema(schema.model_json_schema()),
+            "strict": False,
+        }
+    return None
+
+
 class ChatGptOAuthLlm(BaseLlm):
     """Run an LLM turn over the user's ChatGPT subscription (Responses backend)."""
 
@@ -275,6 +295,9 @@ class ChatGptOAuthLlm(BaseLlm):
         }
         if self.effort:
             body["reasoning"] = {"effort": self.effort}
+        fmt = _output_format(llm_request)
+        if fmt is not None:
+            body["text"]["format"] = fmt  # constrain output to the agent's output_schema
         tools = _tools_from_request(llm_request)
         if tools:
             body["tools"] = tools

@@ -49,6 +49,31 @@ def test_request_body_includes_reasoning_effort_when_set() -> None:
     assert "reasoning" not in default  # no effort -> field omitted
 
 
+def test_output_schema_becomes_response_format() -> None:
+    from pydantic import BaseModel
+
+    class Report(BaseModel):
+        summary: str
+
+    req = LlmRequest(
+        contents=[types.Content(role="user", parts=[types.Part(text="hi")])],
+        config=types.GenerateContentConfig(),
+    )
+    req.set_output_schema(Report)  # what ADK does for an output_schema agent
+
+    body = ChatGptOAuthLlm(model="gpt-5.5")._request_body(req, "sid")
+    fmt = body["text"]["format"]
+    assert fmt["type"] == "json_schema" and fmt["name"] == "Report"
+    assert "summary" in fmt["schema"]["properties"]  # the real schema, not just instruction text
+
+    # no output_schema -> no format (a plain chat turn)
+    plain = LlmRequest(
+        contents=[types.Content(role="user", parts=[types.Part(text="hi")])],
+        config=types.GenerateContentConfig(),
+    )
+    assert "format" not in ChatGptOAuthLlm(model="gpt-5.5")._request_body(plain, "sid")["text"]
+
+
 def test_function_response_with_pydantic_payload_is_serializable() -> None:
     import json
 
