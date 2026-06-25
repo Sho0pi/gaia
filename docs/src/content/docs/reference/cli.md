@@ -371,6 +371,20 @@ gaia serve [options]
 
 Configure gaia: model, connectors, search, tools.
 
+### `gaia setup model`
+
+Configure the LLM: Sign in with ChatGPT, or a Gemini / OpenAI API key.
+
+```
+gaia setup model [options]
+```
+
+| Option | Description |
+|---|---|
+| `--provider` | Model provider: chatgpt | gemini | openai. |
+| `--api-key` | API key (non-interactive). |
+| `--model` | Model id (e.g. gpt-4o, gemini-2.5-flash). |
+
 ### `gaia setup search`
 
 Set the web-search engine: 'duckduckgo' (no key) or 'brave' (needs an API key).
@@ -382,7 +396,7 @@ gaia setup search [options]
 | Option | Description |
 |---|---|
 | `--engine` | Search engine: duckduckgo | brave. |
-| `--api-key` | API key for the engine (brave). |
+| `--api-key` | API key (non-interactive). |
 
 ## `gaia skill`
 

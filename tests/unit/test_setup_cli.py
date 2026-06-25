@@ -73,3 +73,46 @@ def test_select_one_numbered_default(monkeypatch) -> None:  # type: ignore[no-un
         "Engine", [("duckduckgo", "DDG", ""), ("brave", "Brave", "")], default="brave"
     )
     assert out == "brave"  # default highlighted -> index 2 -> brave
+
+
+def _llm(config_path: Path) -> dict:  # type: ignore[type-arg]
+    import yaml
+
+    return (yaml.safe_load(config_path.read_text()) or {}).get("llm", {})
+
+
+def test_model_gemini_flag_path(tmp_path: Path) -> None:
+    from gaia import constants
+
+    result = runner.invoke(
+        app,
+        [
+            "setup",
+            "model",
+            "--provider",
+            "gemini",
+            "--api-key",
+            "gk",
+            "--model",
+            "gemini-2.5-flash",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    llm = _llm(constants.CONFIG_PATH)
+    assert llm["provider"] == "gemini" and llm["model"] == "gemini-2.5-flash"
+    assert get_env_var(constants.ENV_FILE, "GEMINI_API_KEY") == "gk"
+
+
+def test_model_chatgpt_sets_oauth(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    import gaia.app
+    from gaia import constants
+
+    monkeypatch.setattr(gaia.app, "run_auth", lambda *a, **k: None)  # skip the device flow
+    result = runner.invoke(app, ["setup", "model", "--provider", "chatgpt", "--model", "gpt-5.5"])
+    assert result.exit_code == 0, result.output
+    llm = _llm(constants.CONFIG_PATH)
+    assert (
+        llm["openai"]["use_oauth"] is True
+        and llm["provider"] == "openai"
+        and llm["model"] == "gpt-5.5"
+    )
