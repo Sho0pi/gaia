@@ -53,8 +53,9 @@ def make_capabilities(security: str, allowlist: tuple[str, ...]) -> Callable[...
                 "/tmp/gaia/<agent> and the uploads dir).",
             },
             serve={
-                "rule": "serve a directory or .html UNDER your workspace; browser_navigate only "
-                "opens loopback ports that serve or exec(port=) started.",
+                "rule": "serve a workspace-relative dir or .html (e.g. 'index.html', 'site', '.') "
+                "— resolved against your workspace; browser_navigate only opens loopback ports "
+                "that serve or exec(port=) started.",
             },
         )
 

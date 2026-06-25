@@ -78,9 +78,18 @@ def _resolve_under_agents(path: str) -> tuple[Path, str]:
     A directory serves itself (entry ``""``); a file serves its parent and points at the
     file. Realpath-resolved and confined to ``AGENTS_DIR`` so a soul deliverable can be
     served but nothing else on disk can.
+
+    A **relative** path resolves against the caller's workspace (like the fs tools), not the
+    process cwd — so the model can pass ``index.html`` / ``site`` the same way it does everywhere
+    else, instead of being forced to discover an absolute ``~/.gaia/agents/<agent>/workspace`` path.
     """
+    from gaia.tools.fs.base import current_agent, sandbox_for
+
+    candidate = Path(path)
+    if not candidate.is_absolute():
+        candidate = sandbox_for(constants.AGENTS_DIR, current_agent.get()).primary / path
     try:
-        target = Path(os.path.realpath(path))
+        target = Path(os.path.realpath(candidate))
         agents = Path(os.path.realpath(constants.AGENTS_DIR))
     except OSError as exc:  # pragma: no cover - defensive
         raise ServeError(f"bad path: {exc}") from exc

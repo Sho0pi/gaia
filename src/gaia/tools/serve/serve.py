@@ -44,13 +44,13 @@ def make_serve(
         """Serve a built website locally so you can screenshot it or share a live preview.
         For previewing a site only — to hand over a file (doc/image/zip), use send_file.
 
-        Pass a soul's workspace dir (or an .html in it). Open the returned url with
-        browser_navigate + browser_screenshot to render it (a real http render). Remote
-        users get a public https url to share; a local (cli) user stays local-only unless
-        public=True.
+        Open the returned url with browser_navigate + browser_screenshot to render it (a
+        real http render). Remote users get a public https url to share; a local (cli) user
+        stays local-only unless public=True.
 
         Args:
-            path: a workspace dir under the agents tree, or an .html file inside one.
+            path: a workspace-relative dir or .html (e.g. 'index.html', '.'); an absolute
+                path under the agents tree also works.
             public: for a local user, force a shareable public url (ignored for remote —
                 they always get one).
         """
