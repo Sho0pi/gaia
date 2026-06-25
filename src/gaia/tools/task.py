@@ -322,6 +322,10 @@ def make_task_get(store: TaskStore) -> Callable[..., dict[str, Any]]:
             task_id: the task to fetch (defaults to the caller soul's own task).
         """
         task_id = task_id or _state(tool_context).get("task_id", "")
+        if not task_id:
+            # No id + no board context (a delegate/chat-run soul): not an error — say so plainly
+            # so the model doesn't treat it as a failure and improvise.
+            return ok(task=None, note="not running a board task — task tools are for mission tasks")
         task = _owned(store, task_id, _owner(tool_context))
         if task is None:
             return err(f"no task {task_id!r}")
@@ -352,6 +356,8 @@ def make_task_update(store: TaskStore) -> Callable[..., dict[str, Any]]:
             assignee: the soul/agent now responsible.
         """
         task_id = task_id or _state(tool_context).get("task_id", "")
+        if not task_id:
+            return ok(task=None, note="not running a board task — nothing to update")
         task = _owned(store, task_id, _owner(tool_context))
         if task is None:
             return err(f"no task {task_id!r}")
@@ -384,6 +390,8 @@ def make_task_complete(store: TaskStore) -> Callable[..., dict[str, Any]]:
             artifacts: comma-separated workspace paths the task produced.
         """
         task_id = task_id or _state(tool_context).get("task_id", "")
+        if not task_id:
+            return ok(task=None, note="not running a board task — nothing to complete")
         if _owned(store, task_id, _owner(tool_context)) is None:
             return err(f"no task {task_id!r}")
         if store.children(task_id, open_only=True):
