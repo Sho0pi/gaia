@@ -136,6 +136,15 @@ analysis:
   window_days: 7
   # Apply proposals automatically. (A HITL review mode is a follow-up.)
   autonomous: true
+monitor:
+  # Run the self-monitoring loop in the daemon — periodically read the error logs, judge what's a real problem, and report it. Off by default (opt-in).
+  enabled: false
+  # How often the monitor cycle runs (hours). Also the per-signature report cooldown (the same error is reported at most once per cycle).
+  interval_hours: 24.0
+  # How many hours of error logs each cycle analyzes.
+  window_hours: 24
+  # DM the admin about new findings (turn off for issues-only).
+  notify: true
 voice:
   # Transcribe inbound voice messages and answer them like text (needs the 'voice' dep group; ignored when faster-whisper isn't installed).
   enabled: true

@@ -291,6 +291,7 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
         scheduler = _start_cron(gaia)
         mission_dispatcher = _start_dispatcher(gaia)
         improve_scheduler = _start_improve(gaia)
+        monitor_scheduler = _start_monitor(gaia)
         try:
             await asyncio.gather(*tasks)
         except asyncio.CancelledError:
@@ -306,6 +307,8 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
                 scheduler.shutdown()
             if improve_scheduler is not None:
                 improve_scheduler.shutdown()
+            if monitor_scheduler is not None:
+                monitor_scheduler.shutdown()
             if mission_dispatcher is not None:
                 await mission_dispatcher.stop()
             # Drain any turns still buffered for memory before the process exits, so a
@@ -322,6 +325,20 @@ def _start_improve(gaia: Gaia) -> Any:
 
     scheduler = AnalysisScheduler(
         lambda: run_cycle(gaia), interval_hours=gaia.config.analysis.interval_hours
+    )
+    scheduler.start()
+    return scheduler
+
+
+def _start_monitor(gaia: Gaia) -> Any:
+    """Start the self-monitoring scheduler for the daemon (None when disabled)."""
+    if not gaia.config.monitor.enabled:
+        return None
+    from gaia.analysis.scheduler import AnalysisScheduler
+    from gaia.monitor.loop import run_cycle
+
+    scheduler = AnalysisScheduler(
+        lambda: run_cycle(gaia), interval_hours=gaia.config.monitor.interval_hours, name="monitor"
     )
     scheduler.start()
     return scheduler

@@ -23,9 +23,16 @@ _MISFIRE_GRACE_SECONDS = 3600
 class AnalysisScheduler:
     """Runs ``cycle`` every ``interval_hours`` inside the daemon's event loop."""
 
-    def __init__(self, cycle: Callable[[], Awaitable[object]], *, interval_hours: float) -> None:
+    def __init__(
+        self,
+        cycle: Callable[[], Awaitable[object]],
+        *,
+        interval_hours: float,
+        name: str = "improve",
+    ) -> None:
         self._cycle = cycle
         self._interval_hours = max(0.1, interval_hours)
+        self._name = name  # job id + log label (so the monitor instance is distinct)
         self._scheduler: AsyncIOScheduler | None = None
 
     def start(self) -> None:
@@ -43,10 +50,10 @@ class AnalysisScheduler:
         self._scheduler.add_job(
             self._fire,
             trigger=IntervalTrigger(hours=self._interval_hours),
-            id="improve",
+            id=self._name,
         )
         self._scheduler.start()
-        logger.info("self-improve scheduler started (every %sh)", self._interval_hours)
+        logger.info("%s scheduler started (every %sh)", self._name, self._interval_hours)
 
     def shutdown(self) -> None:
         """Stop the scheduler (a running cycle finishes; nothing new starts)."""
@@ -61,4 +68,4 @@ class AnalysisScheduler:
             from gaia.logs import log_error
 
             # one call: traceback -> system.log + structured event -> events.jsonl
-            log_error("improve_scheduler", exc)
+            log_error(f"{self._name}_scheduler", exc)
