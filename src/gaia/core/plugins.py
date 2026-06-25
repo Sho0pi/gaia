@@ -172,7 +172,7 @@ class ToolLoggingPlugin(BasePlugin):
         error: Exception,
     ) -> None:
         name = getattr(tool, "name", type(tool).__name__)
-        self._log_finish(name, tool_context, tool_args, "error", error=type(error).__name__)
+        self._log_finish(name, tool_context, tool_args, "error", exc=error)
         return None
 
     def _log_finish(
@@ -182,17 +182,21 @@ class ToolLoggingPlugin(BasePlugin):
         tool_args: dict[str, Any],
         status: str,
         *,
-        error: str | None = None,
+        exc: Exception | None = None,
     ) -> None:
-        """Emit the one ``tool_used`` line: base fields + args + status (+ error)."""
+        """Emit the one ``tool_used`` line: base fields + args + status (+ error type/message).
+
+        On the error path, ``exc=`` lets :func:`log_event` fill ``error``/``detail`` from it.
+        """
         fields = _base_fields(name, tool_context)
         args = _safe_args(name, tool_args)
         if args:
             fields["args"] = args
         fields["status"] = status
-        if error is not None:
-            fields["error"] = error
-        log_event("tool_used", **fields)
+        if exc is not None:
+            log_event("tool_used", exc=exc, **fields)  # log_event fills error/detail from exc
+        else:
+            log_event("tool_used", **fields)
 
 
 def _safe_args(name: str, tool_args: dict[str, Any]) -> dict[str, Any]:

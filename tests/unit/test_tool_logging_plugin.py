@@ -180,7 +180,8 @@ async def test_error_line_carries_the_command(logged: list[tuple[str, dict[str, 
 
     name, fields = logged[0]
     assert name == "tool_used" and fields["status"] == "error"
-    assert fields["error"] == "ValueError"
+    # The plugin delegates the exception to log_event (it fills error/detail/where) — see test_logs.
+    assert fields["exc"] is not None and type(fields["exc"]).__name__ == "ValueError"
     assert fields["args"] == {"command": "rm -rf /tmp/x"}  # the failing command is on the line
 
 

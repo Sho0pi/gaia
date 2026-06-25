@@ -57,5 +57,8 @@ class AnalysisScheduler:
     async def _fire(self) -> None:
         try:
             await self._cycle()
-        except Exception:  # a failing cycle must never kill the scheduler
-            logger.exception("self-improve cycle failed")
+        except Exception as exc:  # a failing cycle must never kill the scheduler
+            from gaia.logs import log_error
+
+            # one call: traceback -> system.log + structured event -> events.jsonl
+            log_error("improve_scheduler", exc)
