@@ -383,6 +383,19 @@ gaia setup admin [options]
 |---|---|
 | `--id` | Admin sender id as channel:id, e.g. telegram:12345. |
 
+### `gaia setup browser`
+
+Configure the browser tool: backend (mcp / native) and headless mode.
+
+```
+gaia setup browser [options]
+```
+
+| Option | Description |
+|---|---|
+| `--backend` | Browser backend: mcp | native. |
+| `--headless` | Run the browser headless. |
+
 ### `gaia setup connectors`
 
 Set up messaging connectors (Telegram, WhatsApp) — runs the connect flow.
@@ -390,6 +403,22 @@ Set up messaging connectors (Telegram, WhatsApp) — runs the connect flow.
 ```
 gaia setup connectors
 ```
+
+### `gaia setup mcp`
+
+Add a custom MCP server to gaia.yaml (appends to mcp.servers; needs a daemon restart).
+
+```
+gaia setup mcp [options]
+```
+
+| Option | Description |
+|---|---|
+| `--name` | Short server id. |
+| `--transport` | stdio | http | sse. |
+| `--command` | stdio: the executable. |
+| `--arg` | stdio: arg (repeatable). |
+| `--url` | http/sse: server URL. |
 
 ### `gaia setup model`
 
