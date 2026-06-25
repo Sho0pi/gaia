@@ -18,8 +18,42 @@ from gaia.cli._console import console
 from gaia.cli._options import state
 
 app = typer.Typer(
-    name="setup", help="Configure gaia: model, connectors, search, tools.", no_args_is_help=True
+    name="setup", help="Configure gaia: model, connectors, search, tools.", no_args_is_help=False
 )
+
+
+@app.callback(invoke_without_command=True)
+def main(ctx: typer.Context) -> None:
+    """Run the full guided setup when called with no subcommand; otherwise dispatch the step."""
+    if ctx.invoked_subcommand is not None:
+        return
+    out = console()
+    out.print("[bold]gaia setup[/] — let's configure gaia. Esc/Ctrl-C any step to skip it.\n")
+    for label, step in (
+        ("Model", model),
+        ("Connectors", connectors),
+        ("Admin", admin),
+        ("Search", search),
+        ("Browser", browser),
+    ):
+        out.print(f"\n[bold cyan]> {label}[/]")
+        try:
+            step(ctx)
+        except typer.Exit:
+            out.print(f"[dim]skipped {label.lower()}[/]")
+        except (KeyboardInterrupt, EOFError):
+            out.print("\n[yellow]setup cancelled[/]")
+            raise typer.Exit(1) from None
+    if typer.confirm("\nAdd a custom MCP server?", default=False):
+        try:
+            mcp(ctx)
+        except typer.Exit:
+            pass
+    out.print(
+        "\n[bold green]✓ setup complete.[/] Run [cyan]gaia doctor[/] to check, "
+        "[cyan]gaia start[/] to launch."
+    )
+
 
 EngineOpt = Annotated[
     str | None, typer.Option("--engine", help="Search engine: duckduckgo | brave.")
