@@ -41,6 +41,7 @@ def search(ctx: typer.Context, engine: EngineOpt = None, api_key: ApiKeyOpt = No
     """
     from gaia import constants
     from gaia.cli._envfile import get_env_var, set_env_var
+    from gaia.cli._select import select_one
     from gaia.cli._yamledit import set_config_value
     from gaia.config import get_settings
     from gaia.tools.web_search import SEARCH_ENGINES
@@ -52,7 +53,18 @@ def search(ctx: typer.Context, engine: EngineOpt = None, api_key: ApiKeyOpt = No
 
     eng = (engine or "").strip().lower()
     if not eng:
-        eng = typer.prompt(f"Search engine ({choices})", default="duckduckgo").strip().lower()
+        picked = select_one(
+            "Search engine",
+            [
+                ("duckduckgo", "DuckDuckGo", "no API key, privacy-first"),
+                ("brave", "Brave", "needs a BRAVE_API_KEY (free tier)"),
+            ],
+            default="duckduckgo",
+        )
+        if picked is None:
+            out.print("[yellow]cancelled[/]")
+            raise typer.Exit(1)
+        eng = picked
     if eng not in SEARCH_ENGINES:
         out.print(f"[red]unknown engine {eng!r}; available: {choices}[/]")
         raise typer.Exit(1)

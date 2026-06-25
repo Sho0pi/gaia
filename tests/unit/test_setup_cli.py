@@ -43,3 +43,33 @@ def test_search_brave_saves_key_and_engine(tmp_path: Path, monkeypatch) -> None:
 def test_search_unknown_engine_errors(tmp_path: Path) -> None:
     result = runner.invoke(app, ["setup", "search", "--engine", "bing"])
     assert result.exit_code == 1 and "unknown engine" in result.output
+
+
+def test_select_one_numbered_fallback(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    # Non-TTY (scripts/tests): select_one falls back to a numbered prompt, returns the value.
+    import typer
+
+    from gaia.cli import _select
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    monkeypatch.setattr(typer, "prompt", lambda *a, **k: "2")  # pick the 2nd option
+    out = _select.select_one(
+        "Engine",
+        [("duckduckgo", "DuckDuckGo", ""), ("brave", "Brave", "key")],
+        default="duckduckgo",
+    )
+    assert out == "brave"
+
+
+def test_select_one_numbered_default(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    import typer
+
+    from gaia.cli import _select
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    # empty input -> typer returns the default (the start index = duckduckgo's "1")
+    monkeypatch.setattr(typer, "prompt", lambda *a, **k: k.get("default", "1"))
+    out = _select.select_one(
+        "Engine", [("duckduckgo", "DDG", ""), ("brave", "Brave", "")], default="brave"
+    )
+    assert out == "brave"  # default highlighted -> index 2 -> brave
