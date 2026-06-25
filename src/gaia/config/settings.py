@@ -61,6 +61,8 @@ class Settings(BaseSettings):
     )
 
     # Connector credentials.
+    # For the self-monitoring loop's GitHub issue filing (PAT with `repo`/`issues` scope).
+    github_token: str | None = Field(default=None, validation_alias="GITHUB_TOKEN")
     telegram_bot_token: str | None = Field(
         default=None, validation_alias=f"{constants.ENV_PREFIX}TELEGRAM_BOT_TOKEN"
     )
