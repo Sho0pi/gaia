@@ -39,7 +39,7 @@ def test_groups_three_event_kinds_by_signature() -> None:
         _ev(
             "error",
             "2026-06-20 13:00:00",
-            source="monitor_loop",
+            source="cron_runner",
             error="KeyError",
             where="loop.py:9",
             detail="missing",
@@ -59,6 +59,24 @@ def test_groups_three_event_kinds_by_signature() -> None:
     assert sigs["KeyError @ loop.py:9"].kinds == {"error": 1}
     # top group first
     assert digest.groups[0].signature == "ValueError @ handler.py:42"
+
+
+def test_excludes_the_monitors_own_errors() -> None:
+    # The monitor must not report on itself (a meta-loop): error events with source=monitor_* drop.
+    events = [
+        _ev(
+            "error",
+            "2026-06-20 10:00:00",
+            source="monitor_loop",
+            error="ValidationError",
+            where="loop.py:91",
+        ),
+        _ev("error", "2026-06-20 11:00:00", source="monitor_scheduler", error="X", where="s.py:1"),
+        _ev("error", "2026-06-20 12:00:00", source="cron_runner", error="KeyError", where="c.py:9"),
+    ]
+    digest = error_digest(events)
+    assert digest.total_errors == 1  # only the non-monitor one
+    assert digest.groups[0].signature == "KeyError @ c.py:9"
 
 
 def test_render_empty_and_nonempty() -> None:

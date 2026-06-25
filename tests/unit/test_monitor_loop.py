@@ -71,7 +71,7 @@ async def test_filters_ignore_and_notifies_new(monkeypatch: pytest.MonkeyPatch) 
 
     sent: list[list[Finding]] = []
 
-    async def fake_notify(_g: Any, _summary: str, findings: list[Finding]) -> None:
+    async def fake_notify(_g: Any, _summary: str, findings: list[Finding], _filed: Any) -> None:
         sent.append(findings)
 
     monkeypatch.setattr(mloop, "analyze", fake_analyze)
@@ -88,7 +88,7 @@ async def test_dedups_on_second_run(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_analyze(_g: Any) -> HealthReport:
         return report
 
-    async def fake_notify(_g: Any, _s: str, _f: list[Finding]) -> None:
+    async def fake_notify(_g: Any, _s: str, _f: list[Finding], _filed: Any) -> None:
         return None
 
     monkeypatch.setattr(mloop, "analyze", fake_analyze)
@@ -158,7 +158,7 @@ async def test_notify_off_still_returns_findings(monkeypatch: pytest.MonkeyPatch
 
     called = False
 
-    async def fake_notify(_g: Any, _s: str, _f: list[Finding]) -> None:
+    async def fake_notify(_g: Any, _s: str, _f: list[Finding], _filed: Any) -> None:
         nonlocal called
         called = True
 

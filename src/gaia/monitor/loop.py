@@ -60,10 +60,10 @@ async def run_cycle(gaia: Gaia) -> list[Finding]:
     new = [f for f in actionable if (f.signature or f.title) in fresh]
     if not new:
         return []
+    filed = await _file_issues(gaia, new)  # file first so the DM can link the issues
     if gaia.config.monitor.notify:
-        await _notify_admin(gaia, report.summary, new)
-    await _file_issues(gaia, new)
-    log_event("monitor_reported", count=len(new), summary=report.summary[:200])
+        await _notify_admin(gaia, report.summary, new, filed)
+    log_event("monitor_reported", count=len(new), issues=len(filed), summary=report.summary[:200])
     return new
 
 
@@ -98,45 +98,58 @@ async def _run_analyst(gaia: Gaia, digest_text: str) -> HealthReport:
     return HealthReport.model_validate_json("".join(parts))
 
 
-async def _file_issues(gaia: Gaia, findings: list[Finding]) -> None:
-    """File a GitHub issue per file_issue finding (deduped against GitHub). Opt-in + best-effort."""
+async def _file_issues(gaia: Gaia, findings: list[Finding]) -> dict[str, str]:
+    """File a GitHub issue per file_issue finding (deduped against GitHub). Returns signature->url.
+
+    Opt-in + best-effort; empty dict when disabled, no token/repo, or nothing to file.
+    """
     gh = gaia.config.monitor.github
     to_file = [f for f in findings if f.action == "file_issue"]
     if not (gh.create_issues and to_file):
-        return
+        return {}
     token = gaia.settings.github_token
     if not token or not gh.repo:
         logger.warning("monitor: create_issues on but GITHUB_TOKEN/repo missing — skipping issues")
-        return
+        return {}
     from gaia.monitor.github import file_issue
 
+    filed: dict[str, str] = {}
     for f in to_file:
+        key = f.signature or f.title
         try:
             url = await file_issue(
                 gh.repo,
                 token,
-                signature=f.signature or f.title,
+                signature=key,
                 title=f.title or f.signature,
                 body=f.issue_body or f.summary,
                 label=gh.label,
             )
+            filed[key] = url
             log_event("monitor_issue", signature=f.signature, url=url)
         except Exception as exc:
             log_error("monitor_github", exc)
+    return filed
 
 
-async def _notify_admin(gaia: Gaia, summary: str, findings: list[Finding]) -> None:
-    """Best-effort: DM the first reachable admin the health findings."""
+async def _notify_admin(
+    gaia: Gaia, summary: str, findings: list[Finding], filed: dict[str, str]
+) -> None:
+    """Best-effort: DM the first reachable admin the findings (+ links to any filed issues)."""
     from gaia.tools.message import user_address
 
     admins = [u for u in gaia.users.list() if u.role == "admin" and u.identities]
     if not admins:
         return
-    lines = [f"⚠ gaia health check: {summary}", ""]
+    n = len(findings)
+    lines = [f"⚠ gaia health check — {n} finding{'s' if n != 1 else ''}", summary, ""]
     for f in findings:
-        lines.append(f"[{f.severity}] {f.title}")
+        lines.append(f"• [{f.severity}] {f.title}")
         if f.summary:
             lines.append(f"  {f.summary}")
+        url = filed.get(f.signature or f.title)
+        if url:
+            lines.append(f"  → filed: {url}")
     text = "\n".join(lines)
     for admin in admins:
         addr = user_address(gaia.users, admin.id)
