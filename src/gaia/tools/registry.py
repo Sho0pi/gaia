@@ -323,12 +323,17 @@ def default_registry(
 
     if _is_enabled(config, WEB_SEARCH):
         engine = _tool_setting(config, WEB_SEARCH, "engine")
-        if engine:
-            registry.register(WEB_SEARCH, make_web_search(get_search_provider(engine)))
-        else:
+        if not engine:
             registry.mark_missing(
-                WEB_SEARCH, "set tools.web_search.engine in gaia.yaml (e.g. duckduckgo)"
+                WEB_SEARCH, "set tools.web_search.engine in gaia.yaml (e.g. duckduckgo, brave)"
             )
+        else:
+            try:
+                provider = get_search_provider(engine)  # may need an API key (e.g. brave)
+            except ValueError as exc:
+                registry.mark_missing(WEB_SEARCH, str(exc))
+            else:
+                registry.register(WEB_SEARCH, make_web_search(provider))
 
     agents_dir = constants.AGENTS_DIR
     if _is_enabled(config, fs.READ):

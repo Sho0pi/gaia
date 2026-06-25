@@ -96,3 +96,41 @@ def test_ddg_provider_maps_fields(monkeypatch: pytest.MonkeyPatch) -> None:
     out = ddg_provider("q", 5, None)
 
     assert out == [{"title": "T", "url": "http://u", "snippet": "snippet"}]
+
+
+def _fake_settings(monkeypatch: pytest.MonkeyPatch, key: str | None) -> None:
+    monkeypatch.setattr(
+        "gaia.config.get_settings", lambda *a, **k: type("S", (), {"brave_api_key": key})()
+    )
+
+
+def test_brave_provider_maps_fields_and_sends_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    import httpx
+
+    from gaia.tools import web_search
+
+    _fake_settings(monkeypatch, "tok")
+    captured: dict[str, object] = {}
+
+    def fake_get(url: str, *, params: dict, headers: dict, timeout: int) -> httpx.Response:
+        captured.update(url=url, params=params, headers=headers)
+        return httpx.Response(
+            200,
+            json={"web": {"results": [{"title": "T", "url": "https://x", "description": "snip"}]}},
+            request=httpx.Request("GET", url),
+        )
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+
+    out = web_search.get_search_provider("brave")("hello", 5, "d")
+    assert out == [{"title": "T", "url": "https://x", "snippet": "snip"}]
+    assert captured["headers"]["X-Subscription-Token"] == "tok"  # type: ignore[index]
+    assert captured["params"]["q"] == "hello" and captured["params"]["freshness"] == "pd"  # type: ignore[index]
+
+
+def test_brave_without_key_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    from gaia.tools import web_search
+
+    _fake_settings(monkeypatch, None)
+    with pytest.raises(ValueError, match="BRAVE_API_KEY"):
+        web_search.get_search_provider("brave")

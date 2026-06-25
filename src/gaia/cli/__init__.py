@@ -19,6 +19,7 @@ from gaia.cli import (
     memory,
     monitor,
     root,
+    setup,
     skill,
     soul,
     task,
@@ -31,6 +32,7 @@ app.add_typer(cron.app, name="cron")
 app.add_typer(llm.app, name="llm")
 app.add_typer(grow.app, name="grow")
 app.add_typer(monitor.app, name="monitor")
+app.add_typer(setup.app, name="setup")
 app.add_typer(skill.app, name="skill")
 app.add_typer(soul.app, name="soul")
 app.add_typer(task.app, name="task")

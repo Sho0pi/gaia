@@ -26,6 +26,7 @@ os.environ.setdefault("GAIA_ACCEPT_TERMS", "1")
 #: these at construction/call time, so patching them isolates every store a test builds (directly
 #: or via ``Gaia``) — tasks.db, mem0's chroma, the whatsapp session db, users.json, logs, agents.
 _HOME_PATHS = {
+    "ENV_FILE": ".env",  # secrets — a test that writes one must never touch the real ~/.gaia/.env
     "USERS_FILE": "users.json",
     "TASKS_DB": "tasks.db",
     "SESSION_DB": "whatsapp.db",

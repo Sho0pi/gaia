@@ -44,20 +44,76 @@ def ddg_provider(query: str, max_results: int, timelimit: str | None) -> list[di
     ]
 
 
+#: ddgs ``timelimit`` codes mapped to Brave's ``freshness`` codes (pd/pw/pm/py).
+_BRAVE_FRESHNESS = {"d": "pd", "w": "pw", "m": "pm", "y": "py"}
+
+
+def _make_brave_provider(api_key: str) -> SearchProvider:
+    """Brave Search API provider — one header key, maps web results to the common shape."""
+
+    def brave(query: str, max_results: int, timelimit: str | None) -> list[dict[str, str]]:
+        import httpx
+
+        params: dict[str, str | int] = {"q": query, "count": max_results}
+        if timelimit and timelimit in _BRAVE_FRESHNESS:
+            params["freshness"] = _BRAVE_FRESHNESS[timelimit]
+        resp = httpx.get(
+            "https://api.search.brave.com/res/v1/web/search",
+            params=params,
+            headers={"X-Subscription-Token": api_key, "Accept": "application/json"},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        results = (resp.json().get("web") or {}).get("results") or []
+        return [
+            {
+                "title": r.get("title", ""),
+                "url": r.get("url", ""),
+                "snippet": r.get("description", ""),
+            }
+            for r in results
+        ]
+
+    return brave
+
+
+#: A search engine factory: ``() -> SearchProvider``, self-sourcing its API key from settings.
+EngineFactory = Callable[[], SearchProvider]
+
+
+def _ddg_factory() -> SearchProvider:
+    return ddg_provider
+
+
+def _brave_factory() -> SearchProvider:
+    from gaia.config import get_settings
+
+    key = get_settings().brave_api_key
+    if not key:
+        raise ValueError("brave web_search needs an API key — set BRAVE_API_KEY in ~/.gaia/.env")
+    return _make_brave_provider(key)
+
+
 #: Registered search engines by id; the config picks one by name (no default).
-SEARCH_ENGINES: dict[str, SearchProvider] = {"duckduckgo": ddg_provider}
+SEARCH_ENGINES: dict[str, EngineFactory] = {
+    "duckduckgo": _ddg_factory,
+    "brave": _brave_factory,
+}
 
 
 def get_search_provider(engine: str) -> SearchProvider:
-    """Return the :class:`SearchProvider` for ``engine``; raise if unknown.
+    """Return the :class:`SearchProvider` for ``engine``; raise if unknown or missing its key.
 
-    There is no default engine — it must be named explicitly (from config).
+    There is no default engine — it must be named explicitly (from config). An API-key engine
+    (e.g. brave) raises ``ValueError`` when its key is unset, so the registry can mark the tool
+    missing with a clear message instead of registering a broken tool.
     """
     try:
-        return SEARCH_ENGINES[engine.lower()]
+        factory = SEARCH_ENGINES[engine.lower()]
     except KeyError:
         known = ", ".join(sorted(SEARCH_ENGINES))
         raise ValueError(f"unknown web_search engine {engine!r}; available: {known}") from None
+    return factory()
 
 
 def make_web_search(provider: SearchProvider) -> Callable[..., dict[str, Any]]:
