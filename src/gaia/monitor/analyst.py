@@ -10,13 +10,18 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from google.adk.agents import LlmAgent
 
 #: The health analyst agent's name (also its nested-runner agent name).
 NAME = "health_analyst"
+
+
+def _as_str(value: object) -> str:
+    """Coerce a model-supplied field to str — small models sometimes return None / a dict here."""
+    return value if isinstance(value, str) else ("" if value is None else str(value))
 
 
 class Finding(BaseModel):
@@ -40,12 +45,18 @@ class Finding(BaseModel):
         default="", description="Markdown issue body (only when action=file_issue)."
     )
 
+    _coerce = field_validator(
+        "title", "severity", "signature", "summary", "action", "issue_body", mode="before"
+    )(_as_str)
+
 
 class HealthReport(BaseModel):
     """The analyst's verdict over one error window."""
 
-    summary: str = Field(description="One line on the window's overall health.")
+    summary: str = Field(default="", description="One line on the window's overall health.")
     findings: list[Finding] = Field(default_factory=list)
+
+    _coerce = field_validator("summary", mode="before")(_as_str)
 
 
 _INSTRUCTION = """\

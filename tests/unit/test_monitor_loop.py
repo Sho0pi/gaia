@@ -12,6 +12,18 @@ from gaia.monitor import loop as mloop
 from gaia.monitor.analyst import Finding, HealthReport
 
 
+def test_report_coerces_nonstring_fields_from_flaky_models() -> None:
+    # Small models sometimes return a dict/None where a string is expected — must not crash.
+    report = HealthReport.model_validate(
+        {
+            "summary": {"window": "x", "events": 6},  # dict instead of str
+            "findings": [{"signature": "K @ h:1", "title": None, "action": "notify"}],  # None title
+        }
+    )
+    assert isinstance(report.summary, str) and report.summary  # coerced, non-empty
+    assert report.findings[0].title == "" and report.findings[0].signature == "K @ h:1"
+
+
 def _gaia(notify: bool = True) -> Any:
     return SimpleNamespace(config=SimpleNamespace(monitor=MonitorConfig(notify=notify)))
 
