@@ -178,3 +178,57 @@ def model(
         out.print(f"[red]unknown provider {choice!r}; use chatgpt | gemini | openai[/]")
         raise typer.Exit(1)
     out.print("hot-reloaded — a running daemon picks it up next turn.")
+
+
+@app.command()
+def connectors(ctx: typer.Context) -> None:
+    """Set up messaging connectors (Telegram, WhatsApp) — runs the connect flow."""
+    from gaia.cli.connect import connect
+
+    connect(ctx)  # interactive multi-select + per-connector credential flow (reused)
+
+
+AdminIdOpt = Annotated[
+    str | None, typer.Option("--id", help="Admin sender id as channel:id, e.g. telegram:12345.")
+]
+
+
+@app.command()
+def admin(ctx: typer.Context, admin_id: AdminIdOpt = None) -> None:
+    """Set the admin user (full access; receives monitor DMs and runs admin commands).
+
+    Scriptable: `gaia setup admin --id telegram:12345`. Bare command prompts for channel + id.
+    """
+    from gaia.cli._select import select_one
+    from gaia.cli._yamledit import set_config_value
+    from gaia.config import ConfigSupplier, get_settings
+
+    out = console()
+    cfg = get_settings(state(ctx).env_file).config_path
+    current = ConfigSupplier(cfg).current.admin
+
+    value = (admin_id or "").strip()
+    if not value:
+        if current and not typer.confirm(f"admin already set ({', '.join(current)}) — replace it?"):
+            out.print("kept the existing admin")
+            return
+        channel = select_one(
+            "Your channel",
+            [
+                ("telegram", "Telegram", ""),
+                ("whatsapp", "WhatsApp", ""),
+                ("cli", "CLI (local terminal)", ""),
+            ],
+            default="telegram",
+        )
+        if channel is None:
+            out.print("[yellow]cancelled[/]")
+            raise typer.Exit(1)
+        ident = typer.prompt(f"Your {channel} sender id").strip()
+        if not ident:
+            out.print("[yellow]no id given — admin not set[/]")
+            return
+        value = f"{channel}:{ident}"
+
+    set_config_value(cfg, "admin", [value])
+    out.print(f"admin set to [bold]{value}[/] — monitor DMs + admin commands now target you.")

@@ -116,3 +116,14 @@ def test_model_chatgpt_sets_oauth(monkeypatch) -> None:  # type: ignore[no-untyp
         and llm["provider"] == "openai"
         and llm["model"] == "gpt-5.5"
     )
+
+
+def test_admin_flag_sets_config(tmp_path: Path) -> None:
+    import yaml
+
+    from gaia import constants
+
+    result = runner.invoke(app, ["setup", "admin", "--id", "telegram:12345"])
+    assert result.exit_code == 0, result.output
+    data = yaml.safe_load(constants.CONFIG_PATH.read_text()) or {}
+    assert data["admin"] == ["telegram:12345"]

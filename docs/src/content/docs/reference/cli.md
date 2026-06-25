@@ -371,6 +371,26 @@ gaia serve [options]
 
 Configure gaia: model, connectors, search, tools.
 
+### `gaia setup admin`
+
+Set the admin user (full access; receives monitor DMs and runs admin commands).
+
+```
+gaia setup admin [options]
+```
+
+| Option | Description |
+|---|---|
+| `--id` | Admin sender id as channel:id, e.g. telegram:12345. |
+
+### `gaia setup connectors`
+
+Set up messaging connectors (Telegram, WhatsApp) — runs the connect flow.
+
+```
+gaia setup connectors
+```
+
 ### `gaia setup model`
 
 Configure the LLM: Sign in with ChatGPT, or a Gemini / OpenAI API key.
