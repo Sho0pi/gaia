@@ -299,3 +299,38 @@ def log_event(action: str, **fields: Any) -> None:
     """
     safe = {(f"{k}_" if k in _STD_ATTRS else k): v for k, v in fields.items()}
     logging.getLogger(constants.EVENTS_LOGGER_NAME).info(action, extra=safe)
+
+
+def error_details(exc: BaseException) -> tuple[str, str]:
+    """A short message + the deepest *gaia* frame (``file:line``) for a structured error event.
+
+    The self-monitoring loop reads these off ``events.jsonl``, so an error event needs enough to
+    triage without parsing ``errors.log`` tracebacks: ``str(exc)`` (truncated) and the innermost
+    non-site-packages frame (our code, where it's actionable; falls back to the innermost frame).
+    """
+    import traceback
+
+    detail = str(exc)[:300]
+    frames = traceback.extract_tb(exc.__traceback__)
+    where = ""
+    for frame in reversed(frames):
+        if "site-packages" not in frame.filename:
+            where = f"{Path(frame.filename).name}:{frame.lineno}"
+            break
+    if not where and frames:
+        last = frames[-1]
+        where = f"{Path(last.filename).name}:{last.lineno}"
+    return detail, where
+
+
+def log_error(source: str, exc: BaseException, **fields: Any) -> None:
+    """Emit a structured ``error`` event for a *background* failure (no live turn to report it).
+
+    ``source`` is a logical location (e.g. ``"cron_runner"``, ``"monitor_loop"``); the event also
+    carries the exception type, a truncated message, and the deepest gaia frame — so daemon/cron/
+    loop failures show up in ``events.jsonl`` for the monitor, not only as ``system.log`` text.
+    """
+    detail, where = error_details(exc)
+    log_event(
+        "error", source=source, error=type(exc).__name__, detail=detail, where=where, **fields
+    )

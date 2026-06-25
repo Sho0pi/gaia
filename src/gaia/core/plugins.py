@@ -172,7 +172,14 @@ class ToolLoggingPlugin(BasePlugin):
         error: Exception,
     ) -> None:
         name = getattr(tool, "name", type(tool).__name__)
-        self._log_finish(name, tool_context, tool_args, "error", error=type(error).__name__)
+        self._log_finish(
+            name,
+            tool_context,
+            tool_args,
+            "error",
+            error=type(error).__name__,
+            detail=str(error)[:300],
+        )
         return None
 
     def _log_finish(
@@ -183,8 +190,9 @@ class ToolLoggingPlugin(BasePlugin):
         status: str,
         *,
         error: str | None = None,
+        detail: str | None = None,
     ) -> None:
-        """Emit the one ``tool_used`` line: base fields + args + status (+ error)."""
+        """Emit the one ``tool_used`` line: base fields + args + status (+ error type/message)."""
         fields = _base_fields(name, tool_context)
         args = _safe_args(name, tool_args)
         if args:
@@ -192,6 +200,8 @@ class ToolLoggingPlugin(BasePlugin):
         fields["status"] = status
         if error is not None:
             fields["error"] = error
+        if detail is not None:
+            fields["detail"] = detail
         log_event("tool_used", **fields)
 
 

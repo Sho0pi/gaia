@@ -24,7 +24,7 @@ from gaia.core.elicit import (
     resolve_answer,
     soul_elicitation_sink,
 )
-from gaia.logs import log_event
+from gaia.logs import error_details, log_event
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from gaia.core.agent import Gaia
@@ -238,7 +238,14 @@ class GaiaHandler:
             run = await resume_soul(self._gaia, pending.soul, answer)
         except Exception as exc:
             logging.getLogger(constants.LOGGER_NAME).exception("soul resume failed")
-            log_event("turn_error", user=self._user_id, error=type(exc).__name__)
+            detail, where = error_details(exc)
+            log_event(
+                "turn_error",
+                user=self._user_id,
+                error=type(exc).__name__,
+                detail=detail,
+                where=where,
+            )
             self._gaia.soul_sessions.unpin(pending.soul.warm_key)
             await send(_friendly_error(exc))
             return
@@ -320,7 +327,14 @@ class GaiaHandler:
             # A model error (rate limit, outage) or tool fault must not surface as a raw
             # traceback to the user. Log the detail, send a short apology, end the turn.
             logging.getLogger(constants.LOGGER_NAME).exception("gaia turn failed")
-            log_event("turn_error", user=self._user_id, error=type(exc).__name__)
+            detail, where = error_details(exc)
+            log_event(
+                "turn_error",
+                user=self._user_id,
+                error=type(exc).__name__,
+                detail=detail,
+                where=where,
+            )
             await send(_friendly_error(exc))
             return
         finally:

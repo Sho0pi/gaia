@@ -13,7 +13,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
-from gaia.logs import log_event
+from gaia.logs import log_error, log_event
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from gaia.analysis.analyst import AnalysisReport
@@ -36,6 +36,7 @@ async def analyze(gaia: Gaia) -> tuple[AnalysisReport | None, str | None]:
         report = await _run_analyst(gaia, render_digest(digest))
     except Exception as exc:
         logger.warning("improve cycle: analyst failed: %s", exc)
+        log_error("improve_loop", exc)
         return None, None
     return report, _single_user(digest)
 
