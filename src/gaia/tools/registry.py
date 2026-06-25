@@ -17,7 +17,7 @@ from collections.abc import Awaitable, Callable, Iterable
 from typing import TYPE_CHECKING, Any, Union
 
 from gaia import constants
-from gaia.tools import browser, fs, shell
+from gaia.tools import browser, capabilities, fs, shell
 from gaia.tools.ask_user import NAME as ASK_USER
 from gaia.tools.ask_user import make_ask_user
 from gaia.tools.cron import NAME as CRON
@@ -219,6 +219,10 @@ def _register_shell_tools(registry: ToolRegistry, config: GaiaConfig | None, ser
         registry.register(shell.KILL, shell.make_exec_kill(manager))
     if _is_enabled(config, shell.LIST):
         registry.register(shell.LIST, shell.make_exec_list(manager))
+    # capabilities surfaces the SAME live security/allowlist exec was built with (+ the fs/serve
+    # workspace rules) so the model can check what it can run instead of erroring into the sandbox.
+    if _is_enabled(config, capabilities.NAME):
+        registry.register(capabilities.NAME, capabilities.make_capabilities(security, allowlist))
 
 
 def _register_serve_tools(registry: ToolRegistry, config: GaiaConfig | None, served: Any) -> None:

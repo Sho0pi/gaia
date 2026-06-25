@@ -480,3 +480,17 @@ async def test_mcp_screenshot_error_is_not_sent() -> None:
     sent = await _collect_replies(handler, "shot")
 
     assert not [r for r in sent if isinstance(r, Media)]
+
+
+def test_calls_delegate_detects_delegate_function_call() -> None:
+    # The preface-streaming branch keys off this: a delegate function-call event vs plain text.
+    from gaia.souls.delegate import NAME as DELEGATE
+
+    call_ev = SimpleNamespace(
+        content=SimpleNamespace(
+            parts=[SimpleNamespace(function_call=SimpleNamespace(name=DELEGATE), text=None)]
+        )
+    )
+    text_ev = SimpleNamespace(content=SimpleNamespace(parts=[SimpleNamespace(text="hi")]))
+    assert GaiaHandler._calls_delegate(call_ev) is True
+    assert GaiaHandler._calls_delegate(text_ev) is False
