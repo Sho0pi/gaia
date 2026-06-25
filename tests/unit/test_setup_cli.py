@@ -157,3 +157,26 @@ def test_mcp_flag_appends_server(tmp_path: Path) -> None:
         and servers[-1]["command"] == "bunx"
         and servers[-1]["args"] == ["x"]
     )
+
+
+def test_walkthrough_runs_each_step(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    import typer
+
+    from gaia.cli import setup
+
+    called: list[str] = []
+
+    def rec(name: str):  # type: ignore[no-untyped-def]
+        def step(_ctx: object) -> None:
+            called.append(name)
+
+        return step
+
+    for n in ("model", "connectors", "admin", "search", "browser"):
+        monkeypatch.setattr(setup, n, rec(n))
+    monkeypatch.setattr(typer, "confirm", lambda *a, **k: False)  # decline the optional MCP step
+
+    result = runner.invoke(app, ["setup"])
+    assert result.exit_code == 0, result.output
+    assert called == ["model", "connectors", "admin", "search", "browser"]
+    assert "setup complete" in result.output
