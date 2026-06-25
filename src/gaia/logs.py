@@ -286,17 +286,27 @@ def setup_logging(
     return log_dir
 
 
-def log_event(action: str, **fields: Any) -> None:
+def log_event(action: str, *, exc: BaseException | None = None, **fields: Any) -> None:
     """Record a structured user-activity event (message in/out, tool used, …).
 
     ``action`` is the event name; ``fields`` are structured key/values written verbatim
     to ``events.jsonl`` and mirrored to the console. Keep secrets out of ``fields`` —
     redaction is best-effort, not a guarantee.
 
+    Pass ``exc=`` to auto-fill ``error`` (type), ``detail`` (message) and ``where`` (the gaia
+    frame) from an exception — so an error call site is just ``log_event("turn_error", user=…,
+    exc=exc)`` instead of extracting them by hand. Explicitly-passed fields win over the extract.
+
     A field whose name collides with a reserved ``LogRecord`` attribute (e.g. ``created``,
     ``name``, ``module``) is suffixed with ``_`` rather than crashing ``logging`` — so a
     field name can never take down the caller (usually a tool mid-run).
     """
+    if exc is not None:
+        detail, where = error_details(exc)
+        fields.setdefault("error", type(exc).__name__)
+        fields.setdefault("detail", detail)
+        if where:
+            fields.setdefault("where", where)
     safe = {(f"{k}_" if k in _STD_ATTRS else k): v for k, v in fields.items()}
     logging.getLogger(constants.EVENTS_LOGGER_NAME).info(action, extra=safe)
 
@@ -330,7 +340,4 @@ def log_error(source: str, exc: BaseException, **fields: Any) -> None:
     carries the exception type, a truncated message, and the deepest gaia frame — so daemon/cron/
     loop failures show up in ``events.jsonl`` for the monitor, not only as ``system.log`` text.
     """
-    detail, where = error_details(exc)
-    log_event(
-        "error", source=source, error=type(exc).__name__, detail=detail, where=where, **fields
-    )
+    log_event("error", source=source, exc=exc, **fields)
