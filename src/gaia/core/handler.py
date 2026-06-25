@@ -288,6 +288,7 @@ class GaiaHandler:
         texts: list[str] = []
         ask_call: Any | None = None
         preface_done = False  # streamed the model's text before a long delegate ran (once)
+        responded_ids: set[str] = set()  # long-running call ids that got a response (= completed)
         # A paused delegate_to_soul appends its SoulPending here (the tool can't return it — it
         # returns None to pause). A fresh list per turn; read after the loop.
         sink: list[SoulPending] = []
@@ -300,6 +301,12 @@ class GaiaHandler:
                 yield_user_message=yield_user_message,
             ):
                 turn_events.append(event)
+                get_responses = getattr(event, "get_function_responses", None)
+                if get_responses is not None:
+                    for resp in get_responses() or []:
+                        rid = getattr(resp, "id", None)
+                        if rid:
+                            responded_ids.add(rid)  # this long-running call completed, not paused
                 call = self._paused_call(event)
                 # Stream the preface before a (long-running) delegate runs: send what the model
                 # said leading up to the call so the user isn't left in silence while the soul
@@ -341,6 +348,12 @@ class GaiaHandler:
             return
         finally:
             soul_elicitation_sink.reset(token)
+
+        # ADK flags long_running_tool_ids on a call even when the tool COMPLETES in the same turn,
+        # so a finished delegate looks paused. It's only truly paused if it got no response this
+        # turn — otherwise fall through to the normal reply (which delivers its result + media).
+        if ask_call is not None and ask_call.id in responded_ids:
+            ask_call = None
 
         if ask_call is not None:
             # Paused: stream any preface text, then surface the question.

@@ -494,3 +494,53 @@ def test_calls_delegate_detects_delegate_function_call() -> None:
     text_ev = SimpleNamespace(content=SimpleNamespace(parts=[SimpleNamespace(text="hi")]))
     assert GaiaHandler._calls_delegate(call_ev) is True
     assert GaiaHandler._calls_delegate(text_ev) is False
+
+
+async def test_completed_delegate_delivers_media_not_paused() -> None:
+    # Regression: ADK sets long_running_tool_ids on a delegate call even when it COMPLETES in the
+    # same turn, so the handler must NOT treat a finished delegate as paused — it should deliver
+    # the soul's media via the normal reply, not emit the "lost the question" fail-safe. (#268)
+    from gaia.connectors.base import Media
+    from gaia.souls.delegate import NAME as DELEGATE
+
+    png = "/tmp/shot.png"
+    call_ev = SimpleNamespace(
+        long_running_tool_ids={"d1"},
+        content=SimpleNamespace(
+            parts=[
+                SimpleNamespace(text=None, function_call=SimpleNamespace(id="d1", name=DELEGATE))
+            ]
+        ),
+        is_final_response=lambda: True,
+        get_function_responses=lambda: [],
+    )
+    resp = SimpleNamespace(
+        id="d1",
+        name=DELEGATE,
+        response={"status": "success", "media": [png], "summary": "built it"},
+    )
+    resp_ev = SimpleNamespace(
+        content=SimpleNamespace(parts=[]),
+        is_final_response=lambda: False,
+        get_function_responses=lambda: [resp],
+    )
+    final_ev = SimpleNamespace(
+        content=SimpleNamespace(parts=[SimpleNamespace(text="Done!", function_call=None)]),
+        is_final_response=lambda: True,
+        get_function_responses=lambda: [],
+    )
+    handler = GaiaHandler(SimpleNamespace(memory_service=None))
+    handler._runner = _FakeRunner([call_ev, resp_ev, final_ev])
+
+    sent: list[Any] = []
+
+    async def send(x: Any) -> None:
+        sent.append(x)
+
+    await handler(Inbound(text="build + screenshot"), send)
+
+    medias = [s for s in sent if isinstance(s, Media)]
+    assert medias and str(medias[0].path) == png  # the soul's screenshot was delivered
+    assert not any(
+        isinstance(s, str) and "lost the question" in s for s in sent
+    )  # not the fail-safe
