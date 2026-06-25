@@ -108,7 +108,7 @@ def search(ctx: typer.Context, engine: EngineOpt = None, api_key: ApiKeyOpt = No
 
     out = console()
     settings = get_settings(state(ctx).env_file)
-    env_path = constants.ENV_FILE
+    env_path = state(ctx).env_file or constants.ENV_FILE  # honor --env-file for secret writes
     choices = ", ".join(sorted(SEARCH_ENGINES))
 
     eng = (engine or "").strip().lower()
@@ -159,7 +159,7 @@ def model(
 
     out = console()
     settings = get_settings(state(ctx).env_file)
-    env_path = constants.ENV_FILE
+    env_path = state(ctx).env_file or constants.ENV_FILE  # honor --env-file for secret writes
     cfg = settings.config_path
 
     choice = (provider or "").strip().lower()

@@ -180,3 +180,16 @@ def test_walkthrough_runs_each_step(monkeypatch) -> None:  # type: ignore[no-unt
     assert result.exit_code == 0, result.output
     assert called == ["model", "connectors", "admin", "search", "browser"]
     assert "setup complete" in result.output
+
+
+def test_search_honors_env_file_flag(tmp_path: Path) -> None:
+    # --env-file must route the secret write there, not to the default ~/.gaia/.env.
+    from gaia import constants
+
+    alt = tmp_path / "alt.env"
+    result = runner.invoke(
+        app, ["--env-file", str(alt), "setup", "search", "--engine", "brave", "--api-key", "k"]
+    )
+    assert result.exit_code == 0, result.output
+    assert get_env_var(alt, "BRAVE_API_KEY") == "k"
+    assert get_env_var(constants.ENV_FILE, "BRAVE_API_KEY") is None
