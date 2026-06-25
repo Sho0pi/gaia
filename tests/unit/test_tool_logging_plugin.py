@@ -44,7 +44,7 @@ async def test_one_line_per_call_with_args_and_status(
     fields = logged[0][1]
     assert fields["tool"] == "gh_search" and fields["agent"] == "gaia"
     assert fields["status"] == "x"
-    assert fields["args"] == {"query": "adk", "per_page": 5}
+    assert fields["tool_args"] == {"query": "adk", "per_page": 5}
 
 
 async def test_status_defaults_to_ok_and_omits_unknown_agent(
@@ -103,7 +103,7 @@ async def test_args_are_sanitized(logged: list[tuple[str, dict[str, Any]]]) -> N
         result={"status": "success"},
     )
 
-    args = logged[0][1]["args"]
+    args = logged[0][1]["tool_args"]
     assert args["url"] == "https://api.example.com"
     assert args["api_key"] == "[filtered]"
     assert args["password"] == "[filtered]"
@@ -131,9 +131,9 @@ async def test_drop_list_filters_unnameable_secrets(
         result={"status": "ok"},
     )
 
-    assert logged[0][1]["args"] == {"ref": "e2", "text": "[filtered]", "submit": True}
+    assert logged[0][1]["tool_args"] == {"ref": "e2", "text": "[filtered]", "submit": True}
     assert "hunter2-secret" not in str(logged)
-    assert logged[1][1]["args"] == {"fact": "[filtered]"}
+    assert logged[1][1]["tool_args"] == {"fact": "[filtered]"}
     assert "1234" not in str(logged)
 
 
@@ -147,7 +147,7 @@ async def test_long_values_are_truncated(logged: list[tuple[str, dict[str, Any]]
         result={"status": "ok"},
     )
 
-    args = logged[0][1]["args"]
+    args = logged[0][1]["tool_args"]
     assert len(args["command"]) == 151 and args["command"].endswith("…")
     assert args["background"] is False  # scalars pass through untouched
     assert "x" * 500 not in str(logged)
@@ -182,7 +182,7 @@ async def test_error_line_carries_the_command(logged: list[tuple[str, dict[str, 
     assert name == "tool_used" and fields["status"] == "error"
     # The plugin delegates the exception to log_event (it fills error/detail/where) — see test_logs.
     assert fields["exc"] is not None and type(fields["exc"]).__name__ == "ValueError"
-    assert fields["args"] == {"command": "rm -rf /tmp/x"}  # the failing command is on the line
+    assert fields["tool_args"] == {"command": "rm -rf /tmp/x"}  # the failing command is on the line
 
 
 async def test_error_result_also_carries_args(logged: list[tuple[str, dict[str, Any]]]) -> None:
@@ -197,7 +197,8 @@ async def test_error_result_also_carries_args(logged: list[tuple[str, dict[str, 
     )
 
     fields = logged[0][1]
-    assert fields["status"] == "error" and fields["args"] == {"path": "/nope"}
+    assert fields["status"] == "error" and fields["tool_args"] == {"path": "/nope"}
+    assert fields["detail"] == "denied"  # the error_message is captured (the monitor needs WHY)
 
 
 def test_no_tool_self_logs_anymore() -> None:

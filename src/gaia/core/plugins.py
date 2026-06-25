@@ -160,7 +160,14 @@ class ToolLoggingPlugin(BasePlugin):
     ) -> None:
         name = getattr(tool, "name", type(tool).__name__)
         status = result.get("status", "ok") if isinstance(result, dict) else "ok"
-        self._log_finish(name, tool_context, tool_args, status)
+        # Most tool failures are a {"status": "error", "error": <msg>} result (not an exception);
+        # capture the message so the monitor can see WHY a tool failed, not just that it did.
+        detail = ""
+        if status == "error" and isinstance(result, dict):
+            # err() returns {"status":"error","error_message":...}; accept a couple of aliases.
+            raw = result.get("error_message") or result.get("error") or result.get("message")
+            detail = str(raw or "")[:300]
+        self._log_finish(name, tool_context, tool_args, status, detail=detail or None)
         return None
 
     async def on_tool_error_callback(
@@ -183,16 +190,20 @@ class ToolLoggingPlugin(BasePlugin):
         status: str,
         *,
         exc: Exception | None = None,
+        detail: str | None = None,
     ) -> None:
         """Emit the one ``tool_used`` line: base fields + args + status (+ error type/message).
 
-        On the error path, ``exc=`` lets :func:`log_event` fill ``error``/``detail`` from it.
+        ``exc=`` (raised tool) lets :func:`log_event` fill ``error``/``detail``; ``detail=`` carries
+        the message from a ``{"status": "error"}`` *result* (the common, non-raising failure).
         """
         fields = _base_fields(name, tool_context)
         args = _safe_args(name, tool_args)
         if args:
-            fields["args"] = args
+            fields["tool_args"] = args  # not "args": collides with LogRecord.args -> suffixed
         fields["status"] = status
+        if detail is not None:
+            fields["detail"] = detail
         if exc is not None:
             log_event("tool_used", exc=exc, **fields)  # log_event fills error/detail from exc
         else:

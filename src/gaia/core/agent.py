@@ -131,13 +131,9 @@ class Gaia:
 
         Deferred ADK import keeps the rest of Gaia importable without a model.
         """
-        from google.adk.agents import BaseAgent, LlmAgent
-
-        sub_agents: list[BaseAgent] = [
-            self.factory.create_or_reuse(self.souls.get(key), effort=self.config.llm.effort)  # type: ignore[arg-type]
-            for key in self.known_souls()
-        ]
         from datetime import datetime
+
+        from google.adk.agents import LlmAgent
 
         # Time-aware prompt (god PR #26): scheduled turns ("what day is it") and
         # cron-tool date math need the model to know now. Built per root-agent build;
@@ -148,15 +144,24 @@ class Gaia:
             f"Current date and time: {now}.\n"
             "You are Gaia, a personal assistant. Answer simple questions yourself, using your "
             "own tools when one fits rather than guessing. Delegate real work to specialist "
-            "souls.\n\n"
+            "souls.\n"
+            "Before running shell commands, serving, or writing files when unsure what's allowed, "
+            "call capabilities() — it lists the allowed exec commands (one command, no &&/|/;), "
+            "your workspace path, and the serve/fs rules, so you don't error into the sandbox.\n\n"
             "## Delegating work\n"
             "- A single quick build ONE specialist can do in one shot (a poem, a tiny script, a "
             "page): call delegate_to_soul(task). It finds or forges the soul, runs it, and returns "
             "the workspace + files. Tell the user which soul handled it (say so when 'created' is "
             "true).\n"
-            "- To CHANGE or extend a soul's project (dark mode, add a page): call delegate_to_soul "
-            "again with the SAME project slug. Never write into a soul's workspace yourself "
-            "(reading it via fs_read to verify or summarize is fine).\n"
+            "- delegate_to_soul runs the soul to completion in ONE call. When it returns "
+            "status=success the work is DONE — deliver the result to the user and STOP. Do NOT "
+            "call delegate_to_soul (or task_create) again for that same task. If it returns "
+            "status=error, tell the user what failed (the error message) — do not silently retry "
+            "or improvise a different tool.\n"
+            "- To CHANGE or extend a soul's project (dark mode, add a page) — and ONLY when the "
+            "user asks for it: call delegate_to_soul again with the SAME project slug. Never "
+            "write into a soul's workspace yourself (reading it via fs_read to verify or summarize "
+            "is fine).\n"
             "- A MULTI-STEP or MULTI-ROLE mission, especially when one step needs another's output "
             "(a trainer writes the program, then a designer builds the site from it): call "
             "task_plan with the whole plan as JSON (refs + depends_on). It tracks each step, runs "
@@ -252,5 +257,4 @@ class Gaia:
                 *self.container.mcp_toolsets(),
                 *self.container.skill_toolsets(),
             ],
-            sub_agents=sub_agents,
         )

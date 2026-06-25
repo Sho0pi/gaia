@@ -42,7 +42,9 @@ def test_gaia_reuses_stored_agent_across_instances(tmp_path: Path) -> None:
     assert "translator" in Gaia(settings).known_souls()
 
 
-def test_build_root_agent_attaches_subagents(tmp_path: Path) -> None:
+def test_build_root_agent_is_delegate_only(tmp_path: Path) -> None:
+    # Delegate-only: souls are reached via the delegate_to_soul tool (sandboxed nested runner),
+    # NOT ADK sub_agents/transfer. The root must carry no sub_agents (the dual path is gone).
     settings = Settings(agent_registry_dir=tmp_path)
     gaia = Gaia(settings)
     gaia.ensure_agent(_spec("Calc", settings.model))
@@ -50,7 +52,9 @@ def test_build_root_agent_attaches_subagents(tmp_path: Path) -> None:
     root = gaia.build_root_agent()
 
     assert root.name == "gaia"
-    assert len(root.sub_agents) == 1
+    assert not root.sub_agents  # no transfer_to_agent path
+    tool_names = {getattr(t, "name", "") for t in root.tools}
+    assert "delegate_to_soul" in tool_names  # the single delegation path is the tool
 
 
 async def test_delegated_soul_asks_the_user_then_resumes(

@@ -249,6 +249,9 @@ class GaiaHandler:
 
         # Soul finished: unpin its session and resume the ROOT delegate call with the result.
         self._gaia.soul_sessions.unpin(pending.soul.warm_key)
+        # Deliver the soul's media here — it rides in soul_result as tool INPUT below, so the
+        # screenshot bridge (which scans tool responses) can't see it. (#268 fast-follow)
+        await self._emit_media(run.media, send)
         content = types.Content(
             role="user",
             parts=[
@@ -284,6 +287,8 @@ class GaiaHandler:
         turn_events: list[Any] = []
         texts: list[str] = []
         ask_call: Any | None = None
+        preface_done = False  # streamed the model's text before a long delegate ran (once)
+        responded_ids: set[str] = set()  # long-running call ids that got a response (= completed)
         # A paused delegate_to_soul appends its SoulPending here (the tool can't return it — it
         # returns None to pause). A fresh list per turn; read after the loop.
         sink: list[SoulPending] = []
@@ -296,7 +301,25 @@ class GaiaHandler:
                 yield_user_message=yield_user_message,
             ):
                 turn_events.append(event)
+                get_responses = getattr(event, "get_function_responses", None)
+                if get_responses is not None:
+                    for resp in get_responses() or []:
+                        rid = getattr(resp, "id", None)
+                        if rid:
+                            responded_ids.add(rid)  # this long-running call completed, not paused
                 call = self._paused_call(event)
+                # Stream the preface before a (long-running) delegate runs: send what the model
+                # said leading up to the call so the user isn't left in silence while the soul
+                # works. Consumes that text (cleared) so the final reply doesn't resend it.
+                if not preface_done and self._calls_delegate(event):
+                    preface = [*texts, *self._event_texts(event)]
+                    if any(t.strip() for t in preface):
+                        await self._emit_texts(preface, send)
+                    texts = []
+                    preface_done = True
+                    if call is not None:  # a delegate that paused: still record the pause
+                        ask_call = call
+                    continue
                 if call is not None:
                     # The run paused on ask_user. Record it but DON'T break the loop: a
                     # long-running tool emits no function-response, so run_async ends on its
@@ -325,6 +348,12 @@ class GaiaHandler:
             return
         finally:
             soul_elicitation_sink.reset(token)
+
+        # ADK flags long_running_tool_ids on a call even when the tool COMPLETES in the same turn,
+        # so a finished delegate looks paused. It's only truly paused if it got no response this
+        # turn — otherwise fall through to the normal reply (which delivers its result + media).
+        if ask_call is not None and ask_call.id in responded_ids:
+            ask_call = None
 
         if ask_call is not None:
             # Paused: stream any preface text, then surface the question.
@@ -364,11 +393,39 @@ class GaiaHandler:
         return None
 
     @staticmethod
+    def _calls_delegate(event: Any) -> bool:
+        """True if ``event`` carries a ``delegate_to_soul`` function-call (about to run a soul)."""
+        if not (event.content and event.content.parts):
+            return False
+        return any(
+            getattr(part, "function_call", None) is not None
+            and part.function_call.name == DELEGATE_TOOL
+            for part in event.content.parts
+        )
+
+    @staticmethod
     def _event_texts(event: Any) -> list[str]:
         """The non-empty text parts of an event's content (model speech), in order."""
         if not (event.content and event.content.parts):
             return []
         return [part.text for part in event.content.parts if part.text]
+
+    async def _emit_media(self, paths: list[str], send: Send) -> None:
+        """Send each soul-produced media path to the user once.
+
+        Used by the resume path: a soul that finished after an ask_user pause returns its media in
+        ``soul_result``, which is fed back as tool *input* — so the screenshot bridge
+        (:func:`media_for_outputs`, which scans emitted tool *responses*) never sees it.
+        """
+        from pathlib import Path
+
+        from gaia.connectors.base import Media, media_kind
+
+        for raw in paths:
+            path = Path(raw)
+            kind = media_kind(path)
+            log_event("media_out", user=self._user_id, tool=kind, chars=0)
+            await send(Media(path, kind=kind))
 
     async def _emit_texts(self, texts: list[str], send: Send) -> None:
         """Send each non-empty text as its own reply (used for an ask_user preface)."""
