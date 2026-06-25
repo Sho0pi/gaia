@@ -214,6 +214,27 @@ class AnalysisConfig(BaseModel):
     )
 
 
+class MonitorConfig(BaseModel):
+    """The self-monitoring loop: gaia mines its own error logs and reports problems."""
+
+    enabled: bool = Field(
+        default=False,
+        description="Run the self-monitoring loop in the daemon — periodically read the error "
+        "logs, judge what's a real problem, and report it. Off by default (opt-in).",
+    )
+    interval_hours: float = Field(
+        default=24.0,
+        description="How often the monitor cycle runs (hours). Also the per-signature report "
+        "cooldown (the same error is reported at most once per cycle).",
+    )
+    window_hours: int = Field(
+        default=24, description="How many hours of error logs each cycle analyzes."
+    )
+    notify: bool = Field(
+        default=True, description="DM the admin about new findings (turn off for issues-only)."
+    )
+
+
 class MissionsConfig(BaseModel):
     """The missions task board engine (the dispatcher inside the daemon)."""
 
@@ -531,6 +552,7 @@ class GaiaConfig(BaseModel):
     cron: CronConfig = Field(default_factory=CronConfig)
     missions: MissionsConfig = Field(default_factory=MissionsConfig)
     analysis: AnalysisConfig = Field(default_factory=AnalysisConfig)
+    monitor: MonitorConfig = Field(default_factory=MonitorConfig)
     voice: VoiceConfig = Field(default_factory=VoiceConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     default_communication_style: str = Field(

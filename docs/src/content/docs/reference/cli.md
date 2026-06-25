@@ -313,6 +313,22 @@ List what gaia remembers about a user long-term.
 gaia memory list <user>
 ```
 
+## `gaia monitor`
+
+Run gaia's self-monitoring (error-log triage).
+
+### `gaia monitor run`
+
+Run one monitor cycle now. Default reports new findings (DM admin); ``--dry-run`` previews.
+
+```
+gaia monitor run [options]
+```
+
+| Option | Description |
+|---|---|
+| `--dry-run` | Analyze and print findings without reporting. |
+
 ## `gaia msg`
 
 Send one message through the multi-user dispatcher and print the reply.
