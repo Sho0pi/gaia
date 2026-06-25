@@ -100,6 +100,7 @@ def _build_redactor(settings: Settings) -> Redactor:
             settings.whatsapp_token,
             settings.google_api_key,
             settings.openai_api_key,
+            settings.github_token,
         )
         if v
     ]

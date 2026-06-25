@@ -85,6 +85,49 @@ async def test_healthy_window_reports_nothing(monkeypatch: pytest.MonkeyPatch) -
     assert await mloop.run_cycle(_gaia()) == []
 
 
+def _gh_gaia(token: str | None) -> Any:
+    from gaia.config.schema import MonitorGithubConfig
+
+    github = MonitorGithubConfig(create_issues=True, repo="o/r", label="L")
+    return SimpleNamespace(
+        config=SimpleNamespace(monitor=SimpleNamespace(github=github)),
+        settings=SimpleNamespace(github_token=token),
+    )
+
+
+async def test_file_issues_skips_without_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    called = False
+
+    async def fake_file_issue(*_a: Any, **_k: Any) -> str:
+        nonlocal called
+        called = True
+        return "url"
+
+    monkeypatch.setattr("gaia.monitor.github.file_issue", fake_file_issue)
+    await mloop._file_issues(
+        _gh_gaia(token=None), [Finding(title="b", action="file_issue", signature="s")]
+    )
+    assert called is False  # create_issues on but no token -> skipped, never crashes
+
+
+async def test_file_issues_files_only_file_issue_findings(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[str, str]] = []
+
+    async def fake_file_issue(repo: str, token: str, **_k: Any) -> str:
+        calls.append((repo, token))
+        return "https://x/issues/1"
+
+    monkeypatch.setattr("gaia.monitor.github.file_issue", fake_file_issue)
+    await mloop._file_issues(
+        _gh_gaia(token="tok"),
+        [
+            Finding(title="b", action="file_issue", signature="s"),
+            Finding(title="n", action="notify"),
+        ],
+    )
+    assert calls == [("o/r", "tok")]  # only the file_issue finding, with repo + token
+
+
 async def test_notify_off_still_returns_findings(monkeypatch: pytest.MonkeyPatch) -> None:
     report = _report(Finding(title="bug", signature="V @ h:2", action="notify", summary=""))
 

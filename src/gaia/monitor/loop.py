@@ -7,6 +7,7 @@ Best-effort throughout — a quiet window just does nothing.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -15,6 +16,8 @@ from gaia.logs import log_error, log_event
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from gaia.core.agent import Gaia
     from gaia.monitor.analyst import Finding, HealthReport
+
+logger = logging.getLogger(__name__)
 
 
 async def analyze(gaia: Gaia) -> HealthReport | None:
@@ -52,6 +55,7 @@ async def run_cycle(gaia: Gaia) -> list[Finding]:
         return []
     if gaia.config.monitor.notify:
         await _notify_admin(gaia, report.summary, new)
+    await _file_issues(gaia, new)
     log_event("monitor_reported", count=len(new), summary=report.summary[:200])
     return new
 
@@ -85,6 +89,33 @@ async def _run_analyst(gaia: Gaia, digest_text: str) -> HealthReport:
     finally:
         await runner.close()  # type: ignore[no-untyped-call]
     return HealthReport.model_validate_json("".join(parts))
+
+
+async def _file_issues(gaia: Gaia, findings: list[Finding]) -> None:
+    """File a GitHub issue per file_issue finding (deduped against GitHub). Opt-in + best-effort."""
+    gh = gaia.config.monitor.github
+    to_file = [f for f in findings if f.action == "file_issue"]
+    if not (gh.create_issues and to_file):
+        return
+    token = gaia.settings.github_token
+    if not token or not gh.repo:
+        logger.warning("monitor: create_issues on but GITHUB_TOKEN/repo missing — skipping issues")
+        return
+    from gaia.monitor.github import file_issue
+
+    for f in to_file:
+        try:
+            url = await file_issue(
+                gh.repo,
+                token,
+                signature=f.signature or f.title,
+                title=f.title or f.signature,
+                body=f.issue_body or f.summary,
+                label=gh.label,
+            )
+            log_event("monitor_issue", signature=f.signature, url=url)
+        except Exception as exc:
+            log_error("monitor_github", exc)
 
 
 async def _notify_admin(gaia: Gaia, summary: str, findings: list[Finding]) -> None:

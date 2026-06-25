@@ -214,6 +214,22 @@ class AnalysisConfig(BaseModel):
     )
 
 
+class MonitorGithubConfig(BaseModel):
+    """File GitHub issues for monitor findings (needs a GITHUB_TOKEN; off by default)."""
+
+    create_issues: bool = Field(
+        default=False,
+        description="File a GitHub issue for file_issue findings. Needs GITHUB_TOKEN; falls back "
+        "to notify-only if the token is missing.",
+    )
+    repo: str = Field(
+        default="", description="Target repo 'owner/name' (e.g. 'Sho0pi/gaia'). Required to file."
+    )
+    label: str = Field(
+        default="gaia-monitor", description="Label put on filed issues (also used to find dupes)."
+    )
+
+
 class MonitorConfig(BaseModel):
     """The self-monitoring loop: gaia mines its own error logs and reports problems."""
 
@@ -233,6 +249,7 @@ class MonitorConfig(BaseModel):
     notify: bool = Field(
         default=True, description="DM the admin about new findings (turn off for issues-only)."
     )
+    github: MonitorGithubConfig = Field(default_factory=MonitorGithubConfig)
 
 
 class MissionsConfig(BaseModel):

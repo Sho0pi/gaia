@@ -145,6 +145,13 @@ monitor:
   window_hours: 24
   # DM the admin about new findings (turn off for issues-only).
   notify: true
+  github:
+    # File a GitHub issue for file_issue findings. Needs GITHUB_TOKEN; falls back to notify-only if the token is missing.
+    create_issues: false
+    # Target repo 'owner/name' (e.g. 'Sho0pi/gaia'). Required to file.
+    repo: ""
+    # Label put on filed issues (also used to find dupes).
+    label: gaia-monitor
 voice:
   # Transcribe inbound voice messages and answer them like text (needs the 'voice' dep group; ignored when faster-whisper isn't installed).
   enabled: true
