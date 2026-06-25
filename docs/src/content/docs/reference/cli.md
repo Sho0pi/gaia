@@ -367,6 +367,23 @@ gaia serve [options]
 |---|---|
 | `--hold` | Keep running with zero connectors (testing / service debugging). |
 
+## `gaia setup`
+
+Configure gaia: model, connectors, search, tools.
+
+### `gaia setup search`
+
+Set the web-search engine: 'duckduckgo' (no key) or 'brave' (needs an API key).
+
+```
+gaia setup search [options]
+```
+
+| Option | Description |
+|---|---|
+| `--engine` | Search engine: duckduckgo | brave. |
+| `--api-key` | API key for the engine (brave). |
+
 ## `gaia skill`
 
 List, author, install, and manage skills.
