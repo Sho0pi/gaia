@@ -28,6 +28,28 @@ def _gaia(notify: bool = True) -> Any:
     return SimpleNamespace(config=SimpleNamespace(monitor=MonitorConfig(notify=notify)))
 
 
+async def test_analyze_skips_on_invalid_model_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Weak models sometimes return malformed JSON — analyze must skip, not crash or log_error.
+    from datetime import datetime
+
+    g = SimpleNamespace(
+        config=SimpleNamespace(monitor=MonitorConfig()),
+        settings=SimpleNamespace(log_dir="/x"),
+    )
+    monkeypatch.setattr(
+        "gaia.analysis.events.read_events",
+        lambda *_a, **_k: [
+            {"message": "turn_error", "error": "X", "where": "h:1", "_ts": datetime.now()}
+        ],
+    )
+
+    async def boom(*_a: Any, **_k: Any) -> Any:
+        HealthReport.model_validate_json("{")  # raises ValidationError (truncated JSON)
+
+    monkeypatch.setattr(mloop, "_run_analyst", boom)
+    assert await mloop.analyze(g) is None  # graceful skip
+
+
 def _report(*findings: Finding) -> HealthReport:
     return HealthReport(summary="window summary", findings=list(findings))
 

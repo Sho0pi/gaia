@@ -13,6 +13,8 @@ import logging
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
+from pydantic import ValidationError
+
 from gaia.logs import log_error, log_event
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -34,6 +36,11 @@ async def analyze(gaia: Gaia) -> tuple[AnalysisReport | None, str | None]:
     digest = digest_events(events)
     try:
         report = await _run_analyst(gaia, render_digest(digest))
+    except ValidationError:
+        # Model returned unparseable/off-schema output — expected flakiness on weaker models, not a
+        # code bug. Skip quietly (no error event) instead of dumping a traceback every cycle.
+        logger.warning("improve: analyst returned invalid output — skipping this cycle")
+        return None, None
     except Exception as exc:
         log_error("improve_loop", exc)  # traceback -> system.log + structured event -> events.jsonl
         return None, None
