@@ -30,25 +30,37 @@ async def file_issue(
 
     marker = _marker(signature)
     async with httpx.AsyncClient(timeout=20) as client:
-        # Dedup: find an open labelled issue carrying this marker.
+        # Dedup against BOTH open and closed issues: never open a duplicate of one already filed.
+        # An OPEN match gets a "seen again" comment; a CLOSED one is REOPENED (the bug recurred
+        # after it was triaged) — so a fixed error isn't silently re-filed as a new issue.
         resp = await client.get(
             f"{_API}/repos/{repo}/issues",
             headers=_headers(token),
-            params={"state": "open", "labels": label, "per_page": 100},
+            params={"state": "all", "labels": label, "per_page": 100},
         )
         resp.raise_for_status()
         for issue in resp.json():
             if "pull_request" in issue:  # the issues endpoint also returns PRs
                 continue
-            if marker in (issue.get("body") or ""):
-                num = issue["number"]
-                comment = await client.post(
-                    f"{_API}/repos/{repo}/issues/{num}/comments",
+            if marker not in (issue.get("body") or ""):
+                continue
+            num = issue["number"]
+            if issue.get("state") == "closed":
+                await client.patch(
+                    f"{_API}/repos/{repo}/issues/{num}",
                     headers=_headers(token),
-                    json={"body": f"Seen again by the monitor.\n\n{marker}"},
+                    json={"state": "open"},
                 )
-                comment.raise_for_status()
-                return str(issue["html_url"])
+                note = "Recurred after this was closed — reopening."
+            else:
+                note = "Seen again by the monitor."
+            comment = await client.post(
+                f"{_API}/repos/{repo}/issues/{num}/comments",
+                headers=_headers(token),
+                json={"body": f"{note}\n\n{marker}"},
+            )
+            comment.raise_for_status()
+            return str(issue["html_url"])
         # None found -> open a new one (marker embedded for future dedup).
         created = await client.post(
             f"{_API}/repos/{repo}/issues",

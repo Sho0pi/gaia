@@ -68,3 +68,36 @@ async def test_comments_when_signature_already_open(monkeypatch: pytest.MonkeyPa
     )
     assert url.endswith("/issues/7")  # the existing issue, not a new one
     assert seen["path"] == "/repos/o/r/issues/7/comments"  # commented instead of duplicating
+
+
+async def test_reopens_closed_issue_on_recurrence(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A signature whose issue was CLOSED (triaged/fixed) but recurred: reopen + comment, don't dupe.
+    marker = github._marker("KeyError @ h.py:1")
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "number": 9,
+                        "state": "closed",
+                        "html_url": "https://github.com/o/r/issues/9",
+                        "body": f"old\n{marker}",
+                    }
+                ],
+            )
+        if request.method == "PATCH":
+            seen["reopened"] = request.url.path
+            return httpx.Response(200, json={})
+        seen["commented"] = request.url.path
+        return httpx.Response(201, json={})
+
+    _patch_client(monkeypatch, handler)
+    url = await github.file_issue(
+        "o/r", "tok", signature="KeyError @ h.py:1", title="bug", body="b", label="gaia-monitor"
+    )
+    assert url.endswith("/issues/9")  # the existing (reopened) issue, not a new one
+    assert seen.get("reopened") == "/repos/o/r/issues/9"  # PATCH state=open
+    assert seen.get("commented") == "/repos/o/r/issues/9/comments"

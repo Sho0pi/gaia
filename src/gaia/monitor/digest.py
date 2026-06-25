@@ -47,12 +47,18 @@ class ErrorDigest(BaseModel):
 
 
 def _error_rows(events: list[dict[str, Any]]) -> Iterator[tuple[dict[str, Any], str, str]]:
-    """Yield ``(event, error_type, location)`` for each error-bearing event."""
+    """Yield ``(event, error_type, location)`` for each error-bearing event.
+
+    The monitor's OWN failures (``source`` = ``monitor_*``) are skipped — it must not report on or
+    file issues about itself (a meta-loop; e.g. a flaky analyst JSON parse), only the rest of gaia.
+    """
     for event in events:
         action = event.get("message")
         if action == "turn_error":
             yield event, str(event.get("error", "?")), str(event.get("where") or "?")
         elif action == "error":
+            if str(event.get("source") or "").startswith("monitor"):
+                continue  # don't report the monitor's own loop/scheduler errors
             yield (
                 event,
                 str(event.get("error", "?")),
