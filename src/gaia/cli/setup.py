@@ -151,20 +151,44 @@ OAuthOpt = Annotated[
 ]
 
 
-def _pick_model(provider: str, model_id: str | None) -> str | None:
-    """The chosen model id: the flag, else a picker over curated ids (+ an 'Other…' free-text)."""
+def _badge(*, configured: bool, current: bool) -> str:
+    """A picker status badge: 'configured' (key/session present) and/or 'current' (active)."""
+    return " · ".join(
+        p for p in ("configured" if configured else "", "current" if current else "") if p
+    )
+
+
+def _provider_configured(provider: str, settings: object, env_path: object) -> bool:
+    from gaia.cli._envfile import get_env_var
+    from gaia.providers.openai.store import credentials_path
+
+    if provider == "openai":
+        has_key = bool(get_env_var(env_path, "OPENAI_API_KEY") or settings.openai_api_key)  # type: ignore[attr-defined,arg-type]
+        return has_key or credentials_path().exists()
+    return bool(get_env_var(env_path, "GEMINI_API_KEY") or settings.google_api_key)  # type: ignore[attr-defined,arg-type]
+
+
+def _pick_model(
+    provider: str, model_id: str | None, *, api_key: str | None, use_oauth: bool, current: str
+) -> tuple[str | None, bool]:
+    """Return (chosen model id, fell_back_to_curated). Flag path skips the fetch."""
+    from gaia.cli._models import available_models
     from gaia.cli._select import select_one
 
     chosen = (model_id or "").strip()
     if chosen:
-        return chosen
-    options = [(m, m, "") for m in _MODELS[provider]] + [
-        ("__custom__", "Other…", "type a model id")
+        return chosen, False
+    fetched = available_models(provider, api_key=api_key, use_oauth=use_oauth)
+    models = fetched or _MODELS[provider]
+    options: list[tuple[str, ...]] = [
+        (m, m, "", _badge(configured=False, current=m == current)) for m in models
     ]
-    picked = select_one("Model", options, default=_MODELS[provider][0])
+    options.append(("__custom__", "Other…", "type a model id", ""))
+    picked = select_one("Model", options, default=current if current in models else models[0])
     if picked is None:
-        return None
-    return typer.prompt("Model id").strip() if picked == "__custom__" else picked
+        return None, not fetched
+    model = typer.prompt("Model id").strip() if picked == "__custom__" else picked
+    return model, not fetched
 
 
 @app.command()
@@ -184,25 +208,42 @@ def model(
     from gaia.cli._envfile import get_env_var
     from gaia.cli._select import select_one
     from gaia.cli._yamledit import set_config_value
-    from gaia.config import get_settings
+    from gaia.config import ConfigSupplier, get_settings
     from gaia.providers.openai.store import credentials_path
 
     out = console()
     settings = get_settings(state(ctx).env_file)
     env_path = state(ctx).env_file or constants.ENV_FILE  # honor --env-file for secret writes
     cfg = settings.config_path
+    live = ConfigSupplier(cfg).current.llm  # for the "current" markers
 
-    # 1. provider
+    # 1. provider (✓ configured + current badges)
     prov = (provider or "").strip().lower()
     if not prov:
         prov = (
             select_one(
                 "Model provider",
                 [
-                    ("openai", "OpenAI", "API key or Sign in with ChatGPT"),
-                    ("gemini", "Google Gemini", "API key"),
+                    (
+                        "openai",
+                        "OpenAI",
+                        "API key or Sign in with ChatGPT",
+                        _badge(
+                            configured=_provider_configured("openai", settings, env_path),
+                            current=live.provider == "openai",
+                        ),
+                    ),
+                    (
+                        "gemini",
+                        "Google Gemini",
+                        "API key",
+                        _badge(
+                            configured=_provider_configured("gemini", settings, env_path),
+                            current=live.provider == "gemini",
+                        ),
+                    ),
                 ],
-                default="openai",
+                default=live.provider if live.provider in _MODELS else "openai",
             )
             or ""
         )
@@ -212,6 +253,7 @@ def model(
 
     # 2. authenticate — OpenAI supports key OR ChatGPT oauth; Gemini is key-only
     use_oauth = False
+    key: str | None = None
     if prov == "openai":
         method = "oauth" if oauth else ("key" if api_key else "")
         if not method:
@@ -219,8 +261,24 @@ def model(
                 select_one(
                     "Authentication",
                     [
-                        ("oauth", "Sign in with ChatGPT", "subscription — no API key"),
-                        ("key", "API key", "OPENAI_API_KEY"),
+                        (
+                            "oauth",
+                            "Sign in with ChatGPT",
+                            "subscription — no API key",
+                            _badge(configured=credentials_path().exists(), current=False),
+                        ),
+                        (
+                            "key",
+                            "API key",
+                            "OPENAI_API_KEY",
+                            _badge(
+                                configured=bool(
+                                    get_env_var(env_path, "OPENAI_API_KEY")
+                                    or settings.openai_api_key
+                                ),
+                                current=False,
+                            ),
+                        ),
                     ],
                     default="oauth",
                 )
@@ -238,24 +296,28 @@ def model(
                 run_auth("openai", env_file=state(ctx).env_file)  # device-code login
         else:
             existing = get_env_var(env_path, "OPENAI_API_KEY") or settings.openai_api_key
-            _save_key(
+            key = _save_key(
                 env_path, "OPENAI_API_KEY", existing=existing, flag=api_key, label="OpenAI API key"
             )
     else:  # gemini
         existing = get_env_var(env_path, "GEMINI_API_KEY") or settings.google_api_key
-        _save_key(
+        key = _save_key(
             env_path, "GEMINI_API_KEY", existing=existing, flag=api_key, label="Gemini API key"
         )
 
     set_config_value(cfg, "llm.provider", prov)
     set_config_value(cfg, "llm.openai.use_oauth", use_oauth)
 
-    # 3. specific model
-    chosen = _pick_model(prov, model_id)
+    # 3. specific model (fetched live from the provider API; curated fallback)
+    chosen, fell_back = _pick_model(
+        prov, model_id, api_key=key, use_oauth=use_oauth, current=live.model
+    )
     if chosen is None:
         out.print("[yellow]cancelled[/]")
         raise typer.Exit(1)
     set_config_value(cfg, "llm.model", chosen)
+    if fell_back and not (model_id or "").strip():
+        out.print("[dim](couldn't fetch live models — showed the built-in defaults)[/]")
     out.print(f"[bold]{prov}[/] configured — model [bold]{chosen}[/] (hot-reloaded).")
 
 
