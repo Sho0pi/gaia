@@ -136,3 +136,19 @@ def test_run_auth_does_not_build_gaia(monkeypatch: pytest.MonkeyPatch, tmp_path:
     app.run_auth("openai")  # must not raise (Gaia._boom never called)
 
     assert saved.get("ok") is True
+
+
+def test_run_dev_scaffolds_the_commented_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A fresh home gets the documented gaia.yaml even when `gaia dev` is the first command (#55).
+    cfg = tmp_path / "gaia.yaml"
+    monkeypatch.setattr(
+        app, "Gaia", lambda settings: SimpleNamespace(config=SimpleNamespace(logging=None))
+    )
+    monkeypatch.setattr(app, "setup_logging", lambda *a, **k: None)
+    monkeypatch.setattr("gaia.dev.serve_dev", lambda *a, **k: None)
+
+    assert not cfg.exists()
+    app.run_dev(Settings(config_path=cfg, log_dir=tmp_path / "logs"))
+    assert cfg.exists() and "# " in cfg.read_text()  # the commented scaffold landed
