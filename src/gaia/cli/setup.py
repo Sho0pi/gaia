@@ -60,7 +60,7 @@ EngineOpt = Annotated[
 ]
 ApiKeyOpt = Annotated[str | None, typer.Option("--api-key", help="API key (non-interactive).")]
 ProviderOpt = Annotated[
-    str | None, typer.Option("--provider", help="Model provider: chatgpt | gemini | openai.")
+    str | None, typer.Option("--provider", help="Model provider: openai | gemini.")
 ]
 ModelOpt = Annotated[
     str | None, typer.Option("--model", help="Model id (e.g. gpt-4o, gemini-2.5-flash).")
@@ -140,78 +140,123 @@ def search(ctx: typer.Context, engine: EngineOpt = None, api_key: ApiKeyOpt = No
     out.print(f"web_search engine set to [bold]{eng}[/] — a running daemon hot-reloads it.")
 
 
+#: Curated model ids per provider for the picker ("Other…" lets you type any id).
+_MODELS = {
+    "openai": ["gpt-5.5", "gpt-5.4-mini", "gpt-4o", "gpt-4o-mini"],
+    "gemini": ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"],
+}
+
+OAuthOpt = Annotated[
+    bool, typer.Option("--oauth/--no-oauth", help="OpenAI: Sign in with ChatGPT (not an API key).")
+]
+
+
+def _pick_model(provider: str, model_id: str | None) -> str | None:
+    """The chosen model id: the flag, else a picker over curated ids (+ an 'Other…' free-text)."""
+    from gaia.cli._select import select_one
+
+    chosen = (model_id or "").strip()
+    if chosen:
+        return chosen
+    options = [(m, m, "") for m in _MODELS[provider]] + [
+        ("__custom__", "Other…", "type a model id")
+    ]
+    picked = select_one("Model", options, default=_MODELS[provider][0])
+    if picked is None:
+        return None
+    return typer.prompt("Model id").strip() if picked == "__custom__" else picked
+
+
 @app.command()
 def model(
     ctx: typer.Context,
     provider: ProviderOpt = None,
+    oauth: OAuthOpt = False,
     api_key: ApiKeyOpt = None,
     model_id: ModelOpt = None,
 ) -> None:
-    """Configure the LLM: Sign in with ChatGPT, or a Gemini / OpenAI API key.
+    """Configure the LLM: pick a provider, authenticate (API key or ChatGPT sign-in), pick a model.
 
-    Scriptable: `gaia setup model --provider gemini --api-key <key> --model gemini-2.5-flash`.
+    Scriptable: `gaia setup model --provider gemini --api-key <key> --model gemini-2.5-flash`, or
+    `gaia setup model --provider openai --oauth --model gpt-5.5`.
     """
     from gaia import constants
     from gaia.cli._envfile import get_env_var
     from gaia.cli._select import select_one
     from gaia.cli._yamledit import set_config_value
     from gaia.config import get_settings
+    from gaia.providers.openai.store import credentials_path
 
     out = console()
     settings = get_settings(state(ctx).env_file)
     env_path = state(ctx).env_file or constants.ENV_FILE  # honor --env-file for secret writes
     cfg = settings.config_path
 
-    choice = (provider or "").strip().lower()
-    if not choice:
-        choice = (
+    # 1. provider
+    prov = (provider or "").strip().lower()
+    if not prov:
+        prov = (
             select_one(
                 "Model provider",
                 [
-                    ("chatgpt", "Sign in with ChatGPT", "subscription — no API key"),
-                    ("gemini", "Google Gemini", "GEMINI_API_KEY"),
-                    ("openai", "OpenAI", "OPENAI_API_KEY"),
+                    ("openai", "OpenAI", "API key or Sign in with ChatGPT"),
+                    ("gemini", "Google Gemini", "API key"),
                 ],
-                default="chatgpt",
+                default="openai",
             )
             or ""
         )
+    if prov not in _MODELS:
+        out.print(f"[red]unknown provider {prov!r}; use openai | gemini[/]")
+        raise typer.Exit(1)
 
-    if choice == "chatgpt":
-        from gaia.app import run_auth
+    # 2. authenticate — OpenAI supports key OR ChatGPT oauth; Gemini is key-only
+    use_oauth = False
+    if prov == "openai":
+        method = "oauth" if oauth else ("key" if api_key else "")
+        if not method:
+            method = (
+                select_one(
+                    "Authentication",
+                    [
+                        ("oauth", "Sign in with ChatGPT", "subscription — no API key"),
+                        ("key", "API key", "OPENAI_API_KEY"),
+                    ],
+                    default="oauth",
+                )
+                or "oauth"
+            )
+        if method == "oauth":
+            use_oauth = True
+            if credentials_path().exists() and not typer.confirm(
+                "ChatGPT session already configured — sign in again?", default=False
+            ):
+                out.print("kept the existing ChatGPT session")
+            else:
+                from gaia.app import run_auth
 
-        run_auth("openai", env_file=state(ctx).env_file)  # device-code login, writes the token
-        set_config_value(cfg, "llm.provider", "openai")
-        set_config_value(cfg, "llm.openai.use_oauth", True)
-        chosen = (model_id or "gpt-5.4-mini").strip()
-        set_config_value(cfg, "llm.model", chosen)
-        out.print(f"signed in with ChatGPT — model [bold]{chosen}[/]")
-    elif choice == "gemini":
+                run_auth("openai", env_file=state(ctx).env_file)  # device-code login
+        else:
+            existing = get_env_var(env_path, "OPENAI_API_KEY") or settings.openai_api_key
+            _save_key(
+                env_path, "OPENAI_API_KEY", existing=existing, flag=api_key, label="OpenAI API key"
+            )
+    else:  # gemini
         existing = get_env_var(env_path, "GEMINI_API_KEY") or settings.google_api_key
         _save_key(
             env_path, "GEMINI_API_KEY", existing=existing, flag=api_key, label="Gemini API key"
         )
-        set_config_value(cfg, "llm.provider", "gemini")
-        set_config_value(cfg, "llm.openai.use_oauth", False)
-        chosen = (model_id or "").strip() or typer.prompt(
-            "Model", default="gemini-2.5-flash"
-        ).strip()
-        set_config_value(cfg, "llm.model", chosen)
-        out.print(f"Gemini configured — model [bold]{chosen}[/]")
-    elif choice == "openai":
-        existing = get_env_var(env_path, "OPENAI_API_KEY") or settings.openai_api_key
-        _save_key(
-            env_path, "OPENAI_API_KEY", existing=existing, flag=api_key, label="OpenAI API key"
-        )
-        set_config_value(cfg, "llm.provider", "openai")
-        set_config_value(cfg, "llm.openai.use_oauth", False)
-        chosen = (model_id or "").strip() or typer.prompt("Model", default="gpt-4o").strip()
-        set_config_value(cfg, "llm.model", chosen)
-        out.print(f"OpenAI configured — model [bold]{chosen}[/]")
-    else:
-        out.print(f"[red]unknown provider {choice!r}; use chatgpt | gemini | openai[/]")
+
+    set_config_value(cfg, "llm.provider", prov)
+    set_config_value(cfg, "llm.openai.use_oauth", use_oauth)
+
+    # 3. specific model
+    chosen = _pick_model(prov, model_id)
+    if chosen is None:
+        out.print("[yellow]cancelled[/]")
         raise typer.Exit(1)
-    out.print("hot-reloaded — a running daemon picks it up next turn.")
+    set_config_value(cfg, "llm.model", chosen)
+    out.print(f"[bold]{prov}[/] configured — model [bold]{chosen}[/] (hot-reloaded).")
 
 
 @app.command()

@@ -103,12 +103,14 @@ def test_model_gemini_flag_path(tmp_path: Path) -> None:
     assert get_env_var(constants.ENV_FILE, "GEMINI_API_KEY") == "gk"
 
 
-def test_model_chatgpt_sets_oauth(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+def test_model_openai_oauth_flag(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     import gaia.app
     from gaia import constants
 
     monkeypatch.setattr(gaia.app, "run_auth", lambda *a, **k: None)  # skip the device flow
-    result = runner.invoke(app, ["setup", "model", "--provider", "chatgpt", "--model", "gpt-5.5"])
+    result = runner.invoke(
+        app, ["setup", "model", "--provider", "openai", "--oauth", "--model", "gpt-5.5"]
+    )
     assert result.exit_code == 0, result.output
     llm = _llm(constants.CONFIG_PATH)
     assert (
@@ -116,6 +118,46 @@ def test_model_chatgpt_sets_oauth(monkeypatch) -> None:  # type: ignore[no-untyp
         and llm["provider"] == "openai"
         and llm["model"] == "gpt-5.5"
     )
+
+
+def test_model_openai_key_flag(tmp_path: Path) -> None:
+    # OpenAI via API key (same provider, different auth) — no oauth.
+    from gaia import constants
+
+    result = runner.invoke(
+        app, ["setup", "model", "--provider", "openai", "--api-key", "ok", "--model", "gpt-4o"]
+    )
+    assert result.exit_code == 0, result.output
+    llm = _llm(constants.CONFIG_PATH)
+    assert llm["provider"] == "openai" and llm["openai"]["use_oauth"] is False
+    assert get_env_var(constants.ENV_FILE, "OPENAI_API_KEY") == "ok"
+
+
+def test_model_oauth_kept_when_session_exists(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    # Already-configured oauth session + decline override -> run_auth NOT called, oauth kept.
+    import typer
+
+    import gaia.app
+    from gaia.providers.openai import store
+
+    monkeypatch.setattr(store, "credentials_path", lambda: _ExistingPath())  # session "exists"
+    called = {"auth": False}
+
+    def fake_auth(*a, **k):  # type: ignore[no-untyped-def]
+        called["auth"] = True
+
+    monkeypatch.setattr(gaia.app, "run_auth", fake_auth)
+    monkeypatch.setattr(typer, "confirm", lambda *a, **k: False)  # decline re-login
+    result = runner.invoke(
+        app, ["setup", "model", "--provider", "openai", "--oauth", "--model", "gpt-5.5"]
+    )
+    assert result.exit_code == 0, result.output
+    assert called["auth"] is False  # kept existing session, didn't re-run the device flow
+
+
+class _ExistingPath:
+    def exists(self) -> bool:
+        return True
 
 
 def test_admin_flag_sets_config(tmp_path: Path) -> None:
