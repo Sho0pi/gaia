@@ -41,15 +41,36 @@ def test_tools_reset_browser_to_defaults(monkeypatch: pytest.MonkeyPatch) -> Non
     assert _yaml()["browser"]["backend"] == "mcp"  # reset to default
 
 
-def test_tools_all_disables_a_tool(monkeypatch: pytest.MonkeyPatch) -> None:
-    # --all → select_many returns the enabled set minus web_fetch → web_fetch gets disabled.
-    def fake_many(title, rows, *, selected=(), marked=()):  # type: ignore[no-untyped-def]
-        return [t for t in selected if t != "web_fetch"]
+def test_tools_all_lists_configurable_and_toggleable(monkeypatch: pytest.MonkeyPatch) -> None:
+    # --all shows configurable AND optional tools in one picker (bug: previously only the optional).
+    captured: dict[str, object] = {}
 
-    monkeypatch.setattr("gaia.cli._select.select_many", fake_many)
+    def fake_manage(title, rows, *, marked=()):  # type: ignore[no-untyped-def]
+        captured["ids"] = [r[0] for r in rows]
+        return [], []
+
+    monkeypatch.setattr("gaia.cli._select.select_manage", fake_manage)
+    result = runner.invoke(app, ["tools", "--all"])
+    assert result.exit_code == 0, result.output
+    ids = captured["ids"]
+    assert "browser" in ids and "web_fetch" in ids  # both groups present
+
+
+def test_tools_all_backspace_disables_a_tool(monkeypatch: pytest.MonkeyPatch) -> None:
+    # backspace on an optional tool → disabled; cancel/no-op leaves others alone.
+    monkeypatch.setattr("gaia.cli._select.select_manage", lambda *a, **k: ([], ["web_fetch"]))
     result = runner.invoke(app, ["tools", "--all"])
     assert result.exit_code == 0, result.output
     assert _yaml()["tools"]["web_fetch"]["enabled"] is False
+
+
+def test_tools_cancel_changes_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Esc/Ctrl-C → select_manage returns ([], []) → no writes (the mass-disable bug).
+    set_config_value(constants.CONFIG_PATH, "tools.web_fetch.enabled", True)
+    monkeypatch.setattr("gaia.cli._select.select_manage", lambda *a, **k: ([], []))
+    result = runner.invoke(app, ["tools", "--all"])
+    assert result.exit_code == 0, result.output
+    assert _yaml()["tools"]["web_fetch"]["enabled"] is True  # untouched
 
 
 def test_tools_mcp_add_runs_add_flow(monkeypatch: pytest.MonkeyPatch) -> None:

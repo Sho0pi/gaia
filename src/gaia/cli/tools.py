@@ -1,9 +1,9 @@
 """``gaia tools`` — one home for tool configuration.
 
 A gaia-themed multi-select of the tools you can configure (emoji + one-line brief), matching the
-model/connector pickers. **space** = (re)configure, **backspace** = reset to defaults, **enter** =
-apply. ``--all`` switches to an enable/disable manager for the optional on/off tools. The
-``gaia setup`` wizard's "Tools" step calls :func:`tools`.
+model/connector pickers. **space** = (re)configure a tool / enable a simple one; **backspace** =
+reset to defaults / disable; **enter** = apply; Esc/Ctrl-C = no changes. ``--all`` adds the optional
+on/off tools to the same list. The ``gaia setup`` wizard's "Tools" step calls :func:`tools`.
 
 Lazy-import rule (repo convention): typer + stdlib (+ cli siblings) at module level; the per-tool
 configure flows live in ``cli/setup.py``, imported lazily to avoid an import cycle (the setup.py
@@ -46,28 +46,67 @@ AllOpt = Annotated[
 
 
 def tools(ctx: typer.Context, show_all: AllOpt = False) -> None:
-    """Configure tools: browser, web search, custom MCP servers (and `--all` to toggle the rest)."""
+    """Configure tools: browser, web search, custom MCP servers (and `--all` to toggle the rest).
+
+    space = (re)configure a tool / enable a simple one; backspace = reset / disable; enter = apply.
+    Esc/Ctrl-C cancels with no changes.
+    """
+    from gaia.cli._select import select_manage
     from gaia.config import ConfigSupplier, get_settings
 
     cfg_path = get_settings(state(ctx).env_file).config_path
     cfg = ConfigSupplier(cfg_path).current
 
-    if show_all:
-        _toggle_optional(cfg, cfg_path)
-        return
-
-    from gaia.cli._select import select_manage
-
+    # default = configurable tools; --all also lists the optional on/off tools (all in one picker)
+    ids = list(_CONFIGURABLE) + (list(_TOGGLEABLE) if show_all else [])
     rows = [
-        (tid, f"{emoji} {label}", brief, "configured" if _configured(cfg, tid) else "")
-        for tid, (emoji, label, brief) in _CONFIGURABLE.items()
+        (tid, f"{_meta(tid)[0]} {_meta(tid)[1]}", _meta(tid)[2], _active_badge(cfg, tid))
+        for tid in ids
     ]
-    marked = [tid for tid in _CONFIGURABLE if _configured(cfg, tid)]
-    to_setup, to_reset = select_manage("Tools", rows, marked=marked)
-    for tid in to_setup:
+    marked = [tid for tid in ids if _active(cfg, tid)]
+
+    # select_manage cancels with ([], []) — so Esc/Ctrl-C is a true no-op (never mass-disables).
+    to_act, to_deact = select_manage("Tools", rows, marked=marked)
+    for tid in to_act:
+        _act(tid, ctx, cfg_path)
+    for tid in to_deact:
+        _deact(tid, cfg_path)
+
+
+def _meta(tid: str) -> tuple[str, str, str]:
+    """(emoji, label, brief) for a tool id, from whichever table it lives in."""
+    return _CONFIGURABLE.get(tid) or _TOGGLEABLE[tid]
+
+
+def _active(cfg: GaiaConfig, tid: str) -> bool:
+    """Whether a tool shows the `―` marker: configurable → has settings; toggle → enabled."""
+    return _configured(cfg, tid) if tid in _CONFIGURABLE else _enabled(cfg, tid)
+
+
+def _active_badge(cfg: GaiaConfig, tid: str) -> str:
+    return "configured" if _active(cfg, tid) else ""
+
+
+def _act(tid: str, ctx: typer.Context, cfg_path: Path) -> None:
+    """space → configure a configurable tool, or enable a simple one."""
+    if tid in _CONFIGURABLE:
         _configure(tid, ctx)
-    for tid in to_reset:
+    else:
+        from gaia.cli._yamledit import set_config_value
+
+        set_config_value(cfg_path, f"tools.{tid}.enabled", True)
+        console().print(f"enabled [bold]{tid}[/]")
+
+
+def _deact(tid: str, cfg_path: Path) -> None:
+    """backspace → reset a configurable tool to defaults, or disable a simple one."""
+    if tid in _CONFIGURABLE:
         _reset(tid, cfg_path)
+    else:
+        from gaia.cli._yamledit import set_config_value
+
+        set_config_value(cfg_path, f"tools.{tid}.enabled", False)
+        console().print(f"disabled [bold]{tid}[/]")
 
 
 def _configured(cfg: GaiaConfig, tid: str) -> bool:
@@ -138,18 +177,3 @@ def _manage_mcp(ctx: typer.Context) -> None:
 def _enabled(cfg: GaiaConfig, tid: str) -> bool:
     entry = cfg.tools.get(tid)
     return entry.enabled if entry is not None else True  # tools are on unless disabled
-
-
-def _toggle_optional(cfg: GaiaConfig, cfg_path: Path) -> None:
-    """`--all`: enable/disable the optional on/off tools (space toggles, enter persists)."""
-    from gaia.cli._select import select_many
-    from gaia.cli._yamledit import set_config_value
-
-    rows = [(tid, f"{emoji} {label}", brief) for tid, (emoji, label, brief) in _TOGGLEABLE.items()]
-    enabled = [tid for tid in _TOGGLEABLE if _enabled(cfg, tid)]
-    chosen = set(select_many("Enable tools", rows, selected=enabled, marked=enabled))
-    for tid in _TOGGLEABLE:
-        want = tid in chosen
-        if want != (tid in enabled):  # only write what changed
-            set_config_value(cfg_path, f"tools.{tid}.enabled", want)
-            console().print(f"{'enabled' if want else 'disabled'} [bold]{tid}[/]")
