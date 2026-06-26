@@ -39,6 +39,10 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 logger = logging.getLogger(__name__)
 
+#: Seconds to let whatsmeow flush the session to the db after the authenticated connect,
+#: before the foreground `pair()` client stops (so the daemon reconnects without a new QR).
+_PAIR_SETTLE_S = 2.0
+
 
 def _user_part(jid: str) -> str:
     """The user (number) part of a ``user@server`` JID string, or the whole string."""
@@ -369,8 +373,11 @@ class WhatsAppWebConnector:
 
         @client.event(PairStatusEv)  # type: ignore[untyped-decorator]
         async def _on_pair(_client: NewAClient, event: PairStatusEv) -> None:
-            logger.info("whatsapp paired as %s", event.ID.User)
-            self._connected.set()
+            # PairSuccess only means the QR was scanned — whatsmeow then drops the socket and
+            # reconnects authenticated, and only THAT (ConnectedEv) has persisted the full
+            # session. Don't signal _connected here, or pair() would stop the client mid-pair
+            # and leave a half-written session that re-prompts the QR when the daemon starts.
+            logger.info("whatsapp paired as %s — finishing handshake", event.ID.User)
 
         @client.event(MessageEv)  # type: ignore[untyped-decorator]
         async def _on_message(client: NewAClient, message: MessageEv) -> None:
@@ -599,16 +606,20 @@ class WhatsAppWebConnector:
         return InboundMedia(path=path, mime=mime, kind=kind)
 
     async def pair(self, timeout_s: float = 120.0) -> bool:
-        """Foreground QR pairing: connect, wait for scan, then shut the client down.
+        """Foreground QR pairing: connect, wait for the authenticated session, then shut down.
 
-        ``connect()`` makes neonize render the QR in the terminal. The ConnectedEv /
-        PairStatusEv handlers set ``_connected``. Returns True once paired (the session
-        persists to the db so later runs reconnect without a scan), False on timeout.
+        ``connect()`` makes neonize render the QR. We wait for ``ConnectedEv`` — which fires
+        only after the post-scan reconnect, i.e. once the session is fully persisted — NOT the
+        earlier ``PairStatusEv``; stopping on the latter leaves a half-written session that
+        re-prompts the QR when the daemon starts. Returns True once paired, False on timeout.
         """
         client = self.build_client()
         try:
             await client.connect()
             await asyncio.wait_for(self._connected.wait(), timeout=timeout_s)
+            # ponytail: external protocol — give whatsmeow a moment to flush the session keys
+            # to the db before we stop, so the daemon reconnects silently (no second sign-in).
+            await asyncio.sleep(_PAIR_SETTLE_S)
             return True
         except TimeoutError:
             return False
