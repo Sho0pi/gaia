@@ -202,7 +202,6 @@ def test_mcp_flag_appends_server(tmp_path: Path) -> None:
 
 
 def test_walkthrough_runs_each_step(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    import typer
 
     from gaia.cli import setup
 
@@ -214,13 +213,13 @@ def test_walkthrough_runs_each_step(monkeypatch) -> None:  # type: ignore[no-unt
 
         return step
 
-    for n in ("model", "connectors", "admin", "search", "browser"):
+    for n in ("model", "connectors", "admin"):
         monkeypatch.setattr(setup, n, rec(n))
-    monkeypatch.setattr(typer, "confirm", lambda *a, **k: False)  # decline the optional MCP step
+    monkeypatch.setattr("gaia.cli.tools.tools", rec("tools"))  # the wizard's Tools step
 
     result = runner.invoke(app, ["setup"])
     assert result.exit_code == 0, result.output
-    assert called == ["model", "connectors", "admin", "search", "browser"]
+    assert called == ["model", "connectors", "admin", "tools"]
     assert "setup complete" in result.output
 
 
@@ -270,7 +269,6 @@ def test_model_multi_select_configures_many_and_picks_active(monkeypatch) -> Non
 
 def test_walkthrough_skips_step_on_interrupt(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     # Ctrl-C/Esc in a step skips it and moves on — never aborts the whole wizard.
-    import typer
 
     from gaia.cli import setup
 
@@ -285,13 +283,13 @@ def test_walkthrough_skips_step_on_interrupt(monkeypatch) -> None:  # type: igno
         return step
 
     monkeypatch.setattr(setup, "model", mk("model", KeyboardInterrupt()))
-    for n in ("connectors", "admin", "search", "browser"):
+    for n in ("connectors", "admin"):
         monkeypatch.setattr(setup, n, mk(n))
-    monkeypatch.setattr(typer, "confirm", lambda *a, **k: False)
+    monkeypatch.setattr("gaia.cli.tools.tools", mk("tools"))
 
     result = runner.invoke(app, ["setup"])
     assert result.exit_code == 0, result.output
-    assert called == ["connectors", "admin", "search", "browser"]  # model skipped, rest ran
+    assert called == ["connectors", "admin", "tools"]  # model skipped, rest ran
 
 
 def test_setup_has_no_subcommands_model_is_top_level() -> None:
@@ -303,3 +301,46 @@ def test_setup_has_no_subcommands_model_is_top_level() -> None:
 
 def test_llm_group_removed() -> None:
     assert runner.invoke(app, ["llm", "status"]).exit_code != 0  # folded into `gaia model`
+
+
+def test_browser_picker_marks_current(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    # The currently-set backend shows the gold "current" badge + starts under the cursor.
+    import typer
+
+    from gaia import constants
+    from gaia.cli._yamledit import set_config_value
+
+    set_config_value(constants.CONFIG_PATH, "browser.backend", "native")
+    captured: dict[str, object] = {}
+
+    def fake_one(title, options, default=None):  # type: ignore[no-untyped-def]
+        captured["options"] = options
+        captured["default"] = default
+        return "native"
+
+    monkeypatch.setattr("gaia.cli._select.select_one", fake_one)
+    monkeypatch.setattr(typer, "confirm", lambda *a, **k: True)  # headless prompt
+    result = runner.invoke(_step(setup.browser), [])
+    assert result.exit_code == 0, result.output
+    badges = {o[0]: o[3] for o in captured["options"]}  # type: ignore[union-attr]
+    assert badges["native"] == "current" and badges["mcp"] == ""
+    assert captured["default"] == "native"
+
+
+def test_search_picker_marks_current(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from gaia import constants
+    from gaia.cli._yamledit import set_config_value
+
+    set_config_value(constants.CONFIG_PATH, "tools.web_search.engine", "brave")
+    captured: dict[str, object] = {}
+
+    def fake_one(title, options, default=None):  # type: ignore[no-untyped-def]
+        captured["options"] = options
+        captured["default"] = default
+        return "duckduckgo"  # switch away → no key prompt
+
+    monkeypatch.setattr("gaia.cli._select.select_one", fake_one)
+    result = runner.invoke(_step(setup.search), [])
+    assert result.exit_code == 0, result.output
+    badges = {o[0]: o[3] for o in captured["options"]}  # type: ignore[union-attr]
+    assert badges["brave"] == "current" and captured["default"] == "brave"

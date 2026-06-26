@@ -22,6 +22,7 @@ from gaia.cli import (
     skill,
     soul,
     task,
+    tools,
     user,
 )
 from gaia.cli._help_theme import apply_help_theme
@@ -42,6 +43,7 @@ app.add_typer(config.app, name="config")
 app.add_typer(acl.app, name="acl")
 app.add_typer(memory.app, name="memory")
 app.command(name="model")(setup.model)  # dedicated provider/auth/model picker (was `setup model`)
+app.command(name="tools")(tools.tools)  # configure browser / web_search / MCP (+ --all toggles)
 app.command()(connect.connect)
 app.command()(daemon.serve)
 app.command()(daemon.start)
