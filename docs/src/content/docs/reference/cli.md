@@ -317,6 +317,19 @@ gaia msg <text> [options]
 | `--channel` | Channel the sender is on (whatsapp/telegram/cli). |
 | `--name` | Display name for a first-seen sender. |
 
+## `gaia report`
+
+Bundle the latest crash + recent logs + your environment into a GitHub bug report.
+
+```
+gaia report [options]
+```
+
+| Option | Description |
+|---|---|
+| `--all` | Include every crash report, not just the last. |
+| `--no-open` | Print the URL instead of opening a browser. |
+
 ## `gaia restart`
 
 Restart the daemon (stop if running, then start).
