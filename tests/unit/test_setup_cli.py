@@ -235,3 +235,55 @@ def test_search_honors_env_file_flag(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert get_env_var(alt, "BRAVE_API_KEY") == "k"
     assert get_env_var(constants.ENV_FILE, "BRAVE_API_KEY") is None
+
+
+def test_model_multi_select_configures_many_and_picks_active(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    # Configure Gemini + ChatGPT in one run; active = gemini.
+    import typer
+
+    import gaia.app
+    from gaia import constants
+
+    monkeypatch.setattr("gaia.cli._select.select_many", lambda *a, **k: ["gemini", "chatgpt"])
+    monkeypatch.setattr(
+        "gaia.cli._select.select_one",
+        lambda title, options, default=None: (
+            "gemini" if title == "Active provider" else "gemini-2.5-flash"
+        ),
+    )
+    monkeypatch.setattr(gaia.app, "run_auth", lambda *a, **k: None)  # ChatGPT device flow
+    monkeypatch.setattr(typer, "prompt", lambda *a, **k: "gk")  # Gemini key prompt
+    monkeypatch.setattr(typer, "confirm", lambda *a, **k: True)  # replace any existing key
+    monkeypatch.setattr("gaia.cli._models.available_models", lambda *a, **k: [])
+
+    result = runner.invoke(app, ["setup", "model"])
+    assert result.exit_code == 0, result.output
+    llm = _llm(constants.CONFIG_PATH)
+    assert llm["provider"] == "gemini" and llm["openai"]["use_oauth"] is False
+    assert get_env_var(constants.ENV_FILE, "GEMINI_API_KEY") == "gk"
+
+
+def test_walkthrough_skips_step_on_interrupt(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    # Ctrl-C/Esc in a step skips it and moves on — never aborts the whole wizard.
+    import typer
+
+    from gaia.cli import setup
+
+    called: list[str] = []
+
+    def mk(name: str, raise_: BaseException | None = None):  # type: ignore[no-untyped-def]
+        def step(_ctx: object) -> None:
+            if raise_ is not None:
+                raise raise_
+            called.append(name)
+
+        return step
+
+    monkeypatch.setattr(setup, "model", mk("model", KeyboardInterrupt()))
+    for n in ("connectors", "admin", "search", "browser"):
+        monkeypatch.setattr(setup, n, mk(n))
+    monkeypatch.setattr(typer, "confirm", lambda *a, **k: False)
+
+    result = runner.invoke(app, ["setup"])
+    assert result.exit_code == 0, result.output
+    assert called == ["connectors", "admin", "search", "browser"]  # model skipped, rest ran

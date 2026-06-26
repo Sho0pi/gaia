@@ -10,6 +10,7 @@ already-set value is shown masked and only replaced after a confirm.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated, Any
 
 import typer
@@ -28,7 +29,9 @@ def main(ctx: typer.Context) -> None:
     if ctx.invoked_subcommand is not None:
         return
     out = console()
-    out.print("[bold]gaia setup[/] — let's configure gaia. Esc/Ctrl-C any step to skip it.\n")
+    out.print(
+        "[bold]gaia setup[/] — let's configure gaia. Esc/Ctrl-C skips a step (on to the next).\n"
+    )
     for label, step in (
         ("Model", model),
         ("Connectors", connectors),
@@ -37,18 +40,16 @@ def main(ctx: typer.Context) -> None:
         ("Browser", browser),
     ):
         out.print(f"\n[bold cyan]> {label}[/]")
+        # Esc/Ctrl-C/decline in any step just skips it and moves on — never aborts the whole wizard.
         try:
             step(ctx)
-        except typer.Exit:
+        except (typer.Exit, typer.Abort, KeyboardInterrupt, EOFError):
             out.print(f"[dim]skipped {label.lower()}[/]")
-        except (KeyboardInterrupt, EOFError):
-            out.print("\n[yellow]setup cancelled[/]")
-            raise typer.Exit(1) from None
-    if typer.confirm("\nAdd a custom MCP server?", default=False):
-        try:
+    try:
+        if typer.confirm("\nAdd a custom MCP server?", default=False):
             mcp(ctx)
-        except typer.Exit:
-            pass
+    except (typer.Exit, typer.Abort, KeyboardInterrupt, EOFError):
+        pass
     out.print(
         "\n[bold green]✓ setup complete.[/] Run [cyan]gaia doctor[/] to check, "
         "[cyan]gaia start[/] to launch."
@@ -151,6 +152,20 @@ OAuthOpt = Annotated[
 ]
 
 
+#: Configurable auth "units" → (label, hint, provider, use_oauth). OpenAI offers two (ChatGPT
+#: sign-in + API key); Gemini one. Configure several at once, then pick the active one.
+_UNITS: dict[str, tuple[str, str, str, bool]] = {
+    "chatgpt": ("ChatGPT (sign in)", "subscription — no API key", "openai", True),
+    "openai": ("OpenAI (API key)", "OPENAI_API_KEY", "openai", False),
+    "gemini": ("Google Gemini (API key)", "GEMINI_API_KEY", "gemini", False),
+}
+#: API-key env var + Settings attr for the key-based units.
+_UNIT_KEY = {
+    "openai": ("OPENAI_API_KEY", "openai_api_key"),
+    "gemini": ("GEMINI_API_KEY", "google_api_key"),
+}
+
+
 def _badge(*, configured: bool, current: bool) -> str:
     """A picker status badge: 'configured' (key/session present) and/or 'current' (active)."""
     return " · ".join(
@@ -158,14 +173,45 @@ def _badge(*, configured: bool, current: bool) -> str:
     )
 
 
-def _provider_configured(provider: str, settings: object, env_path: object) -> bool:
+def _unit_configured(unit: str, settings: object, env_path: Path) -> bool:
     from gaia.cli._envfile import get_env_var
     from gaia.providers.openai.store import credentials_path
 
+    if unit == "chatgpt":
+        return credentials_path().exists()
+    env, attr = _UNIT_KEY[unit]
+    return bool(get_env_var(env_path, env) or getattr(settings, attr))
+
+
+def _current_unit(provider: str, use_oauth: bool) -> str:
+    """The auth unit gaia is currently using (for the 'current' badge)."""
     if provider == "openai":
-        has_key = bool(get_env_var(env_path, "OPENAI_API_KEY") or settings.openai_api_key)  # type: ignore[attr-defined,arg-type]
-        return has_key or credentials_path().exists()
-    return bool(get_env_var(env_path, "GEMINI_API_KEY") or settings.google_api_key)  # type: ignore[attr-defined,arg-type]
+        return "chatgpt" if use_oauth else "openai"
+    return "gemini"
+
+
+def _configure_unit(
+    unit: str, ctx: typer.Context, settings: object, env_path: Path, *, api_key: str | None = None
+) -> None:
+    """Run one unit's auth: ChatGPT device-login (already-signed-in check) or an API-key save."""
+    from gaia.cli._envfile import get_env_var
+    from gaia.providers.openai.store import credentials_path
+
+    out = console()
+    if unit == "chatgpt":
+        if credentials_path().exists() and not typer.confirm(
+            "ChatGPT session already configured — sign in again?", default=False
+        ):
+            out.print("kept the existing ChatGPT session")
+            return
+        from gaia.app import run_auth
+
+        run_auth("openai", env_file=state(ctx).env_file)  # device-code login
+        return
+    env, attr = _UNIT_KEY[unit]
+    label = "OpenAI API key" if unit == "openai" else "Gemini API key"
+    existing = get_env_var(env_path, env) or getattr(settings, attr)
+    _save_key(env_path, env, existing=existing, flag=api_key, label=label)
 
 
 def _pick_model(
@@ -206,109 +252,65 @@ def model(
     """
     from gaia import constants
     from gaia.cli._envfile import get_env_var
-    from gaia.cli._select import select_one
+    from gaia.cli._select import select_many, select_one
     from gaia.cli._yamledit import set_config_value
     from gaia.config import ConfigSupplier, get_settings
-    from gaia.providers.openai.store import credentials_path
 
     out = console()
     settings = get_settings(state(ctx).env_file)
     env_path = state(ctx).env_file or constants.ENV_FILE  # honor --env-file for secret writes
     cfg = settings.config_path
-    live = ConfigSupplier(cfg).current.llm  # for the "current" markers
+    live = ConfigSupplier(cfg).current.llm
+    cur_unit = _current_unit(live.provider, live.openai.use_oauth)
 
-    # 1. provider (✓ configured + current badges)
-    prov = (provider or "").strip().lower()
-    if not prov:
-        prov = (
-            select_one(
-                "Model provider",
-                [
-                    (
-                        "openai",
-                        "OpenAI",
-                        "API key or Sign in with ChatGPT",
-                        _badge(
-                            configured=_provider_configured("openai", settings, env_path),
-                            current=live.provider == "openai",
-                        ),
-                    ),
-                    (
-                        "gemini",
-                        "Google Gemini",
-                        "API key",
-                        _badge(
-                            configured=_provider_configured("gemini", settings, env_path),
-                            current=live.provider == "gemini",
-                        ),
-                    ),
-                ],
-                default=live.provider if live.provider in _MODELS else "openai",
+    # 1. choose which auth unit(s) to configure
+    flag_prov = (provider or "").strip().lower()
+    if flag_prov:  # scriptable single-unit path
+        if flag_prov not in ("openai", "gemini"):
+            out.print(f"[red]unknown provider {flag_prov!r}; use openai | gemini[/]")
+            raise typer.Exit(1)
+        unit = "chatgpt" if (flag_prov == "openai" and oauth) else flag_prov
+        _configure_unit(unit, ctx, settings, env_path, api_key=api_key)
+        units = [unit]
+    else:  # interactive: multi-select, configure several at once
+        opts = [
+            (
+                u,
+                label,
+                hint,
+                _badge(configured=_unit_configured(u, settings, env_path), current=u == cur_unit),
             )
-            or ""
+            for u, (label, hint, _p, _o) in _UNITS.items()
+        ]
+        pre = [u for u in _UNITS if _unit_configured(u, settings, env_path)]
+        units = select_many("Configure model providers", opts, preselected=pre)
+        if not units:
+            out.print("[yellow]nothing selected[/]")
+            raise typer.Exit(1)
+        for u in units:
+            out.print(f"\n[bold]{_UNITS[u][0]}[/]")
+            _configure_unit(u, ctx, settings, env_path)
+
+    # 2. pick the ACTIVE unit (auto when only one configured)
+    if len(units) == 1:
+        active = units[0]
+    else:
+        picked = select_one(
+            "Active provider",
+            [(u, _UNITS[u][0], "", _badge(configured=True, current=u == cur_unit)) for u in units],
+            default=cur_unit if cur_unit in units else units[0],
         )
-    if prov not in _MODELS:
-        out.print(f"[red]unknown provider {prov!r}; use openai | gemini[/]")
-        raise typer.Exit(1)
+        active = picked or units[0]
 
-    # 2. authenticate — OpenAI supports key OR ChatGPT oauth; Gemini is key-only
-    use_oauth = False
-    key: str | None = None
-    if prov == "openai":
-        method = "oauth" if oauth else ("key" if api_key else "")
-        if not method:
-            method = (
-                select_one(
-                    "Authentication",
-                    [
-                        (
-                            "oauth",
-                            "Sign in with ChatGPT",
-                            "subscription — no API key",
-                            _badge(configured=credentials_path().exists(), current=False),
-                        ),
-                        (
-                            "key",
-                            "API key",
-                            "OPENAI_API_KEY",
-                            _badge(
-                                configured=bool(
-                                    get_env_var(env_path, "OPENAI_API_KEY")
-                                    or settings.openai_api_key
-                                ),
-                                current=False,
-                            ),
-                        ),
-                    ],
-                    default="oauth",
-                )
-                or "oauth"
-            )
-        if method == "oauth":
-            use_oauth = True
-            if credentials_path().exists() and not typer.confirm(
-                "ChatGPT session already configured — sign in again?", default=False
-            ):
-                out.print("kept the existing ChatGPT session")
-            else:
-                from gaia.app import run_auth
-
-                run_auth("openai", env_file=state(ctx).env_file)  # device-code login
-        else:
-            existing = get_env_var(env_path, "OPENAI_API_KEY") or settings.openai_api_key
-            key = _save_key(
-                env_path, "OPENAI_API_KEY", existing=existing, flag=api_key, label="OpenAI API key"
-            )
-    else:  # gemini
-        existing = get_env_var(env_path, "GEMINI_API_KEY") or settings.google_api_key
-        key = _save_key(
-            env_path, "GEMINI_API_KEY", existing=existing, flag=api_key, label="Gemini API key"
-        )
-
+    _label, _hint, prov, use_oauth = _UNITS[active]
     set_config_value(cfg, "llm.provider", prov)
     set_config_value(cfg, "llm.openai.use_oauth", use_oauth)
 
-    # 3. specific model (fetched live from the provider API; curated fallback)
+    # 3. model for the active provider (fetched live; curated fallback)
+    key = None
+    if not use_oauth:
+        env, attr = _UNIT_KEY[active]
+        key = get_env_var(env_path, env) or getattr(settings, attr)
     chosen, fell_back = _pick_model(
         prov, model_id, api_key=key, use_oauth=use_oauth, current=live.model
     )
@@ -318,7 +320,7 @@ def model(
     set_config_value(cfg, "llm.model", chosen)
     if fell_back and not (model_id or "").strip():
         out.print("[dim](couldn't fetch live models — showed the built-in defaults)[/]")
-    out.print(f"[bold]{prov}[/] configured — model [bold]{chosen}[/] (hot-reloaded).")
+    out.print(f"active: [bold]{prov}[/] — model [bold]{chosen}[/] (hot-reloaded).")
 
 
 @app.command()
