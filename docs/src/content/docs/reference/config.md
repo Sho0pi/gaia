@@ -59,8 +59,8 @@ memory:
   auto_ingest: true
   # Flush buffered turns to mem0 once this many have accumulated.
   ingest_batch_size: 10
-  # Also flush if this many seconds have passed since the first buffered turn.
-  ingest_interval_seconds: 3600
+  # Flush an idle conversation this many seconds after its last buffered turn.
+  ingest_interval_seconds: 300
   # Override what long-term memory extracts (mem0 custom_instructions); empty = the built-in default (durable user facts only, no assistant action logs).
   extraction_instructions: ""
   # How many memories load_memory returns per search.
