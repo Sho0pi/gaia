@@ -14,6 +14,7 @@ from gaia.cli import (
     daemon,
     doctor,
     grow,
+    lifecycle,
     logs,
     memory,
     monitor,
@@ -44,6 +45,8 @@ app.add_typer(acl.app, name="acl")
 app.add_typer(memory.app, name="memory")
 app.command(name="model")(setup.model)  # dedicated provider/auth/model picker (was `setup model`)
 app.command(name="tools")(tools.tools)  # configure browser / web_search / MCP (+ --all toggles)
+app.command(name="update")(lifecycle.update)  # upgrade gaia in place (uv pip install from git)
+app.command(name="uninstall")(lifecycle.uninstall)  # remove gaia (asks before deleting ~/.gaia)
 app.command()(connect.connect)
 app.command()(daemon.serve)
 app.command()(daemon.start)

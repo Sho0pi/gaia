@@ -1,6 +1,6 @@
 [project]
 name = "gaia"
-version = "0.1.0"
+version = "0.1.0a1"
 description = "Gaia — an AI agent that spawns, stores, and fine-tunes task-specific subagents."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -38,15 +38,9 @@ dependencies = [
 [project.scripts]
 gaia = "gaia.cli:main"
 
-[dependency-groups]
-dev = [
-    "pytest>=9.1.1",
-    "pytest-asyncio>=1.4.0",
-    "pytest-cov>=7.1.0",
-    "ruff>=0.15.19",
-    "mypy>=2.1.0",
-    "types-PyYAML>=6.0.12.20260518",
-]
+# Optional features exposed as extras so a consumer can `uv pip install "gaia[browser]"`
+# (the installer uses `gaia[all]`). Each is lazy-imported, so gaia runs without it.
+[project.optional-dependencies]
 tools = [
     "binaryornot>=0.6.0",
     "ddgs>=9.14.4",
@@ -68,7 +62,7 @@ llm = [
 ]
 # Headless browser automation (the browser_* tools). Playwright drives a real
 # Chromium over CDP; async-native, ships the accessibility snapshot we hand the
-# model. Lazy-imported, so gaia imports without it. After installing the group, run
+# model. Lazy-imported, so gaia imports without it. After installing the extra, run
 # `uv run playwright install chromium` once to fetch the browser binary.
 browser = [
     "playwright>=1.60.0",
@@ -78,8 +72,8 @@ browser = [
 # gaia.yaml configures an mcp.server, so gaia imports without it. stdio servers also need
 # their own runtime on PATH (e.g. `bunx` for node servers). NOTE: the DEFAULT browser
 # backend (browser.backend: mcp) is Microsoft's playwright-mcp launched via `bunx`, so it
-# needs this group AND bun on PATH (`brew install bun` / https://bun.sh). Without either,
-# the backend falls back to the native browser tools (the 'browser' group).
+# needs this extra AND bun on PATH (`brew install bun` / https://bun.sh). Without either,
+# the backend falls back to the native browser tools (the 'browser' extra).
 mcp = [
     "mcp>=1.28.0",
 ]
@@ -89,6 +83,18 @@ mcp = [
 # the first transcription. Lazy-imported; gaia runs without it (voice notes ignored).
 voice = [
     "faster-whisper>=1.2.1",
+]
+# Everything — what the installer pulls (`gaia[all]`) so every feature works out of the box.
+all = ["gaia[tools,memory,llm,browser,mcp,voice]"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.19",
+    "mypy>=2.1.0",
+    "types-PyYAML>=6.0.12.20260518",
 ]
 
 [build-system]

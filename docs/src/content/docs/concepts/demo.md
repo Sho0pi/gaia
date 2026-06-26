@@ -30,7 +30,7 @@ voice in/out, group gating, proactive push) and tick the checklist at the end.
        channel: whatsapp
        chat: "<your-whatsapp-jid>"
    ```
-2. Install deps: `uv sync --all-groups` (whisper, edge-tts, browser). For the browser:
+2. Install deps: `uv sync --all-extras --all-groups` (whisper, edge-tts, browser). For the browser:
    either `bun` on PATH (default playwright-mcp backend) or
    `uv run playwright install chromium` (native). edge-tts needs network, no `espeak-ng`.
 3. Auth a model: `uv run gaia model` (or put a Gemini key in `~/.gaia/.env`).

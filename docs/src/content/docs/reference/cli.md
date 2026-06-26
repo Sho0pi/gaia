@@ -537,6 +537,32 @@ gaia tools [options]
 |---|---|
 | `--all` | Enable/disable the optional on/off tools too. |
 
+## `gaia uninstall`
+
+Remove gaia. Asks before deleting ~/.gaia unless --purge/--keep is given.
+
+```
+gaia uninstall [options]
+```
+
+| Option | Description |
+|---|---|
+| `--purge` | Also delete ~/.gaia (non-interactive). |
+| `--keep` | Keep ~/.gaia (non-interactive). |
+
+## `gaia update`
+
+Upgrade gaia in place (re-pull from git); restart the daemon if it's running.
+
+```
+gaia update [options]
+```
+
+| Option | Description |
+|---|---|
+| `--ref` | git ref to install (branch/tag/sha). |
+| `--extras` | Extras to install (default: all). |
+
 ## `gaia user`
 
 Manage known users (roles, names, channels).

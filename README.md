@@ -13,17 +13,32 @@ job, or forges a new one and keeps it around for next time — so it gets sharpe
 It remembers you, runs long jobs in the background, and you talk to it on Telegram, WhatsApp, or your
 terminal.
 
-## Quickstart
+## Install
 
 ```bash
-git clone https://github.com/Sho0pi/gaia.git
-cd gaia
-uv sync --all-groups
-echo "GEMINI_API_KEY=your-key" >> ~/.gaia/.env
-uv run gaia                     # chat in your terminal
+curl -fsSL https://raw.githubusercontent.com/Sho0pi/gaia/master/scripts/install.sh | sh
 ```
 
-Hooking up Telegram/WhatsApp and everything else: **[docs.gaia-agent.com](https://docs.gaia-agent.com)**.
+One line: sets up a self-contained gaia in `~/.gaia/venv` (every feature included), links the `gaia`
+command, and walks you through `gaia setup`. macOS + Linux (Windows: use WSL).
+
+```bash
+gaia                # chat in your terminal
+gaia start          # run the connectors in the background
+gaia update         # upgrade in place
+gaia uninstall      # remove it (asks before deleting your data)
+```
+
+### From source (dev)
+
+```bash
+git clone https://github.com/Sho0pi/gaia.git && cd gaia
+uv sync --all-extras --all-groups
+echo "GEMINI_API_KEY=your-key" >> ~/.gaia/.env
+uv run gaia
+```
+
+Telegram/WhatsApp and everything else: **[docs.gaia-agent.com](https://docs.gaia-agent.com)**.
 
 ## Built on
 
@@ -41,7 +56,7 @@ docs on [Astro Starlight](https://starlight.astro.build), all run with
 ## Develop
 
 ```bash
-uv sync --all-groups            # install
+uv sync --all-extras --all-groups   # install
 uv run ruff check --fix .       # lint
 uv run mypy src                 # types
 uv run pytest                   # tests
