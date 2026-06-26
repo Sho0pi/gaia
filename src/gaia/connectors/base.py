@@ -135,3 +135,57 @@ def as_text(reply: Reply) -> str:
         lines.append("(reply with the number)")
         return "\n".join(lines)
     return reply
+
+
+#: Per-channel message-size caps. Telegram hard-errors past 4096; WhatsApp's is far higher.
+TELEGRAM_LIMIT = 4096
+WHATSAPP_LIMIT = 65000
+
+
+def chunk_text(text: str, limit: int) -> list[str]:
+    """Split ``text`` into ``<= limit``-char chunks, preferring natural boundaries.
+
+    Greedy: pack whole paragraphs (``\\n\\n``), then lines (``\\n``), then words into each
+    chunk; only a single token longer than ``limit`` is hard-sliced. Pure (no deps); text
+    already within ``limit`` returns ``[text]``. ``textwrap`` is unsuitable — it counts
+    characters without respecting paragraph/line structure.
+    """
+    if len(text) <= limit:
+        return [text]
+
+    chunks: list[str] = []
+    current = ""
+
+    def flush() -> None:
+        nonlocal current
+        if current:
+            chunks.append(current)
+            current = ""
+
+    def add(piece: str, sep: str) -> None:
+        """Append ``piece`` to the current chunk (joined by ``sep``), or start a new one if full."""
+        nonlocal current
+        candidate = f"{current}{sep}{piece}" if current else piece
+        if len(candidate) <= limit:
+            current = candidate
+        else:
+            flush()
+            current = piece
+
+    for para in text.split("\n\n"):
+        if len(para) <= limit:
+            add(para, "\n\n")
+            continue
+        for line in para.split("\n"):
+            if len(line) <= limit:
+                add(line, "\n")
+                continue
+            for word in line.split(" "):
+                if len(word) <= limit:
+                    add(word, " ")
+                else:  # a single token longer than the limit — hard-slice it
+                    flush()
+                    for i in range(0, len(word), limit):
+                        chunks.append(word[i : i + limit])
+    flush()
+    return chunks
