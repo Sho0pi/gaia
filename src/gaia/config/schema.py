@@ -155,9 +155,10 @@ class BrowserConfig(BaseModel):
         description="mcp backend: keep the browser profile in memory (no on-disk profile).",
     )
     browser: str = Field(
-        default="chrome",
-        description="mcp backend: which engine playwright-mcp drives "
-        "(chrome/firefox/webkit/msedge).",
+        default="chromium",
+        description="mcp backend: which engine playwright-mcp drives (chromium/chrome/firefox/"
+        "webkit/msedge). 'chromium' is downloaded by `playwright install`; 'chrome' needs system "
+        "Google Chrome (no ARM64 Linux build).",
     )
     allowed_origins: list[str] = Field(
         default_factory=list,

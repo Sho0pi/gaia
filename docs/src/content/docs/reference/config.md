@@ -93,8 +93,8 @@ browser:
   headless: true
   # mcp backend: keep the browser profile in memory (no on-disk profile).
   isolated: true
-  # mcp backend: which engine playwright-mcp drives (chrome/firefox/webkit/msedge).
-  browser: chrome
+  # mcp backend: which engine playwright-mcp drives (chromium/chrome/firefox/webkit/msedge). 'chromium' is downloaded by `playwright install`; 'chrome' needs system Google Chrome (no ARM64 Linux build).
+  browser: chromium
   # mcp backend: restrict navigation to these origins (semicolon-joined and passed to --allowed-origins). Empty = no restriction (note: COARSER than the native SSRF guard).
   allowed_origins: []
   # mcp backend: only load these playwright-mcp tool names; empty = all (~25-60). Trim to keep the model's tool list lean.

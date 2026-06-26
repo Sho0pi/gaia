@@ -14,8 +14,9 @@ from gaia.tools.fs.base import GLOB_MAX, SandboxError, err, run_search, sandbox_
 NAME = "fs_glob"
 
 
-def make_fs_glob(agents_dir: Path) -> Callable[..., dict[str, Any]]:
-    """Return the ADK ``fs_glob`` tool (requires the ``fd`` binary)."""
+def make_fs_glob(agents_dir: Path, fd_bin: str = "fd") -> Callable[..., dict[str, Any]]:
+    """Return the ADK ``fs_glob`` tool. ``fd_bin`` is the resolved fd binary — ``fd`` on most
+    systems, ``fdfind`` on Debian/Ubuntu (where the ``fd-find`` package renames it)."""
 
     def fs_glob(
         pattern: str,
@@ -42,7 +43,7 @@ def make_fs_glob(agents_dir: Path) -> Callable[..., dict[str, Any]]:
 
         cap = max(1, max_results)
         cmd = [
-            "fd",
+            fd_bin,
             "--glob",
             "--full-path",
             "--type",

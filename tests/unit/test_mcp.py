@@ -34,7 +34,9 @@ def test_stdio_params_merge_literal_and_passthrough_env(monkeypatch: pytest.Monk
 
     params = server_to_params(server)
 
-    assert params.server_params.command == "bunx"
+    # bunx is resolved to an absolute path when found (so the daemon/service launch doesn't
+    # depend on PATH), else passed through — either way the basename is bunx.
+    assert params.server_params.command.endswith("bunx")
     assert params.server_params.args == ["@modelcontextprotocol/server-github"]
     # literal env + passthrough copied from the process env; missing var simply skipped.
     assert params.server_params.env == {"LOG": "debug", "GH_TOKEN": "secret-from-env"}
@@ -135,7 +137,7 @@ def test_valid_server_builds_toolset_with_filter_and_prefix(
     ts = toolsets[0]
     assert ts.tool_filter == ["read_file", "list_dir"]
     assert ts.tool_name_prefix == "fs"
-    assert ts.connection_params.server_params.command == "echo"
+    assert ts.connection_params.server_params.command.endswith("echo")  # resolved to abs path
 
 
 # --- browser backend: resolver + playwright-mcp synthesizer -----------------------
@@ -151,9 +153,12 @@ def test_resolve_backend_mcp_when_runtime_present(monkeypatch: pytest.MonkeyPatc
 
 
 def test_resolve_backend_falls_back_when_runtime_missing(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, tmp_path: Any
 ) -> None:
+    from pathlib import Path
+
     monkeypatch.setattr("gaia.mcp.shutil.which", lambda cmd: None)
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path))  # no ~/.bun fallback
 
     with caplog.at_level(logging.WARNING, logger="gaia.mcp"):
         backend = resolve_browser_backend(BrowserConfig(backend="mcp", runtime="bunx"))
@@ -210,3 +215,37 @@ def test_playwright_mcp_server_omits_flags_when_off() -> None:
     assert "--headless" not in server.args
     assert "--isolated" not in server.args
     assert "--allowed-origins" not in server.args
+
+
+# --- _resolve_runtime: find a runtime off PATH (#296) ------------------------------
+
+
+def test_resolve_runtime_finds_home_bun(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
+    from pathlib import Path
+
+    from gaia.mcp import _resolve_runtime
+
+    bun_bin = tmp_path / ".bun" / "bin"
+    bun_bin.mkdir(parents=True)
+    (bun_bin / "bunx").write_text("#!/bin/sh\n")
+
+    monkeypatch.setattr("gaia.mcp.shutil.which", lambda _name: None)  # not on PATH
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path))
+
+    assert _resolve_runtime("bunx") == str(bun_bin / "bunx")
+    assert _resolve_runtime("nope-not-here") is None
+
+
+def test_resolve_browser_backend_uses_home_bun(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    from pathlib import Path
+
+    bun_bin = tmp_path / ".bun" / "bin"
+    bun_bin.mkdir(parents=True)
+    (bun_bin / "bunx").write_text("#!/bin/sh\n")
+    monkeypatch.setattr("gaia.mcp.shutil.which", lambda _name: None)
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path))
+
+    # backend stays 'mcp' even though bunx isn't on PATH — it's found in ~/.bun/bin.
+    assert resolve_browser_backend(BrowserConfig(backend="mcp", runtime="bunx")) == "mcp"
