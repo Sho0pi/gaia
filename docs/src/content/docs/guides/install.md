@@ -6,7 +6,7 @@ description: "Get gaia running in one line; keep it up to date; remove it cleanl
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Sho0pi/gaia/master/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Sho0pi/gaia/master/scripts/install.sh | sh
 ```
 
 That one line:

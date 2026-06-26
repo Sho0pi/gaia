@@ -25,7 +25,7 @@ jobs:
       - run: uv sync --all-extras --all-groups
       - run: uv run ruff check .
       - run: uv run ruff format --check .
-      - run: shellcheck install.sh
+      - run: shellcheck scripts/install.sh
       - run: uv run mypy src
       - run: uv run pytest -m "not system" --cov=src/gaia
 

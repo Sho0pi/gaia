@@ -16,7 +16,7 @@ terminal.
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Sho0pi/gaia/master/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Sho0pi/gaia/master/scripts/install.sh | sh
 ```
 
 One line: sets up a self-contained gaia in `~/.gaia/venv` (every feature included), links the `gaia`
@@ -56,7 +56,7 @@ docs on [Astro Starlight](https://starlight.astro.build), all run with
 ## Develop
 
 ```bash
-uv sync --all-groups            # install
+uv sync --all-extras --all-groups   # install
 uv run ruff check --fix .       # lint
 uv run mypy src                 # types
 uv run pytest                   # tests

@@ -1,7 +1,7 @@
 #!/bin/sh
 # gaia installer — forges specialist subagents on demand, and grows with you.
 #
-#   curl -fsSL https://raw.githubusercontent.com/Sho0pi/gaia/master/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/Sho0pi/gaia/master/scripts/install.sh | sh
 #
 # Installs gaia into a self-contained venv at ~/.gaia/venv (uv-managed), links the
 # `gaia` command into ~/.local/bin, sets up the browser runtime, and runs `gaia setup`.
@@ -16,6 +16,7 @@ PYTHON="3.11"
 REF=""
 DO_BROWSER=1
 DO_SETUP=1
+SHOW_BANNER=0
 
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -24,8 +25,9 @@ while [ $# -gt 0 ]; do
 		--no-browser) DO_BROWSER=0; shift ;;
 		--no-setup) DO_SETUP=0; shift ;;
 		--non-interactive) DO_SETUP=0; shift ;;
+		--banner) SHOW_BANNER=1; shift ;;
 		-h|--help)
-			printf 'usage: install.sh [--ref REF] [--no-browser] [--no-setup] [--non-interactive]\n'
+			printf 'usage: install.sh [--ref REF] [--no-browser] [--no-setup] [--non-interactive] [--banner]\n'
 			exit 0 ;;
 		*) printf 'unknown option: %s\n' "$1" >&2; exit 2 ;;
 	esac
@@ -102,6 +104,7 @@ ensure_path() {
 
 # --- run -----------------------------------------------------------------------------
 banner
+[ "$SHOW_BANNER" = 1 ] && exit 0  # preview the banner without installing
 
 case "$(uname -s)" in
 	Darwin | Linux) : ;;
