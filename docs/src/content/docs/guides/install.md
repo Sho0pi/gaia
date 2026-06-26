@@ -54,3 +54,16 @@ Stops the daemon, removes the boot service (if installed) and the `gaia` launche
 whether to also delete `~/.gaia` (your config, memory, users, logs). By default your data is kept, so
 a reinstall picks up where you left off. Non-interactive: `gaia uninstall --purge` deletes everything;
 `--keep` keeps the data.
+
+## Run on boot (optional)
+
+`gaia start` runs the daemon detached, but it doesn't survive a reboot. To run gaia as a real OS
+service — starts at login, restarts on crash:
+
+```bash
+gaia service install     # launchd (macOS) / systemd --user (Linux)
+gaia service status
+gaia service uninstall
+```
+
+On Linux, `loginctl enable-linger` keeps it running without an active login session.

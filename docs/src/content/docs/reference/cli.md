@@ -341,6 +341,34 @@ gaia serve [options]
 |---|---|
 | `--hold` | Keep running with zero connectors (testing / service debugging). |
 
+## `gaia service`
+
+Run gaia as a boot service (launchd on macOS, systemd --user on Linux).
+
+### `gaia service install`
+
+Install + start the service (runs at login, restarts on crash).
+
+```
+gaia service install
+```
+
+### `gaia service status`
+
+Show the service state (defers to launchctl / systemctl).
+
+```
+gaia service status
+```
+
+### `gaia service uninstall`
+
+Stop + remove the service.
+
+```
+gaia service uninstall
+```
+
 ## `gaia setup`
 
 Configure gaia: model, connectors, search, tools.
