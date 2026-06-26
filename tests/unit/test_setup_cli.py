@@ -291,3 +291,10 @@ def test_walkthrough_skips_step_on_interrupt(monkeypatch) -> None:  # type: igno
     result = runner.invoke(app, ["setup"])
     assert result.exit_code == 0, result.output
     assert called == ["connectors", "admin", "search", "browser"]  # model skipped, rest ran
+
+
+def test_setup_connectors_subcommand_removed() -> None:
+    # Deduped: `gaia connect` is the connector command; `setup connectors` is gone.
+    result = runner.invoke(app, ["setup", "connectors"])
+    assert result.exit_code != 0
+    assert "No such command" in result.output or "no such command" in result.output.lower()

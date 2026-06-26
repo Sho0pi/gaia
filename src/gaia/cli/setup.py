@@ -376,9 +376,9 @@ def model(
     out.print(f"active: [bold]{prov}[/] — model [bold]{chosen}[/] (hot-reloaded).")
 
 
-@app.command()
+# Not a subcommand — `gaia connect` is the connector command. The walkthrough runs it as a step.
 def connectors(ctx: typer.Context) -> None:
-    """Set up messaging connectors (Telegram, WhatsApp) — runs the connect flow."""
+    """Run the connector setup (delegates to `gaia connect`)."""
     from gaia.cli.connect import connect
 
     connect(ctx)  # interactive multi-select + per-connector credential flow (reused)

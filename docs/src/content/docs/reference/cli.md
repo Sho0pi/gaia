@@ -396,14 +396,6 @@ gaia setup browser [options]
 | `--backend` | Browser backend: mcp | native. |
 | `--headless` | Run the browser headless. |
 
-### `gaia setup connectors`
-
-Set up messaging connectors (Telegram, WhatsApp) — runs the connect flow.
-
-```
-gaia setup connectors
-```
-
 ### `gaia setup mcp`
 
 Add a custom MCP server to gaia.yaml (appends to mcp.servers; needs a daemon restart).
