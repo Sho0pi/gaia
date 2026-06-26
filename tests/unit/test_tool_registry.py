@@ -232,3 +232,18 @@ def test_web_search_with_engine_is_registered_and_not_missing() -> None:
     registry = default_registry(config)
     assert "web_search" in registry.names()
     assert "web_search" not in registry.missing
+
+
+def test_fs_glob_registers_with_fdfind_when_fd_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Debian's fd-find ships the binary as `fdfind`; fs_glob must still register (#296).
+    monkeypatch.setattr(
+        "gaia.tools.registry.shutil.which",
+        lambda name: "/usr/bin/fdfind" if name == "fdfind" else None,
+    )
+    registry = default_registry(None)
+    assert "fs_glob" in registry.names()
+
+
+def test_browser_defaults_to_chromium() -> None:
+    # 'chrome' needs system Google Chrome (no ARM64 Linux build); 'chromium' is downloaded (#296).
+    assert BrowserConfig().browser == "chromium"

@@ -13,6 +13,9 @@ GAIA_HOME="${GAIA_HOME:-$HOME/.gaia}"
 VENV="$GAIA_HOME/venv"
 BIN_DIR="$HOME/.local/bin"
 PYTHON="3.11"
+# Pinned static-binary releases for fs_glob/fs_grep (bump as needed).
+FD_VERSION="v10.2.0"
+RG_VERSION="14.1.1"
 REF=""
 DO_BROWSER=1
 DO_SETUP=1
@@ -47,6 +50,23 @@ warn() { printf '      %s!%s %s\n' "$GOLD" "$RST" "$*" >&2; }
 die() { printf '\n%s✗%s %s\n' "$GOLD" "$RST" "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# fetch_static <repo> <tag> <asset-basename> <bin>: download a GitHub release tarball and drop
+# <bin> into ~/.local/bin (no sudo, like the bun install). Best-effort — returns non-zero on any
+# failure so the caller can warn and move on (the dependent tool degrades gracefully).
+fetch_static() {
+	tmp=$(mktemp -d) || return 1
+	if curl -fsSL "https://github.com/$1/releases/download/$2/$3.tar.gz" 2>/dev/null \
+		| tar -xz -C "$tmp" 2>/dev/null; then
+		found=$(find "$tmp" -type f -name "$4" 2>/dev/null | head -n1)
+		if [ -n "$found" ]; then
+			mkdir -p "$BIN_DIR"
+			mv "$found" "$BIN_DIR/$4" && chmod +x "$BIN_DIR/$4" && rm -rf "$tmp" && return 0
+		fi
+	fi
+	rm -rf "$tmp"
+	return 1
+}
+
 logo() {
 	[ -n "$GLOW" ] || return 0
 	printf '%b\n' \
@@ -74,7 +94,7 @@ WORDMARK
 }
 
 STEP=0
-TOTAL=5
+TOTAL=6
 step() {
 	STEP=$((STEP + 1))
 	bar=""; i=0
@@ -138,13 +158,43 @@ chmod +x "$BIN_DIR/gaia"
 ensure_path "$BIN_DIR"
 ok "gaia → $BIN_DIR/gaia"
 
+# fd + ripgrep power the fs_glob / fs_grep tools. brew if present, else prebuilt static binaries
+# into ~/.local/bin (no sudo). All best-effort — the tools just degrade if this fails.
+step "Installing the file-search tools (fd, ripgrep)"
+if have brew; then
+	if brew install fd ripgrep >/dev/null 2>&1; then ok "fd + ripgrep (brew)"; else warn "brew install fd/ripgrep failed"; fi
+else
+	fd_t=""; rg_t=""
+	case "$(uname -s)/$(uname -m)" in
+		Linux/x86_64 | Linux/amd64) fd_t=x86_64-unknown-linux-musl; rg_t=x86_64-unknown-linux-musl ;;
+		Linux/aarch64 | Linux/arm64) fd_t=aarch64-unknown-linux-musl; rg_t=aarch64-unknown-linux-gnu ;;
+		Linux/armv7l | Linux/armv6l) fd_t=arm-unknown-linux-musleabihf; rg_t=armv7-unknown-linux-gnueabihf ;;
+		Darwin/arm64 | Darwin/aarch64) fd_t=aarch64-apple-darwin; rg_t=aarch64-apple-darwin ;;
+		Darwin/x86_64) fd_t=x86_64-apple-darwin; rg_t=x86_64-apple-darwin ;;
+	esac
+	if [ -n "$fd_t" ] &&
+		fetch_static sharkdp/fd "$FD_VERSION" "fd-$FD_VERSION-$fd_t" fd &&
+		fetch_static BurntSushi/ripgrep "$RG_VERSION" "ripgrep-$RG_VERSION-$rg_t" rg; then
+		ok "fd + ripgrep → $BIN_DIR"
+	else
+		warn "couldn't install fd/ripgrep for $(uname -sm) — fs_glob/fs_grep will be off (install them manually)"
+	fi
+fi
+
 if [ "$DO_BROWSER" -eq 1 ]; then
 	step "Setting up the browser (bun + Chromium)"
 	if ! have bun; then
 		curl -fsSL https://bun.sh/install | bash >/dev/null 2>&1 || warn "bun install failed (the playwright-mcp browser backend won't be available)"
 	fi
 	[ -d "$HOME/.bun/bin" ] && ensure_path "$HOME/.bun/bin"
-	"$VENV/bin/playwright" install chromium >/dev/null 2>&1 || warn "Chromium install failed (the native browser fallback won't be available)"
+	# Native fallback uses the python Playwright's Chromium; the default mcp backend uses the
+	# NODE Playwright that playwright-mcp drives — install a browser for each.
+	"$VENV/bin/playwright" install chromium >/dev/null 2>&1 || warn "Chromium (native) install failed"
+	if have bunx || [ -x "$HOME/.bun/bin/bunx" ]; then
+		"${HOME}/.bun/bin/bunx" playwright install chromium >/dev/null 2>&1 \
+			|| bunx playwright install chromium >/dev/null 2>&1 \
+			|| warn "Chromium (playwright-mcp) install failed — the mcp browser backend may need it"
+	fi
 	ok "browser ready"
 else
 	step "Skipping the browser (--no-browser)"

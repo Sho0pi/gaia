@@ -364,8 +364,9 @@ def default_registry(
     if _is_enabled(config, fs.EDIT):
         registry.register(fs.EDIT, fs.make_fs_edit(agents_dir))
     if _is_enabled(config, fs.GLOB):
-        if shutil.which("fd"):
-            registry.register(fs.GLOB, fs.make_fs_glob(agents_dir))
+        fd_bin = shutil.which("fd") or shutil.which("fdfind")  # Debian renames fd -> fdfind
+        if fd_bin:
+            registry.register(fs.GLOB, fs.make_fs_glob(agents_dir, fd_bin))
         else:
             registry.mark_missing(
                 fs.GLOB, "'fd' not on PATH (brew install fd / apt install fd-find)"

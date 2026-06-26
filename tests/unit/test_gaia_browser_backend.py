@@ -42,7 +42,8 @@ def test_mcp_backend_attaches_playwright(tmp_path: Path, monkeypatch: pytest.Mon
     toolsets = gaia.container.mcp_toolsets()
 
     assert len(toolsets) == 1
-    assert toolsets[0].connection_params.server_params.command == "bunx"
+    # bunx is resolved to an absolute path so the daemon/service launch doesn't depend on PATH.
+    assert toolsets[0].connection_params.server_params.command.endswith("bunx")
 
 
 def test_native_backend_attaches_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
