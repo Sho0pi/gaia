@@ -174,3 +174,49 @@ def test_run_daemon_captures_a_crash(monkeypatch: pytest.MonkeyPatch, tmp_path: 
 
     crashes = recent_crashes()
     assert crashes and "kaboom in serve" in crashes[-1].read_text()
+
+
+def test_shutdown_watchdog_is_daemon_and_force_exits(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The watchdog must be a daemon timer (so it never blocks exit itself) whose action is os._exit.
+    exited: list[int] = []
+    monkeypatch.setattr(app.os, "_exit", lambda code: exited.append(code))
+
+    timer = app._arm_shutdown_watchdog(grace=999)
+    try:
+        assert timer.daemon is True
+        assert timer.interval == 999
+        timer.function()  # invoke the timer's action directly
+        assert exited == [0]  # force-exits with 0
+    finally:
+        timer.cancel()
+
+
+def test_shutdown_watchdog_fires_after_grace(monkeypatch: pytest.MonkeyPatch) -> None:
+    import threading
+
+    fired = threading.Event()
+    monkeypatch.setattr(app.os, "_exit", lambda _code: fired.set())
+
+    app._arm_shutdown_watchdog(grace=0.05)
+    assert fired.wait(timeout=2.0)  # the timer actually fires on its own
+
+
+def test_build_mem0_disables_telemetry(monkeypatch: pytest.MonkeyPatch) -> None:
+    import sys
+    from types import ModuleType, SimpleNamespace
+
+    monkeypatch.delenv("MEM0_TELEMETRY", raising=False)
+    monkeypatch.delenv("ANONYMIZED_TELEMETRY", raising=False)
+    fake = ModuleType("mem0")
+    fake.Memory = SimpleNamespace(from_config=lambda cfg: "mem0")  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "mem0", fake)
+
+    from gaia.config import Settings
+    from gaia.config.schema import MemoryConfig
+    from gaia.memory.backend import build_mem0
+
+    build_mem0(Settings(), MemoryConfig())
+    import os
+
+    assert os.environ["MEM0_TELEMETRY"] == "false"
+    assert os.environ["ANONYMIZED_TELEMETRY"] == "False"  # chromadb's own telemetry, off (#297)

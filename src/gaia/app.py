@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import signal
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -219,6 +221,31 @@ def run_daemon(
     return 0
 
 
+#: How long after a stop signal the daemon force-exits if it hasn't terminated on its own.
+SHUTDOWN_GRACE_SECONDS = 20.0
+
+
+def _arm_shutdown_watchdog(grace: float = SHUTDOWN_GRACE_SECONDS) -> threading.Timer:
+    """Force-exit ``grace`` seconds after shutdown starts — the daemon must always stop (#297).
+
+    A dependency can leave a wedged **non-daemon** thread that hangs Python's interpreter-exit join
+    forever: e.g. mem0's ``ThreadPoolExecutor`` stuck mid-Gemini-call during the final memory flush,
+    or neonize/grpc. We can't make their threads daemon or interrupt their network call, so a daemon
+    timer that ``os._exit()``s guarantees ``gaia serve`` / ``gaia stop`` terminates. Daemon → it's
+    abandoned for free when we exit cleanly first (the common case, a few seconds). By then
+    ``Gaia.close()`` has already torn down our subprocesses on the live loop, so nothing orphans.
+    """
+
+    def _force() -> None:  # pragma: no cover - exits the process
+        os._exit(0)
+
+    timer = threading.Timer(grace, _force)
+    timer.daemon = True
+    timer.name = "gaia-shutdown-watchdog"
+    timer.start()
+    return timer
+
+
 async def _serve(settings: Settings, gaia: Gaia, selected: list[str], *, hold: bool) -> None:
     """Run connectors until SIGTERM/SIGINT, then exit through the graceful path.
 
@@ -232,8 +259,14 @@ async def _serve(settings: Settings, gaia: Gaia, selected: list[str], *, hold: b
     task = asyncio.current_task()
     assert task is not None  # always inside asyncio.run
 
+    stopping = False
+
     def _request_stop(sig: signal.Signals) -> None:
+        nonlocal stopping
         logger.info("received %s — shutting down", sig.name)
+        if not stopping:  # arm the watchdog once, on the first stop signal
+            stopping = True
+            _arm_shutdown_watchdog()
         task.cancel()
 
     for sig in (signal.SIGTERM, signal.SIGINT):

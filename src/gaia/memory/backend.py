@@ -101,6 +101,10 @@ def build_mem0(settings: Settings, memory: MemoryConfig) -> Memory:
     # Besides the privacy win, its analytics consumer is a NON-daemon background thread
     # that blocks interpreter shutdown joining it — a hang on Ctrl-C / `gaia stop`.
     os.environ.setdefault("MEM0_TELEMETRY", "false")
+    # chromadb ships its OWN telemetry (separate from mem0's) — another non-daemon thread that
+    # fires on every chroma op and adds to the shutdown-hang risk (#297). chromadb's Settings has
+    # an empty env_prefix, so this disables it. Privacy win + one fewer lingering thread.
+    os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
     from mem0 import Memory
 
     return Memory.from_config(build_mem0_config(settings, memory))
