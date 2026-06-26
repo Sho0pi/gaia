@@ -422,7 +422,7 @@ gaia setup mcp [options]
 
 ### `gaia setup model`
 
-Configure the LLM: Sign in with ChatGPT, or a Gemini / OpenAI API key.
+Configure the LLM: pick a provider, authenticate (API key or ChatGPT sign-in), pick a model.
 
 ```
 gaia setup model [options]
@@ -430,7 +430,8 @@ gaia setup model [options]
 
 | Option | Description |
 |---|---|
-| `--provider` | Model provider: chatgpt | gemini | openai. |
+| `--provider` | Model provider: openai | gemini. |
+| `--oauth` | OpenAI: Sign in with ChatGPT (not an API key). |
 | `--api-key` | API key (non-interactive). |
 | `--model` | Model id (e.g. gpt-4o, gemini-2.5-flash). |
 
