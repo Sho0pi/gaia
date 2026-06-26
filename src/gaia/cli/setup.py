@@ -94,11 +94,11 @@ def _save_key(
     return key or existing
 
 
-@app.command()
 def search(ctx: typer.Context, engine: EngineOpt = None, api_key: ApiKeyOpt = None) -> None:
-    """Set the web-search engine: 'duckduckgo' (no key) or 'brave' (needs an API key).
+    """Wizard step — set the web-search engine: 'duckduckgo' (no key) or 'brave' (needs an API key).
 
-    Scriptable: `gaia setup search --engine brave --api-key <key>`. Bare command prompts.
+    Reached via `gaia setup`; not a standalone command (use `gaia config set
+    tools.web_search.engine` for non-interactive changes).
     """
     from gaia import constants
     from gaia.cli._envfile import get_env_var
@@ -287,7 +287,6 @@ def _pick_model(
     return model, not fetched
 
 
-@app.command()
 def model(
     ctx: typer.Context,
     provider: ProviderOpt = None,
@@ -297,8 +296,8 @@ def model(
 ) -> None:
     """Configure the LLM: pick a provider, authenticate (API key or ChatGPT sign-in), pick a model.
 
-    Scriptable: `gaia setup model --provider gemini --api-key <key> --model gemini-2.5-flash`, or
-    `gaia setup model --provider openai --oauth --model gpt-5.5`.
+    Scriptable: `gaia model --provider gemini --api-key <key> --model gemini-2.5-flash`, or
+    `gaia model --provider openai --oauth --model gpt-5.5`.
     """
     from gaia import constants
     from gaia.cli._envfile import get_env_var
@@ -389,7 +388,6 @@ AdminIdOpt = Annotated[
 ]
 
 
-@app.command()
 def admin(ctx: typer.Context, admin_id: AdminIdOpt = None) -> None:
     """Set the admin user (full access; receives monitor DMs and runs admin commands).
 
@@ -436,7 +434,6 @@ HeadlessOpt = Annotated[
 ]
 
 
-@app.command()
 def browser(ctx: typer.Context, backend: BackendOpt = None, headless: HeadlessOpt = None) -> None:
     """Configure the browser tool: backend (mcp / native) and headless mode."""
     from gaia.cli._select import select_one
@@ -474,7 +471,6 @@ def browser(ctx: typer.Context, backend: BackendOpt = None, headless: HeadlessOp
     )
 
 
-@app.command()
 def mcp(
     ctx: typer.Context,
     name: Annotated[str | None, typer.Option("--name", help="Short server id.")] = None,

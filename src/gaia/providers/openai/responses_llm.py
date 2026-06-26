@@ -310,7 +310,7 @@ class ChatGptOAuthLlm(BaseLlm):
 
         creds = load_credentials()
         if creds is None:
-            raise ChatGptNotAuthenticatedError("no ChatGPT login — run: gaia llm auth openai")
+            raise ChatGptNotAuthenticatedError("no ChatGPT login — run: gaia model")
 
         session_id = str(uuid.uuid4())
         body = self._request_body(llm_request, session_id)

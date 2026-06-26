@@ -84,7 +84,7 @@ def _check_secrets(ctx: DoctorContext) -> CheckResult:
         from gaia.providers.openai import load_credentials
 
         if load_credentials() is None:
-            missing.append("OPENAI_API_KEY or ChatGPT login (run 'gaia llm auth openai')")
+            missing.append("OPENAI_API_KEY or ChatGPT login (run 'gaia model')")
     if cfg.connectors.telegram.enabled and not s.telegram_bot_token:
         missing.append("GAIA_TELEGRAM_BOT_TOKEN (telegram enabled)")
     if cfg.connectors.whatsapp.enabled and not (

@@ -33,7 +33,7 @@ voice in/out, group gating, proactive push) and tick the checklist at the end.
 2. Install deps: `uv sync --all-groups` (whisper, edge-tts, browser). For the browser:
    either `bun` on PATH (default playwright-mcp backend) or
    `uv run playwright install chromium` (native). edge-tts needs network, no `espeak-ng`.
-3. Auth a model: `uv run gaia llm auth` (or put a Gemini key in `~/.gaia/.env`).
+3. Auth a model: `uv run gaia model` (or put a Gemini key in `~/.gaia/.env`).
 4. Start the daemon and pair: `uv run gaia start`, scan the QR with WhatsApp once.
    Confirm health: `uv run gaia status` and `uv run gaia doctor`.
 5. Watch while you demo (separate terminals):

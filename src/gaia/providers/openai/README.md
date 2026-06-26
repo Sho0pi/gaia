@@ -13,7 +13,7 @@ llm:
     use_oauth: true        # use the subscription; false = OPENAI_API_KEY via LiteLLM
 ```
 
-…then `gaia llm auth openai` once to log in.
+…then `gaia model` once to log in (ChatGPT sign-in).
 
 ## The trick (why this isn't the normal API)
 

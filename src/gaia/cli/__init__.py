@@ -14,7 +14,6 @@ from gaia.cli import (
     daemon,
     doctor,
     grow,
-    llm,
     logs,
     memory,
     monitor,
@@ -32,7 +31,6 @@ apply_help_theme()  # paint --help / errors in the gaia palette
 # The full command tree, composed explicitly in one place.
 app = root.app
 app.add_typer(cron.app, name="cron")
-app.add_typer(llm.app, name="llm")
 app.add_typer(grow.app, name="grow")
 app.add_typer(monitor.app, name="monitor")
 app.add_typer(setup.app, name="setup")
@@ -43,6 +41,7 @@ app.add_typer(user.app, name="user")
 app.add_typer(config.app, name="config")
 app.add_typer(acl.app, name="acl")
 app.add_typer(memory.app, name="memory")
+app.command(name="model")(setup.model)  # dedicated provider/auth/model picker (was `setup model`)
 app.command()(connect.connect)
 app.command()(daemon.serve)
 app.command()(daemon.start)

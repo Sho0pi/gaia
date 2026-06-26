@@ -1,7 +1,8 @@
 """``gaia config`` command group — inspect & edit ``gaia.yaml`` from the terminal.
 
-Generalises ``gaia llm set`` (model/provider only) to the whole config. ``set`` reuses the same
-comment-preserving yaml editor; ``get`` reports the *effective* value (file + schema defaults).
+Raw key/value access to the whole config (the escape hatch behind the wizard + ``gaia model``).
+``set`` uses the comment-preserving yaml editor; ``get`` reports the *effective* value (file +
+schema defaults).
 
 Lazy-import rule (repo convention): typer + stdlib (+ cli siblings) at module level.
 """
