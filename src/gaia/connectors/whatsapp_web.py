@@ -20,12 +20,14 @@ from typing import TYPE_CHECKING, Any
 
 from gaia import constants
 from gaia.connectors.base import (
+    WHATSAPP_LIMIT,
     Dispatch,
     Inbound,
     InboundMedia,
     Media,
     Reply,
     as_text,
+    chunk_text,
     current_chat,
 )
 
@@ -413,7 +415,8 @@ class WhatsAppWebConnector:
                     if isinstance(reply, Media):
                         await _send_media(client, chat, reply)
                     else:
-                        await client.reply_message(as_text(reply), message)
+                        for part in chunk_text(as_text(reply), WHATSAPP_LIMIT):
+                            await client.reply_message(part, message)
 
                 # Acknowledge the moment work starts: blue-tick the message and start the
                 # "typing…" indicator (best-effort; never blocks or breaks the turn).

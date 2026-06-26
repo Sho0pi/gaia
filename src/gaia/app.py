@@ -284,7 +284,14 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
                     "telegram enabled but no token (set GAIA_TELEGRAM_BOT_TOKEN) — skipping"
                 )
             else:
-                telegram = TelegramConnector(token, dispatcher.for_channel(TelegramConnector.NAME))
+                from gaia.commands import default_registry
+
+                # Flatten the command registry to (name, summary) so the connector can register
+                # them with Telegram (setMyCommands) without importing gaia.commands itself.
+                cmd_meta = [(c.name, c.summary) for c in default_registry(gaia.config).all()]
+                telegram = TelegramConnector(
+                    token, dispatcher.for_channel(TelegramConnector.NAME), commands=cmd_meta
+                )
                 tasks.append(asyncio.create_task(telegram.start()))
                 running[TelegramConnector.NAME] = telegram
 
