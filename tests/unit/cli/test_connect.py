@@ -187,7 +187,7 @@ def test_bare_invocation_numbered_multiselect(home: Path, monkeypatch: pytest.Mo
 
     assert result.exit_code == 0, result.output
     assert "1. telegram" in result.output  # the menu rendered
-    assert "not configured" in result.output  # status rendered
+    assert "2. whatsapp" in result.output
     assert _enabled(home, "whatsapp")
 
 
@@ -198,17 +198,39 @@ def test_bare_invocation_nothing_selected(home: Path) -> None:
     assert "nothing selected" in result.output
 
 
-def test_interactive_picker_submit_selected_names() -> None:
-    rows = [("telegram", "bot token", "not configured"), ("whatsapp", "QR", "configured")]
+def test_choose_marks_configured(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # _choose passes already-configured connectors as `marked`; here telegram has a token.
+    (home / ".env").write_text("GAIA_TELEGRAM_BOT_TOKEN=tok\n")
+    from gaia.config import get_settings
 
-    picked = connect_mod._selected_names(rows, cursor=1, selected={0, 1})
+    captured: dict[str, object] = {}
 
-    assert picked == ["telegram", "whatsapp"]
+    def fake_manage(title, options, *, marked=()):  # type: ignore[no-untyped-def]
+        captured["marked"] = marked
+        return [], []
+
+    monkeypatch.setattr("gaia.cli._select.select_manage", fake_manage)
+    connect_mod._choose(get_settings())
+    assert captured["marked"] == ["telegram"]  # configured one is marked
 
 
-def test_interactive_picker_enter_selects_cursor_when_empty() -> None:
-    rows = [("telegram", "bot token", "not configured"), ("whatsapp", "QR", "configured")]
+def test_remove_connector_drops_token_and_disables(home: Path) -> None:
+    (home / ".env").write_text("GAIA_TELEGRAM_BOT_TOKEN=tok\n")
+    from gaia.config import get_settings
 
-    picked = connect_mod._selected_names(rows, cursor=1, selected=set())
+    connect_mod._remove_connector(get_settings(), "telegram")
 
-    assert picked == ["whatsapp"]
+    assert get_env_var(home / ".env", "GAIA_TELEGRAM_BOT_TOKEN") is None  # token gone
+    assert not _enabled(home, "telegram")  # disabled in yaml
+
+
+def test_bare_invocation_backspace_removes(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # select_manage returns (to_setup, to_remove); a backspaced connector gets removed.
+    (home / ".env").write_text("GAIA_TELEGRAM_BOT_TOKEN=tok\n")
+    monkeypatch.setattr("gaia.cli._select.select_manage", lambda *a, **k: ([], ["telegram"]))
+
+    result = runner.invoke(cli_app, ["connect"])
+
+    assert result.exit_code == 0, result.output
+    assert "removed" in result.output
+    assert get_env_var(home / ".env", "GAIA_TELEGRAM_BOT_TOKEN") is None
