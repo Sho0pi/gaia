@@ -222,7 +222,7 @@ def run_daemon(
 
 
 #: How long after a stop signal the daemon force-exits if it hasn't terminated on its own.
-SHUTDOWN_GRACE_SECONDS = 10.0
+SHUTDOWN_GRACE_SECONDS = 20.0
 
 
 def _arm_shutdown_watchdog(grace: float = SHUTDOWN_GRACE_SECONDS) -> threading.Timer:
