@@ -301,3 +301,46 @@ def test_setup_has_no_subcommands_model_is_top_level() -> None:
 
 def test_llm_group_removed() -> None:
     assert runner.invoke(app, ["llm", "status"]).exit_code != 0  # folded into `gaia model`
+
+
+def test_browser_picker_marks_current(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    # The currently-set backend shows the gold "current" badge + starts under the cursor.
+    import typer
+
+    from gaia import constants
+    from gaia.cli._yamledit import set_config_value
+
+    set_config_value(constants.CONFIG_PATH, "browser.backend", "native")
+    captured: dict[str, object] = {}
+
+    def fake_one(title, options, default=None):  # type: ignore[no-untyped-def]
+        captured["options"] = options
+        captured["default"] = default
+        return "native"
+
+    monkeypatch.setattr("gaia.cli._select.select_one", fake_one)
+    monkeypatch.setattr(typer, "confirm", lambda *a, **k: True)  # headless prompt
+    result = runner.invoke(_step(setup.browser), [])
+    assert result.exit_code == 0, result.output
+    badges = {o[0]: o[3] for o in captured["options"]}  # type: ignore[union-attr]
+    assert badges["native"] == "current" and badges["mcp"] == ""
+    assert captured["default"] == "native"
+
+
+def test_search_picker_marks_current(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from gaia import constants
+    from gaia.cli._yamledit import set_config_value
+
+    set_config_value(constants.CONFIG_PATH, "tools.web_search.engine", "brave")
+    captured: dict[str, object] = {}
+
+    def fake_one(title, options, default=None):  # type: ignore[no-untyped-def]
+        captured["options"] = options
+        captured["default"] = default
+        return "duckduckgo"  # switch away → no key prompt
+
+    monkeypatch.setattr("gaia.cli._select.select_one", fake_one)
+    result = runner.invoke(_step(setup.search), [])
+    assert result.exit_code == 0, result.output
+    badges = {o[0]: o[3] for o in captured["options"]}  # type: ignore[union-attr]
+    assert badges["brave"] == "current" and captured["default"] == "brave"

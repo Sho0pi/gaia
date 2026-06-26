@@ -100,23 +100,30 @@ def search(ctx: typer.Context, engine: EngineOpt = None, api_key: ApiKeyOpt = No
     from gaia.cli._envfile import get_env_var
     from gaia.cli._select import select_one
     from gaia.cli._yamledit import set_config_value
-    from gaia.config import get_settings
+    from gaia.config import ConfigSupplier, get_settings
     from gaia.tools.web_search import SEARCH_ENGINES
 
     out = console()
     settings = get_settings(state(ctx).env_file)
     env_path = state(ctx).env_file or constants.ENV_FILE  # honor --env-file for secret writes
     choices = ", ".join(sorted(SEARCH_ENGINES))
+    ws = ConfigSupplier(settings.config_path).current.tools.get("web_search")
+    cur_eng = getattr(ws, "engine", None) or "duckduckgo"  # the active engine, for the marker
 
     eng = (engine or "").strip().lower()
     if not eng:
         picked = select_one(
             "Search engine",
             [
-                ("duckduckgo", "DuckDuckGo", "no API key, privacy-first"),
-                ("brave", "Brave", "needs a BRAVE_API_KEY (free tier)"),
+                (
+                    "duckduckgo",
+                    "DuckDuckGo",
+                    "no API key, privacy-first",
+                    _cur(cur_eng, "duckduckgo"),
+                ),
+                ("brave", "Brave", "needs a BRAVE_API_KEY (free tier)", _cur(cur_eng, "brave")),
             ],
-            default="duckduckgo",
+            default=cur_eng,
         )
         if picked is None:
             out.print("[yellow]cancelled[/]")
@@ -217,6 +224,11 @@ def _badge(*, configured: bool, current: bool) -> str:
     return " · ".join(
         p for p in ("configured" if configured else "", "current" if current else "") if p
     )
+
+
+def _cur(actual: object, option: object) -> str:
+    """The 'current' badge for the option that matches the active config value (else "")."""
+    return "current" if actual == option else ""
 
 
 def _unit_configured(unit: str, settings: object, env_path: Path) -> bool:
@@ -434,10 +446,11 @@ def browser(ctx: typer.Context, backend: BackendOpt = None, headless: HeadlessOp
     """Configure the browser tool: backend (mcp / native) and headless mode."""
     from gaia.cli._select import select_one
     from gaia.cli._yamledit import set_config_value
-    from gaia.config import get_settings
+    from gaia.config import ConfigSupplier, get_settings
 
     out = console()
     cfg = get_settings(state(ctx).env_file).config_path
+    live = ConfigSupplier(cfg).current.browser  # for the "current" markers
 
     be = (backend or "").strip().lower()
     if not be:
@@ -445,10 +458,20 @@ def browser(ctx: typer.Context, backend: BackendOpt = None, headless: HeadlessOp
             select_one(
                 "Browser backend",
                 [
-                    ("mcp", "Playwright-MCP", "full tool surface, needs bun"),
-                    ("native", "Native", "gaia's built-in tools, per-agent isolation"),
+                    (
+                        "mcp",
+                        "Playwright-MCP",
+                        "full tool surface, needs bun",
+                        _cur(live.backend, "mcp"),
+                    ),
+                    (
+                        "native",
+                        "Native",
+                        "built-in, per-agent isolation",
+                        _cur(live.backend, "native"),
+                    ),
                 ],
-                default="mcp",
+                default=live.backend,
             )
             or ""
         )
@@ -458,8 +481,8 @@ def browser(ctx: typer.Context, backend: BackendOpt = None, headless: HeadlessOp
     set_config_value(cfg, "browser.backend", be)
 
     hl = headless
-    if hl is None and backend is None:  # interactive run: ask
-        hl = typer.confirm("Run the browser headless (no visible window)?", default=True)
+    if hl is None and backend is None:  # interactive run: ask (default = the current value)
+        hl = typer.confirm("Run the browser headless (no visible window)?", default=live.headless)
     if hl is not None:
         set_config_value(cfg, "browser.headless", hl)
     out.print(
