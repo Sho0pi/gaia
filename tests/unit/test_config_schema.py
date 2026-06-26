@@ -14,7 +14,6 @@ _POC = {
     "connectors": {
         "whatsapp": {
             "enabled": True,
-            "allow": ["123456789", "987654321"],
             "group_trigger": {"mention_only": True},
         },
         "cli": {"enabled": True, "default_role": "admin"},
@@ -36,7 +35,6 @@ def test_parses_poc_sample() -> None:
     assert config.llm.model == "gemini-3.1-flash-lite"
     assert config.admin == ["123456789"]
     assert config.connectors.whatsapp.enabled is True
-    assert config.connectors.whatsapp.allow == ["123456789", "987654321"]
     assert config.connectors.whatsapp.group_trigger.mention_only is True
     assert config.connectors.cli.default_role == "admin"
     assert config.logging.level == "DEBUG"

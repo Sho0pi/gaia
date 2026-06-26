@@ -29,8 +29,6 @@ connectors:
   whatsapp:
     # Run the WhatsApp connector.
     enabled: false
-    # Allowed sender ids; empty = everyone (enforcement is a follow-up).
-    allow: []
     group_trigger:
       # Master switch for group chats; false = ignore all group messages.
       respond_in_groups: true

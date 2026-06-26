@@ -344,13 +344,13 @@ class GroupTrigger(BaseModel):
 
 
 class WhatsAppConnectorConfig(BaseModel):
-    """WhatsApp connector toggle + access policy."""
+    """WhatsApp connector toggle + access policy.
+
+    Access is governed by roles + guest-gating (a first-seen remote sender is a gated ``guest``
+    until an admin approves), not a per-connector allow-list — see the access-control concept doc.
+    """
 
     enabled: bool = Field(default=False, description="Run the WhatsApp connector.")
-    allow: list[str] = Field(
-        default_factory=list,
-        description="Allowed sender ids; empty = everyone (enforcement is a follow-up).",
-    )
     group_trigger: GroupTrigger = Field(default_factory=GroupTrigger)
     show_active: bool = Field(
         default=True,
