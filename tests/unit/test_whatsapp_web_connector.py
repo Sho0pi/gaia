@@ -164,7 +164,11 @@ def fake_neonize(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     }.items():
         monkeypatch.setitem(sys.modules, name, mod)
 
-    return {"MessageEv": message_ev, "ConnectedEv": connected_ev}
+    return {
+        "MessageEv": message_ev,
+        "ConnectedEv": connected_ev,
+        "PairStatusEv": pair_status_ev,
+    }
 
 
 @pytest.mark.parametrize(
@@ -813,3 +817,20 @@ async def test_presence_disabled_makes_no_calls(
     await client.handlers[fake_neonize["MessageEv"]](client, _msg(conversation="hello"))
 
     assert client.reads == [] and client.presence == [] and client.availability == []
+
+
+async def test_pair_signals_only_after_authenticated_connect(
+    fake_neonize: dict[str, Any], tmp_path: Path
+) -> None:
+    # PairSuccess (QR scanned) must NOT mark the session ready — whatsmeow still has to
+    # reconnect authenticated. Stopping pair() on PairStatusEv leaves a half-written session
+    # that re-prompts the QR on the next run. Only ConnectedEv signals a persisted session.
+    connector = WhatsAppWebConnector(tmp_path / "wa.db", _noop_dispatch)
+    client = connector.build_client()
+
+    pair_ev = SimpleNamespace(ID=SimpleNamespace(User="123"))
+    await client.handlers[fake_neonize["PairStatusEv"]](client, pair_ev)
+    assert not connector._connected.is_set()  # premature — would stop pair() mid-handshake
+
+    await client.handlers[fake_neonize["ConnectedEv"]](client, SimpleNamespace())
+    assert connector._connected.is_set()  # authenticated → session saved → safe to stop
