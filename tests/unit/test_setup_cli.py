@@ -244,13 +244,17 @@ def test_model_multi_select_configures_many_and_picks_active(monkeypatch) -> Non
     import gaia.app
     from gaia import constants
 
-    monkeypatch.setattr("gaia.cli._select.select_many", lambda *a, **k: ["gemini", "chatgpt"])
-    monkeypatch.setattr(
-        "gaia.cli._select.select_one",
-        lambda title, options, default=None: (
-            "gemini" if title == "Active provider" else "gemini-2.5-flash"
-        ),
-    )
+    # provider multi-select → both; OpenAI auth method → ChatGPT; active → gemini; model → flash.
+    monkeypatch.setattr("gaia.cli._select.select_many", lambda *a, **k: ["openai", "gemini"])
+
+    def fake_select_one(title, options, default=None):  # type: ignore[no-untyped-def]
+        if title.startswith("OpenAI"):
+            return "chatgpt"
+        if title == "Active provider":
+            return "gemini"
+        return "gemini-2.5-flash"
+
+    monkeypatch.setattr("gaia.cli._select.select_one", fake_select_one)
     monkeypatch.setattr(gaia.app, "run_auth", lambda *a, **k: None)  # ChatGPT device flow
     monkeypatch.setattr(typer, "prompt", lambda *a, **k: "gk")  # Gemini key prompt
     monkeypatch.setattr(typer, "confirm", lambda *a, **k: True)  # replace any existing key

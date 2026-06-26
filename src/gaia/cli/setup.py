@@ -146,6 +146,8 @@ _MODELS = {
     "openai": ["gpt-5.5", "gpt-5.4-mini", "gpt-4o", "gpt-4o-mini"],
     "gemini": ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"],
 }
+#: ChatGPT-oauth (Codex backend, no /models endpoint) — its own curated list.
+_OAUTH_MODELS = ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini"]
 
 OAuthOpt = Annotated[
     bool, typer.Option("--oauth/--no-oauth", help="OpenAI: Sign in with ChatGPT (not an API key).")
@@ -164,6 +166,54 @@ _UNIT_KEY = {
     "openai": ("OPENAI_API_KEY", "openai_api_key"),
     "gemini": ("GEMINI_API_KEY", "google_api_key"),
 }
+#: Provider section headers (display order) + per-unit method label/hint, for the grouped picker.
+_PROVIDER_LABEL = {"openai": "OpenAI", "gemini": "Google Gemini"}
+_METHOD = {
+    "chatgpt": ("Sign in with ChatGPT", "subscription — no API key"),
+    "openai": ("API key", "OPENAI_API_KEY"),
+    "gemini": ("API key", "GEMINI_API_KEY"),
+}
+
+
+def _provider_units(provider: str) -> list[str]:
+    """Auth units offered by a provider (OpenAI → chatgpt + key; Gemini → key)."""
+    return [u for u, (_l, _h, prov, _o) in _UNITS.items() if prov == provider]
+
+
+def _provider_configured(provider: str, settings: object, env_path: Path) -> bool:
+    return any(_unit_configured(u, settings, env_path) for u in _provider_units(provider))
+
+
+def _choose_method(
+    provider: str, ctx: typer.Context, settings: object, env_path: Path, cur_unit: str
+) -> str | None:
+    """Configure a provider: pick oauth-vs-key when it offers both, else prompt the key directly.
+
+    Returns the configured unit, or ``None`` if the auth picker was cancelled.
+    """
+    from gaia.cli._select import select_one
+
+    units = _provider_units(provider)
+    if len(units) == 1:  # only one way in (Gemini) → prompt the key immediately
+        _configure_unit(units[0], ctx, settings, env_path)
+        return units[0]
+    method = select_one(
+        f"{_PROVIDER_LABEL[provider]} — how to authenticate",
+        [
+            (
+                u,
+                _METHOD[u][0],
+                _METHOD[u][1],
+                _badge(configured=_unit_configured(u, settings, env_path), current=u == cur_unit),
+            )
+            for u in units
+        ],
+        default=cur_unit if cur_unit in units else units[0],
+    )
+    if method is None:
+        return None
+    _configure_unit(method, ctx, settings, env_path)
+    return method
 
 
 def _badge(*, configured: bool, current: bool) -> str:
@@ -225,7 +275,7 @@ def _pick_model(
     if chosen:
         return chosen, False
     fetched = available_models(provider, api_key=api_key, use_oauth=use_oauth)
-    models = fetched or _MODELS[provider]
+    models = fetched or (_OAUTH_MODELS if use_oauth else _MODELS[provider])
     options: list[tuple[str, ...]] = [
         (m, m, "", _badge(configured=False, current=m == current)) for m in models
     ]
@@ -272,24 +322,19 @@ def model(
         unit = "chatgpt" if (flag_prov == "openai" and oauth) else flag_prov
         _configure_unit(unit, ctx, settings, env_path, api_key=api_key)
         units = [unit]
-    else:  # interactive: multi-select, configure several at once
-        opts = [
-            (
-                u,
-                label,
-                hint,
-                _badge(configured=_unit_configured(u, settings, env_path), current=u == cur_unit),
-            )
-            for u, (label, hint, _p, _o) in _UNITS.items()
+    else:  # interactive: pick provider(s) first, then each provider's auth method
+        prov_marked = [p for p in _PROVIDER_LABEL if _provider_configured(p, settings, env_path)]
+        prov_opts = [
+            (p, label, "", "current" if p == live.provider else "")
+            for p, label in _PROVIDER_LABEL.items()
         ]
-        pre = [u for u in _UNITS if _unit_configured(u, settings, env_path)]
-        units = select_many("Configure model providers", opts, preselected=pre)
-        if not units:
+        providers = select_many("Set up model providers", prov_opts, marked=prov_marked)
+        if not providers:
             out.print("[yellow]nothing selected[/]")
             raise typer.Exit(1)
-        for u in units:
-            out.print(f"\n[bold]{_UNITS[u][0]}[/]")
-            _configure_unit(u, ctx, settings, env_path)
+        for p in providers:
+            _choose_method(p, ctx, settings, env_path, cur_unit)
+        units = [u for u in _UNITS if _unit_configured(u, settings, env_path)]
 
     # 2. pick the ACTIVE unit (auto when only one configured)
     if len(units) == 1:
@@ -297,7 +342,15 @@ def model(
     else:
         picked = select_one(
             "Active provider",
-            [(u, _UNITS[u][0], "", _badge(configured=True, current=u == cur_unit)) for u in units],
+            [
+                (
+                    u,
+                    f"{_PROVIDER_LABEL[_UNITS[u][2]]} · {_METHOD[u][0]}",
+                    "",
+                    "current" if u == cur_unit else "",
+                )
+                for u in units
+            ],
             default=cur_unit if cur_unit in units else units[0],
         )
         active = picked or units[0]
