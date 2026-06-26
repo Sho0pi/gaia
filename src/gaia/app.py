@@ -224,6 +224,9 @@ def run_daemon(
 #: How long after a stop signal the daemon force-exits if it hasn't terminated on its own.
 SHUTDOWN_GRACE_SECONDS = 20.0
 
+#: Budget for the best-effort memory flush on shutdown before we abandon it and exit.
+MEMORY_FLUSH_DEADLINE = 5.0
+
 
 def _arm_shutdown_watchdog(grace: float = SHUTDOWN_GRACE_SECONDS) -> threading.Timer:
     """Force-exit ``grace`` seconds after shutdown starts — the daemon must always stop (#297).
@@ -380,9 +383,15 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
                 monitor_scheduler.shutdown()
             if mission_dispatcher is not None:
                 await mission_dispatcher.stop()
-            # Drain any turns still buffered for memory before the process exits, so a
-            # Ctrl-C doesn't drop the tail of the conversation (best-effort).
-            await dispatcher.flush_all()
+            # Drain any turns still buffered for memory before the process exits (best-effort),
+            # but time-boxed: the ingest runs off-loop now, so a slow provider (Gemini on a Pi)
+            # can't stall Ctrl-C — past the deadline we abandon it and exit (#300).
+            try:
+                await asyncio.wait_for(dispatcher.flush_all(), MEMORY_FLUSH_DEADLINE)
+            except TimeoutError:
+                logger.warning(
+                    "memory flush exceeded %ss on shutdown — abandoning it", MEMORY_FLUSH_DEADLINE
+                )
 
 
 async def _notify_recent_crashes(gaia: Gaia) -> None:

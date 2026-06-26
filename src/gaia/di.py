@@ -130,12 +130,16 @@ def _build_soul_sessions(
     return manager
 
 
-def _build_memory_service(settings: Settings, config: GaiaConfig) -> Mem0MemoryService:
+def _build_memory_service(
+    settings: Settings, config: GaiaConfig, lifecycle: LifecycleManager
+) -> Mem0MemoryService:
     """Build the mem0-backed memory service. Caller gates on ``config.memory.enabled``."""
     from gaia.memory import Mem0MemoryService, build_mem0
 
     backend = build_mem0(settings, config.memory)
-    return Mem0MemoryService(backend, recall_limit=config.memory.recall_limit)
+    service = Mem0MemoryService(backend, recall_limit=config.memory.recall_limit)
+    lifecycle.add(service.aclose)  # Gaia.close() drops the ingest pool on shutdown
+    return service
 
 
 def _build_mcp_toolsets(config: GaiaConfig, lifecycle: LifecycleManager) -> list[McpToolset]:
@@ -224,7 +228,7 @@ class Container(containers.DeclarativeContainer):
         build_transcriber, config
     )
     memory_service: providers.Singleton[Mem0MemoryService] = providers.Singleton(
-        _build_memory_service, settings, config
+        _build_memory_service, settings, config, lifecycle
     )
     mcp_toolsets: providers.Singleton[list[McpToolset]] = providers.Singleton(
         _build_mcp_toolsets, config, lifecycle

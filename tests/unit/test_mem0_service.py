@@ -137,3 +137,31 @@ async def test_empty_events_are_a_noop(monkeypatch: pytest.MonkeyPatch) -> None:
     await service.add_events_to_memory(app_name="gaia", user_id="u1", events=[])
 
     assert backend.added == [] and logged == []
+
+
+async def test_ingest_runs_off_the_event_loop() -> None:
+    # mem0.add() blocks (network LLM+embed); it must run on the dedicated pool, not the loop, so a
+    # slow provider can't freeze the daemon / stall the shutdown flush (#300).
+    import threading
+
+    seen: dict[str, int] = {}
+
+    class _ThreadAwareMem0(_FakeMem0):
+        def add(self, messages: list[dict[str, str]], **kwargs: Any) -> Any:
+            seen["thread"] = threading.get_ident()
+            return super().add(messages, **kwargs)
+
+    backend = _ThreadAwareMem0()
+    service = Mem0MemoryService(backend)
+    entry = MemoryEntry(content=types.Content(parts=[types.Part(text="hi")]))
+    await service.add_memory(app_name="gaia", user_id="u1", memories=[entry])
+
+    assert backend.added  # the write happened
+    assert seen["thread"] != threading.get_ident()  # ran on the pool, not the loop thread
+    await service.aclose()  # drops the pool without raising
+
+
+async def test_aclose_is_idempotent() -> None:
+    service = Mem0MemoryService(_FakeMem0())
+    await service.aclose()
+    await service.aclose()  # second call is a no-op, never raises
