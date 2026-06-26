@@ -55,6 +55,7 @@ def _output_media(name: str, result: Any) -> list[Media]:
     from gaia.connectors.base import Media, media_kind
     from gaia.souls.delegate import NAME as DELEGATE
     from gaia.tools.browser import SCREENSHOT
+    from gaia.tools.image import NAME as GENERATE_IMAGE
     from gaia.tools.send_file import NAME as SEND_FILE
 
     if not isinstance(result, dict):
@@ -68,6 +69,8 @@ def _output_media(name: str, result: Any) -> list[Media]:
         ]
     if name == SCREENSHOT and result.get("status") == "success" and result.get("path"):
         return [Media(Path(result["path"]), caption="screenshot")]
+    if name == GENERATE_IMAGE and result.get("status") == "success" and result.get("path"):
+        return [Media(Path(result["path"]), caption="image")]
     if name == _MCP_SCREENSHOT and not result.get("isError"):
         path = _mcp_screenshot_path(result)
         return [Media(path, caption="screenshot")] if path is not None else []

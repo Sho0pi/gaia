@@ -50,6 +50,7 @@ GROUPS: dict[str, frozenset[str]] = {
     "shell": frozenset({"exec", "exec_poll", "exec_kill", "exec_list"}),
     "tasks": frozenset({"task_create", "task_list", "task_get", "task_update", "task_complete"}),
     "serve": frozenset({"serve", "serve_stop", "serve_list"}),
+    "images": frozenset({"generate_image"}),
     "cron": frozenset({"cron"}),
     "ask": frozenset({"ask_user"}),  # pause the run to ask the human (a choice / a credential)
     "core": frozenset({"capabilities"}),  # read-only: which commands/workspace/serve rules apply
@@ -67,6 +68,6 @@ GROUP_PREFIXES: dict[str, str] = {"browser_": "browser"}
 #: dropped at dispatch anyway; this keeps them tool-less if that ever changes.
 DEFAULT_ROLE_CAPS: dict[Role, list[str]] = {
     "guest": [],
-    "user": ["web", "memory", "browser", "tasks", "serve", "skills", "ask", "core"],
+    "user": ["web", "memory", "browser", "tasks", "serve", "skills", "ask", "core", "images"],
     "admin": [ALL],
 }
