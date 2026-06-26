@@ -23,9 +23,10 @@ _THEME = {
     "sel": "#f7f2e4 bold",  # focused label — bright cream
     "item": "#a8b5ac",  # unfocused label — soft sage
     "header": "#5a8a72 bold",  # group section headers
-    "box_on": "#22f0a8 bold",  # [+] selected
-    "box_mark": "#7bc79f",  # [-] already configured
-    "box_off": "#3d4a40",  # [ ] empty, faint
+    "box_on": "#22f0a8 bold",  # ● selected
+    "box_mark": "#7bc79f",  # ― already configured
+    "box_off": "#3d4a40",  # ○ empty, faint
+    "box_rm": "#d98c7a",  # ✗ marked for removal
     "moss": "#7bc79f",
     "gold": "#d4b065",
     "dim": "#5a8a72",
@@ -74,6 +75,7 @@ def _row(opt: tuple[str, str, str, str], *, here: bool, state: str | None) -> li
             "selected": ("●", "class:box_on"),  # ticked to set up this run
             "marked": ("―", "class:box_mark"),  # already configured
             "none": ("○", "class:box_off"),  # not set up
+            "removed": ("✗", "class:box_rm"),  # marked for removal (backspace)
         }[state]
         frags.append((cls, _pad_cell(glyph)))
     frags.append(("class:sel" if here else "class:item", label))
@@ -117,7 +119,7 @@ def select_many(
     marked: Sequence[str] = (),
 ) -> list[str]:
     """Multi-select: space toggles, enter confirms, esc cancels. Supports group headers + a 3-state
-    checkbox — ``marked`` values show `[-]` (already configured), ``selected`` start ticked `[+]`.
+    marker — ``marked`` values show `―` (already configured), ``selected`` start ticked `●`.
 
     Enter with nothing ticked returns the single option under the cursor. Non-TTY → numbered prompt.
     """
@@ -129,6 +131,20 @@ def select_many(
     return _run(title, opts, selected=selected, marked=marked, multi=True)  # type: ignore[return-value]
 
 
+def select_manage(
+    title: str, options: Sequence[Option], *, marked: Sequence[str] = ()
+) -> tuple[list[str], list[str]]:
+    """Multi-select with removal: space ticks `●` to set up, **backspace** marks a configured `[―]`
+    row `✗` for removal. Returns ``(to_set_up, to_remove)``. Non-TTY → (numbered picks, []).
+    """
+    opts = _norm(options)
+    if not _selectable(opts):
+        return [], []
+    if not sys.stdin.isatty():
+        return _numbered(title, opts, marked=marked, multi=True), []
+    return _run(title, opts, marked=marked, multi=True, removable=True)  # type: ignore[return-value]
+
+
 def _run(
     title: str,
     opts: list[tuple[str, str, str, str]],
@@ -137,7 +153,8 @@ def _run(
     selected: Sequence[str] = (),
     marked: Sequence[str] = (),
     multi: bool = False,
-) -> str | list[str] | None:
+    removable: bool = False,
+) -> str | list[str] | tuple[list[str], list[str]] | None:
     from prompt_toolkit import Application
     from prompt_toolkit.formatted_text import StyleAndTextTuples
     from prompt_toolkit.key_binding import KeyBindings
@@ -150,13 +167,20 @@ def _run(
     cursor = _start_index(opts, default)
     chosen: set[str] = set(selected)
     marked_set = set(marked)
+    removed: set[str] = set()
     help_text = (
-        "↑/↓ move   space select   enter confirm   esc cancel"
+        (
+            "↑/↓ move   space select   backspace remove   enter confirm   esc cancel"
+            if removable
+            else "↑/↓ move   space select   enter confirm   esc cancel"
+        )
         if multi
         else "↑/↓ move   enter select   esc cancel"
     )
 
     def _state(value: str) -> str:
+        if value in removed:
+            return "removed"
         if value in chosen:
             return "selected"
         return "marked" if value in marked_set else "none"
@@ -173,7 +197,7 @@ def _run(
         return frags
 
     kb = KeyBindings()
-    app: Application[str | list[str] | None]
+    app: Application[str | list[str] | tuple[list[str], list[str]] | None]
 
     def _step(delta: int) -> None:
         nonlocal cursor
@@ -195,13 +219,31 @@ def _run(
 
         @kb.add(" ")
         def _toggle(_e: object) -> None:
-            chosen.symmetric_difference_update({opts[cursor][0]})
+            value = opts[cursor][0]
+            removed.discard(value)  # selecting clears a pending removal
+            chosen.symmetric_difference_update({value})
             app.invalidate()
+
+        if removable:
+
+            @kb.add("backspace")
+            @kb.add("delete")
+            def _remove(_e: object) -> None:
+                value = opts[cursor][0]
+                if value in chosen:  # first undo a tick
+                    chosen.discard(value)
+                elif value in marked_set:  # mark a configured row for removal
+                    removed.symmetric_difference_update({value})
+                app.invalidate()
 
         @kb.add("enter")
         def _confirm(_e: object) -> None:
-            keep = _confirm_multi(chosen, opts[cursor][0])
-            app.exit(result=[o[0] for o in opts if o[0] in keep])  # display order
+            keep = _confirm_multi(chosen, opts[cursor][0]) if not removed else chosen
+            ticked = [o[0] for o in opts if o[0] in keep]
+            if removable:
+                app.exit(result=(ticked, [o[0] for o in opts if o[0] in removed]))
+            else:
+                app.exit(result=ticked)
     else:
 
         @kb.add("enter")
@@ -212,7 +254,7 @@ def _run(
     @kb.add("c-c")
     @kb.add("c-d")
     def _cancel(_e: object) -> None:
-        app.exit(result=([] if multi else None))
+        app.exit(result=(([], []) if removable else ([] if multi else None)))
 
     app = Application(
         layout=Layout(

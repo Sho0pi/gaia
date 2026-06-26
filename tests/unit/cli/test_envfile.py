@@ -5,7 +5,7 @@ from __future__ import annotations
 import stat
 from pathlib import Path
 
-from gaia.cli._envfile import get_env_var, set_env_var
+from gaia.cli._envfile import get_env_var, set_env_var, unset_env_var
 
 
 def test_creates_with_0600(tmp_path: Path) -> None:
@@ -45,3 +45,17 @@ def test_get_env_var(tmp_path: Path) -> None:
     assert get_env_var(path, "QUOTED") == "va lue"
     assert get_env_var(path, "MISSING") is None
     assert get_env_var(tmp_path / "nope", "A") is None
+
+
+def test_unset_env_var_removes_line_preserving_others(tmp_path: Path) -> None:
+    path = tmp_path / ".env"
+    path.write_text("# secrets\nA=1\nB=2\n")
+
+    unset_env_var(path, "A")
+
+    assert path.read_text() == "# secrets\nB=2\n"
+    assert get_env_var(path, "A") is None and get_env_var(path, "B") == "2"
+
+
+def test_unset_env_var_missing_file_is_noop(tmp_path: Path) -> None:
+    unset_env_var(tmp_path / "nope", "A")  # no raise
