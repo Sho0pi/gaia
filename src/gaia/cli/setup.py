@@ -32,12 +32,13 @@ def main(ctx: typer.Context) -> None:
     out.print(
         "[bold]gaia setup[/] — let's configure gaia. Esc/Ctrl-C skips a step (on to the next).\n"
     )
+    from gaia.cli.tools import tools as tools_step
+
     for label, step in (
         ("Model", model),
         ("Connectors", connectors),
         ("Admin", admin),
-        ("Search", search),
-        ("Browser", browser),
+        ("Tools", tools_step),
     ):
         out.print(f"\n[bold cyan]> {label}[/]")
         # Esc/Ctrl-C/decline in any step just skips it and moves on — never aborts the whole wizard.
@@ -45,11 +46,6 @@ def main(ctx: typer.Context) -> None:
             step(ctx)
         except (typer.Exit, typer.Abort, KeyboardInterrupt, EOFError):
             out.print(f"[dim]skipped {label.lower()}[/]")
-    try:
-        if typer.confirm("\nAdd a custom MCP server?", default=False):
-            mcp(ctx)
-    except (typer.Exit, typer.Abort, KeyboardInterrupt, EOFError):
-        pass
     out.print(
         "\n[bold green]✓ setup complete.[/] Run [cyan]gaia doctor[/] to check, "
         "[cyan]gaia start[/] to launch."

@@ -525,6 +525,18 @@ Print one task in full (raw JSON with --json).
 gaia task show <task_id>
 ```
 
+## `gaia tools`
+
+Configure tools: browser, web search, custom MCP servers (and `--all` to toggle the rest).
+
+```
+gaia tools [options]
+```
+
+| Option | Description |
+|---|---|
+| `--all` | Enable/disable the optional on/off tools too. |
+
 ## `gaia user`
 
 Manage known users (roles, names, channels).
