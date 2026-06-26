@@ -1277,7 +1277,7 @@ wheels = [
 
 [[package]]
 name = "gaia"
-version = "0.1.0"
+version = "0.1.0a1"
 source = { editable = "." }
 dependencies = [
     { name = "a2a-sdk" },
@@ -1298,17 +1298,20 @@ dependencies = [
     { name = "typer" },
 ]
 
-[package.dev-dependencies]
+[package.optional-dependencies]
+all = [
+    { name = "binaryornot" },
+    { name = "chromadb" },
+    { name = "ddgs" },
+    { name = "faster-whisper" },
+    { name = "httpx" },
+    { name = "litellm" },
+    { name = "mcp" },
+    { name = "playwright" },
+    { name = "trafilatura" },
+]
 browser = [
     { name = "playwright" },
-]
-dev = [
-    { name = "mypy" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
-    { name = "types-pyyaml" },
 ]
 llm = [
     { name = "httpx" },
@@ -1330,14 +1333,34 @@ voice = [
     { name = "faster-whisper" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+    { name = "types-pyyaml" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "a2a-sdk", specifier = ">=1.1.0" },
     { name = "apscheduler", specifier = ">=3.11.2" },
+    { name = "binaryornot", marker = "extra == 'tools'", specifier = ">=0.6.0" },
+    { name = "chromadb", marker = "extra == 'memory'", specifier = ">=1.5.9" },
+    { name = "ddgs", marker = "extra == 'tools'", specifier = ">=9.14.4" },
     { name = "dependency-injector", specifier = ">=4.49.1" },
+    { name = "faster-whisper", marker = "extra == 'voice'", specifier = ">=1.2.1" },
+    { name = "gaia", extras = ["tools", "memory", "llm", "browser", "mcp", "voice"], marker = "extra == 'all'" },
     { name = "google-adk", specifier = ">=2.3.0" },
+    { name = "httpx", marker = "extra == 'llm'", specifier = ">=0.28.1" },
+    { name = "httpx", marker = "extra == 'tools'", specifier = ">=0.28.1" },
+    { name = "litellm", marker = "extra == 'llm'", specifier = ">=1.89.3" },
+    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.28.0" },
     { name = "mem0ai", specifier = ">=2.0.7" },
     { name = "neonize", specifier = ">=0.3.18.post0" },
+    { name = "playwright", marker = "extra == 'browser'", specifier = ">=1.60.0" },
     { name = "prompt-toolkit", specifier = ">=3.0.52" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "pydantic-settings", specifier = ">=2.14.2" },
@@ -1347,11 +1370,12 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "rich", specifier = ">=15.0.0" },
     { name = "ruamel-yaml", specifier = ">=0.19.1" },
+    { name = "trafilatura", marker = "extra == 'tools'", specifier = ">=2.1.0" },
     { name = "typer", specifier = ">=0.26.7" },
 ]
+provides-extras = ["tools", "memory", "llm", "browser", "mcp", "voice", "all"]
 
 [package.metadata.requires-dev]
-browser = [{ name = "playwright", specifier = ">=1.60.0" }]
 dev = [
     { name = "mypy", specifier = ">=2.1.0" },
     { name = "pytest", specifier = ">=9.1.1" },
@@ -1360,19 +1384,6 @@ dev = [
     { name = "ruff", specifier = ">=0.15.19" },
     { name = "types-pyyaml", specifier = ">=6.0.12.20260518" },
 ]
-llm = [
-    { name = "httpx", specifier = ">=0.28.1" },
-    { name = "litellm", specifier = ">=1.89.3" },
-]
-mcp = [{ name = "mcp", specifier = ">=1.28.0" }]
-memory = [{ name = "chromadb", specifier = ">=1.5.9" }]
-tools = [
-    { name = "binaryornot", specifier = ">=0.6.0" },
-    { name = "ddgs", specifier = ">=9.14.4" },
-    { name = "httpx", specifier = ">=0.28.1" },
-    { name = "trafilatura", specifier = ">=2.1.0" },
-]
-voice = [{ name = "faster-whisper", specifier = ">=1.2.1" }]
 
 [[package]]
 name = "google-adk"

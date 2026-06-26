@@ -12,7 +12,7 @@ supported).
 ```bash
 git clone https://github.com/Sho0pi/gaia.git
 cd gaia
-uv sync --all-groups
+uv sync --all-extras --all-groups
 ```
 
 ## Add a model key

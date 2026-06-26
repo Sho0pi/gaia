@@ -27,7 +27,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-      - run: uv sync --all-groups
+      - run: uv sync --all-extras --all-groups
       - name: Regenerate the reference pages from code
         run: uv run python scripts/gen_reference.py
       - name: Build the Starlight site + upload the Pages artifact

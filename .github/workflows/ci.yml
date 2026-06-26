@@ -22,9 +22,10 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-      - run: uv sync --all-groups
+      - run: uv sync --all-extras --all-groups
       - run: uv run ruff check .
       - run: uv run ruff format --check .
+      - run: shellcheck install.sh
       - run: uv run mypy src
       - run: uv run pytest -m "not system" --cov=src/gaia
 
@@ -39,7 +40,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-      - run: uv sync --all-groups
+      - run: uv sync --all-extras --all-groups
       - run: uv run pytest -m system
 
   # Full live tier WITH secrets: nightly + on-demand. A present-but-exhausted key (429),
@@ -55,6 +56,6 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-      - run: uv sync --all-groups
+      - run: uv sync --all-extras --all-groups
       - run: uv run playwright install --with-deps chromium
       - run: uv run pytest -m system

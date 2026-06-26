@@ -69,7 +69,7 @@ unsure which library, delegate to `lib-researcher` subagent.
   DEV agents that help build gaia. Don't confuse them.
 
 ## Commands (always via uv, from repo root)
-- Install: `uv sync --all-groups`
+- Install: `uv sync --all-extras --all-groups`
 - Lint + fix: `uv run ruff check --fix . && uv run ruff format .`
 - Types: `uv run mypy src`
 - Test: `uv run pytest`
