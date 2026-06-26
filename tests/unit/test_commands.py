@@ -227,3 +227,34 @@ def _async(_value: Any) -> Any:
         return None
 
     return _coro()
+
+
+def _style_ctx(args: str, cfg_path: Any, *, style: str = "human") -> CommandContext:
+    gaia = SimpleNamespace(
+        config=GaiaConfig(default_communication_style=style),
+        settings=SimpleNamespace(config_path=cfg_path),
+    )
+    return CommandContext(
+        args=args,
+        gaia=gaia,
+        handler=SimpleNamespace(),
+        registry=default_registry(),
+        user_id="u1",
+        session_id="s1",
+    )
+
+
+async def test_style_shows_and_sets(tmp_path: Any) -> None:
+    cfg = tmp_path / "gaia.yaml"
+
+    shown = await _run("style", _style_ctx("", cfg, style="human"))
+    assert "human" in shown and "caveman" in shown  # current + options
+
+    out = await _run("style", _style_ctx("caveman", cfg))
+    assert "set to 'caveman'" in out
+    assert "default_communication_style: caveman" in cfg.read_text()
+
+
+async def test_style_rejects_unknown(tmp_path: Any) -> None:
+    out = await _run("style", _style_ctx("shakespeare", tmp_path / "gaia.yaml"))
+    assert "unknown style" in out

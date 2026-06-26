@@ -33,6 +33,7 @@ def test_default_registry_has_every_builtin() -> None:
         "grow",
         "model",
         "effort",
+        "style",
     }
 
 

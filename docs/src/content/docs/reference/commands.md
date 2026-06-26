@@ -28,6 +28,7 @@ Type these in any gaia chat (terminal, Telegram, WhatsApp). Some need a capabili
 | `/skill` | — | `/skill <list|show|search|install|remove> [args]` | Manage skills: list, show, search, install, remove (id/glob/all). | skills |
 | `/soul` | — | `/soul` | List the souls Gaia has learned, and the ones live right now (warm sessions). | — |
 | `/status` | `/stats` | `/status` | Show model, memory settings, and registered counts. | — |
+| `/style` | — | `/style [human|caveman|ai]` | Show or set Gaia's voice (/style <human|caveman|ai>). | manage_users |
 | `/task` | — | `/task [approve|reject <id> | answer <id> <text>]` | List your open missions/tasks. Usage: /task [approve|reject|answer <id> …]. | — |
 | `/user` | — | `/user` | List known users, their roles, and the channels that reach them (admin). | manage_users |
 | `/whoami` | — | `/whoami` | Show your user/session id, model, and memory state. | — |

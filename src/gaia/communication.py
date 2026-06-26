@@ -15,6 +15,8 @@ A style is selected per agent in ``gaia.yaml`` (with a global default), and appl
 from __future__ import annotations
 
 import logging
+from pathlib import Path
+from typing import Any
 
 # Natural human voice (verbatim from the agreed spec).
 HUMAN_PROMPT = """\
@@ -98,3 +100,21 @@ def apply_communication_style(base_instruction: str, style: str) -> str:
     if prompt is None:
         return base_instruction
     return f"{prompt}\n\n{base_instruction}"
+
+
+#: The selectable voice names — what the CLI / `/style` / the tool validate against.
+STYLES: tuple[str, ...] = tuple(COMMUNICATION_STYLES)
+
+
+def current_style(config: Any) -> str:
+    """The configured default voice, falling back to the built-in default."""
+    return getattr(config, "default_communication_style", "") or DEFAULT_COMMUNICATION_STYLE
+
+
+def set_style(config_path: Path, style: str) -> None:
+    """Persist ``style`` as the global default voice. Raises ``ValueError`` on an unknown style."""
+    if style not in COMMUNICATION_STYLES:
+        raise ValueError(f"unknown style {style!r}; choose from {', '.join(STYLES)}")
+    from gaia.cli._yamledit import set_config_value
+
+    set_config_value(config_path, "default_communication_style", style)

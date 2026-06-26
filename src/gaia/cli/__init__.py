@@ -24,6 +24,7 @@ from gaia.cli import (
     setup,
     skill,
     soul,
+    style,
     task,
     tools,
     user,
@@ -48,6 +49,7 @@ app.add_typer(acl.app, name="acl")
 app.add_typer(memory.app, name="memory")
 app.command(name="model")(setup.model)  # dedicated provider/auth/model picker (was `setup model`)
 app.command(name="tools")(tools.tools)  # configure browser / web_search / MCP (+ --all toggles)
+app.command(name="style")(style.style)  # show / set Gaia's communication style (voice)
 app.command(name="report")(report.report)  # bundle a crash + logs into a GitHub bug report
 app.command(name="update")(lifecycle.update)  # upgrade gaia in place (uv pip install from git)
 app.command(name="uninstall")(lifecycle.uninstall)  # remove gaia (asks before deleting ~/.gaia)

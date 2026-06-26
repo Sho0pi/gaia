@@ -54,7 +54,9 @@ GROUPS: dict[str, frozenset[str]] = {
     "cron": frozenset({"cron"}),
     "ask": frozenset({"ask_user"}),  # pause the run to ask the human (a choice / a credential)
     "core": frozenset({"capabilities"}),  # read-only: which commands/workspace/serve rules apply
-    MANAGE_USERS: frozenset(),  # command right only — expands to no tool
+    # admin right: the user-management commands + the set_communication_style tool (changing
+    # Gaia's global voice is an admin action, so only admins' agents get that tool).
+    MANAGE_USERS: frozenset({"set_communication_style"}),
     "skills": frozenset(),  # command right: install/manage skills (the /skill command)
 }
 

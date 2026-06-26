@@ -27,6 +27,7 @@ from gaia.commands.reset import ResetCommand
 from gaia.commands.skill import SkillCommand
 from gaia.commands.soul import SoulCommand
 from gaia.commands.status import StatusCommand
+from gaia.commands.style import StyleCommand
 from gaia.commands.task import TaskCommand
 from gaia.commands.user import (
     ApproveCommand,
@@ -64,6 +65,7 @@ _BUILTINS: tuple[Command, ...] = (
     GrowCommand(),
     ModelCommand(),
     EffortCommand(),
+    StyleCommand(),
 )
 
 
