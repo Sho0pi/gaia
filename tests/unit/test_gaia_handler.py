@@ -319,6 +319,66 @@ async def test_auto_ingest_off_never_buffers() -> None:
     assert gaia.memory_service.calls == []
 
 
+async def test_idle_flush_fires_without_a_new_message() -> None:
+    # A quiet conversation drains on the timer, not only when the next message arrives.
+
+    gaia = _gaia(batch_size=100, interval=0.05)  # never hits batch; short idle timer
+    handler = GaiaHandler(gaia)
+    handler._runner = _FakeRunner([_event("ok")])
+
+    await _collect(handler, "lonely")
+    assert gaia.memory_service.calls == []  # below batch, not drained yet
+    assert handler._idle_task is not None
+    await handler._idle_task  # the timer sleeps then drains
+
+    assert len(gaia.memory_service.calls) == 1 and handler._buffer == []
+
+
+async def test_threshold_counts_turns_not_events() -> None:
+    # One turn that emits 6 events must not trip a batch size of 5 (turn-counting).
+    gaia = _gaia(batch_size=5, interval=3600)
+    handler = GaiaHandler(gaia)
+    handler._runner = _FakeRunner([_event(f"e{i}") for i in range(6)])  # 6 events, ONE turn
+
+    await _collect(handler, "msg")
+
+    assert gaia.memory_service.calls == []  # 1 turn < 5 → no flush
+    assert handler._buffered_turns == 1 and len(handler._buffer) == 6
+
+
+async def test_reset_session_cancels_the_idle_timer() -> None:
+    import asyncio
+
+    gaia = _gaia(batch_size=100, interval=3600)  # arms the idle timer, won't fire
+    handler = GaiaHandler(gaia)
+    handler._runner = _FakeRunner([_event("ok")])
+
+    await _collect(handler, "msg")
+    idle = handler._idle_task
+    assert idle is not None and not idle.done()
+
+    handler.reset_session()
+    await asyncio.sleep(0)  # let the cancellation propagate (the task catches it and returns)
+    assert idle.done() and gaia.memory_service.calls == []  # no late drain
+    assert handler._buffer == [] and handler._buffered_turns == 0
+
+
+async def test_flush_cancels_the_idle_timer() -> None:
+    import asyncio
+
+    gaia = _gaia(batch_size=100, interval=3600)
+    handler = GaiaHandler(gaia)
+    handler._runner = _FakeRunner([_event("ok")])
+
+    await _collect(handler, "msg")
+    idle = handler._idle_task
+    assert idle is not None
+
+    await handler.flush()  # cancels the timer, then drains once
+    await asyncio.sleep(0)  # let the cancelled timer settle
+    assert idle.done() and len(gaia.memory_service.calls) == 1
+
+
 def _screenshot_event(path: str, status: str = "success") -> SimpleNamespace:
     """A fake event whose tool response is a browser_screenshot result."""
     resp = SimpleNamespace(name="browser_screenshot", response={"status": status, "path": path})

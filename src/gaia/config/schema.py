@@ -467,8 +467,8 @@ class MemoryConfig(BaseModel):
         description="Flush buffered turns to mem0 once this many have accumulated.",
     )
     ingest_interval_seconds: int = Field(
-        default=3600,
-        description="Also flush if this many seconds have passed since the first buffered turn.",
+        default=600,
+        description="Flush an idle conversation this many seconds after its last buffered turn.",
     )
     extraction_instructions: str = Field(
         default="",
