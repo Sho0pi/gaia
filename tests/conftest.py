@@ -33,6 +33,7 @@ _HOME_PATHS = {
     "CRON_FILE": "cron.json",
     "CONFIG_PATH": "gaia.yaml",
     "LOG_DIR": "logs",
+    "CRASHES_DIR": "crashes",
     "AGENT_REGISTRY_DIR": "agent_registry",
     "AGENTS_DIR": "agents",
     "UPLOADS_DIR": "uploads",

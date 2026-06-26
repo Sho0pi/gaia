@@ -67,3 +67,14 @@ gaia service uninstall
 ```
 
 On Linux, `loginctl enable-linger` keeps it running without an active login session.
+
+## Something broke?
+
+```bash
+gaia report
+```
+
+Bundles the latest crash (`~/.gaia/crashes`), a recent error-log tail, and your environment into a
+**redacted** GitHub bug report — shows it, then files it via `gh` or a prefilled issue URL you review
+and submit. A fatal daemon crash is captured automatically; if the service restarts after one, gaia
+DMs the admin to run `gaia report`.

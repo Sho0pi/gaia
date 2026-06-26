@@ -203,6 +203,17 @@ def run_daemon(
     pidfile.write()
     try:
         asyncio.run(_serve(settings, gaia, selected, hold=hold))
+    except Exception as exc:
+        # A fatal crash (not the graceful SIGTERM/SIGINT cancel): capture a redacted report and
+        # log it as an event so the self-monitor sees it, then re-raise → non-zero exit → the
+        # service (gaia service) restarts us, and `gaia report` can file it.
+        from gaia.crash import write_crash_report
+        from gaia.logs import log_error
+
+        path = write_crash_report(exc, settings=settings, context={"connectors": selected})
+        log_error("daemon_crash", exc, crash_report=str(path))
+        logger.critical("daemon crashed — report at %s", path)
+        raise
     finally:
         pidfile.remove()
     return 0
@@ -227,6 +238,19 @@ async def _serve(settings: Settings, gaia: Gaia, selected: list[str], *, hold: b
 
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, _request_stop, sig)
+
+    def _on_loop_error(_loop: Any, ctx: dict[str, Any]) -> None:
+        # Unhandled exceptions in fire-and-forget tasks (a connector, the cron runner) would
+        # otherwise vanish — record them so the monitor sees connector faults that don't kill us.
+        exc = ctx.get("exception")
+        if isinstance(exc, Exception):
+            from gaia.logs import log_error
+
+            log_error("daemon_task", exc, detail=ctx.get("message", ""))
+        else:
+            loop.default_exception_handler(ctx)
+
+    loop.set_exception_handler(_on_loop_error)
     try:
         if hold:
             logger.info("holding daemon open for local socket clients")
@@ -296,6 +320,10 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
                 tasks.append(asyncio.create_task(telegram.start()))
                 running[TelegramConnector.NAME] = telegram
 
+        # If we just restarted after a crash, let the admin know once (best-effort, non-blocking).
+        notice = asyncio.create_task(_notify_recent_crashes(gaia))
+        notice.add_done_callback(lambda t: t.exception())  # swallow; never warns
+
         scheduler = _start_cron(gaia)
         mission_dispatcher = _start_dispatcher(gaia)
         improve_scheduler = _start_improve(gaia)
@@ -322,6 +350,34 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
             # Drain any turns still buffered for memory before the process exits, so a
             # Ctrl-C doesn't drop the tail of the conversation (best-effort).
             await dispatcher.flush_all()
+
+
+async def _notify_recent_crashes(gaia: Gaia) -> None:
+    """If we restarted after fresh crashes, DM the admin once — 'crashed, run `gaia report`'."""
+    from gaia.crash import last_reported, mark_reported, recent_crashes
+
+    crashes = recent_crashes(since=last_reported())
+    if not crashes:
+        return
+    from gaia.tools.message import user_address
+
+    n = len(crashes)
+    text = (
+        f"⚠ gaia crashed {n} time{'s' if n != 1 else ''} and restarted. "
+        "Run `gaia report` to file it (crash logs are in ~/.gaia/crashes)."
+    )
+    for admin in (u for u in gaia.users.list() if u.role == "admin" and u.identities):
+        addr = user_address(gaia.users, admin.id)
+        if addr is None:
+            continue
+        channel, chat = addr
+        sender = gaia.connectors.get(channel)
+        if sender is not None:
+            try:
+                await sender.send_to(chat, text)
+            except Exception:  # best-effort — a down connector never blocks startup
+                logger.debug("crash notice to %s failed", channel, exc_info=True)
+    mark_reported()
 
 
 def _start_improve(gaia: Gaia) -> Any:

@@ -152,3 +152,25 @@ def test_run_dev_scaffolds_the_commented_config(
     assert not cfg.exists()
     app.run_dev(Settings(config_path=cfg, log_dir=tmp_path / "logs"))
     assert cfg.exists() and "# " in cfg.read_text()  # the commented scaffold landed
+
+
+async def _boom(*_a: Any, **_k: Any) -> None:
+    raise RuntimeError("kaboom in serve")
+
+
+def test_run_daemon_captures_a_crash(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    # A fatal failure in _serve → a redacted crash report is written and the error re-raised.
+    fake = SimpleNamespace(config=SimpleNamespace(logging=None))
+    monkeypatch.setattr(app, "Gaia", lambda s: fake)
+    monkeypatch.setattr(app, "write_default_config", lambda path: None)
+    monkeypatch.setattr(app, "setup_logging", lambda *a, **k: None)
+    monkeypatch.setattr(app, "plan_launch", lambda cfg, daemon=False: [])
+    monkeypatch.setattr(app, "_serve", _boom)
+
+    with pytest.raises(RuntimeError, match="kaboom"):
+        app.run_daemon(_settings(tmp_path))
+
+    from gaia.crash import recent_crashes
+
+    crashes = recent_crashes()
+    assert crashes and "kaboom in serve" in crashes[-1].read_text()
