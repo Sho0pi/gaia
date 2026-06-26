@@ -231,47 +231,6 @@ Show a change's full commit message + diff.
 gaia grow show <commit>
 ```
 
-## `gaia llm`
-
-Model provider operations.
-
-### `gaia llm auth`
-
-Interactive provider login; stores credentials under ~/.gaia.
-
-```
-gaia llm auth <provider>
-```
-
-### `gaia llm list`
-
-List the documented model providers.
-
-```
-gaia llm list
-```
-
-### `gaia llm set`
-
-Set the active model and/or provider in gaia.yaml (comment-preserving).
-
-```
-gaia llm set [options]
-```
-
-| Option | Description |
-|---|---|
-| `--model` | Model id (e.g. gpt-4o, gemini-2.5-flash). |
-| `--provider` | Provider id (gemini / openai / any litellm id). |
-
-### `gaia llm status`
-
-Show the active provider and model.
-
-```
-gaia llm status
-```
-
 ## `gaia logs`
 
 Tail (and optionally follow) one of Gaia's log files.
@@ -312,6 +271,21 @@ List what gaia remembers about a user long-term.
 ```
 gaia memory list <user>
 ```
+
+## `gaia model`
+
+Configure the LLM: pick a provider, authenticate (API key or ChatGPT sign-in), pick a model.
+
+```
+gaia model [options]
+```
+
+| Option | Description |
+|---|---|
+| `--provider` | Model provider: openai | gemini. |
+| `--oauth` | OpenAI: Sign in with ChatGPT (not an API key). |
+| `--api-key` | API key (non-interactive). |
+| `--model` | Model id (e.g. gpt-4o, gemini-2.5-flash). |
 
 ## `gaia monitor`
 
@@ -371,74 +345,9 @@ gaia serve [options]
 
 Configure gaia: model, connectors, search, tools.
 
-### `gaia setup admin`
-
-Set the admin user (full access; receives monitor DMs and runs admin commands).
-
 ```
-gaia setup admin [options]
+gaia setup
 ```
-
-| Option | Description |
-|---|---|
-| `--id` | Admin sender id as channel:id, e.g. telegram:12345. |
-
-### `gaia setup browser`
-
-Configure the browser tool: backend (mcp / native) and headless mode.
-
-```
-gaia setup browser [options]
-```
-
-| Option | Description |
-|---|---|
-| `--backend` | Browser backend: mcp | native. |
-| `--headless` | Run the browser headless. |
-
-### `gaia setup mcp`
-
-Add a custom MCP server to gaia.yaml (appends to mcp.servers; needs a daemon restart).
-
-```
-gaia setup mcp [options]
-```
-
-| Option | Description |
-|---|---|
-| `--name` | Short server id. |
-| `--transport` | stdio | http | sse. |
-| `--command` | stdio: the executable. |
-| `--arg` | stdio: arg (repeatable). |
-| `--url` | http/sse: server URL. |
-
-### `gaia setup model`
-
-Configure the LLM: pick a provider, authenticate (API key or ChatGPT sign-in), pick a model.
-
-```
-gaia setup model [options]
-```
-
-| Option | Description |
-|---|---|
-| `--provider` | Model provider: openai | gemini. |
-| `--oauth` | OpenAI: Sign in with ChatGPT (not an API key). |
-| `--api-key` | API key (non-interactive). |
-| `--model` | Model id (e.g. gpt-4o, gemini-2.5-flash). |
-
-### `gaia setup search`
-
-Set the web-search engine: 'duckduckgo' (no key) or 'brave' (needs an API key).
-
-```
-gaia setup search [options]
-```
-
-| Option | Description |
-|---|---|
-| `--engine` | Search engine: duckduckgo | brave. |
-| `--api-key` | API key (non-interactive). |
 
 ## `gaia skill`
 

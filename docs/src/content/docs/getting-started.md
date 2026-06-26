@@ -24,7 +24,7 @@ echo "GEMINI_API_KEY=your-key" >> ~/.gaia/.env
 ```
 
 Prefer OpenAI or your ChatGPT subscription? See [Reference → Config](/reference/config/) for the
-`llm` block, or run `gaia llm auth openai` to sign in with ChatGPT.
+`llm` block, or run `gaia model` to pick a provider and sign in with ChatGPT.
 
 ## First chat (terminal)
 

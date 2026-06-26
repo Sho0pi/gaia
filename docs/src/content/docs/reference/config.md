@@ -21,7 +21,7 @@ llm:
   effort: ""
   # OpenAI-specific settings (e.g. use_oauth).
   openai:
-    # Sign in with ChatGPT (run 'gaia llm auth openai') and use the subscription, instead of an OPENAI_API_KEY.
+    # Sign in with ChatGPT (run 'gaia model') and use the subscription, instead of an OPENAI_API_KEY.
     use_oauth: false
 # Channel-qualified sender ids seeded as admins, e.g. 'whatsapp:972...@s.whatsapp.net' or 'telegram:12345'. Each is ensured to map to an admin user on startup; everyone else is learned at first contact.
 admin: []

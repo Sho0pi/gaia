@@ -410,6 +410,6 @@ async def test_recovers_text_from_a_completed_message_item(
 async def test_missing_credentials_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(rl, "load_credentials", lambda *a, **k: None)
 
-    with pytest.raises(ChatGptNotAuthenticatedError, match="auth openai"):
+    with pytest.raises(ChatGptNotAuthenticatedError, match="gaia model"):
         async for _ in ChatGptOAuthLlm(model="gpt-5").generate_content_async(_request()):
             pass

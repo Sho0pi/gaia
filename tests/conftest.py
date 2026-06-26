@@ -133,7 +133,7 @@ def _route_to_chatgpt(
         return
     token = Path.home() / f".{constants.APP_NAME}" / "openai_chatgpt.json"
     if not token.exists():
-        pytest.skip("GAIA_TEST_MODEL=chatgpt but no token (run: uv run gaia llm auth openai)")
+        pytest.skip("GAIA_TEST_MODEL=chatgpt but no token (run: uv run gaia model)")
     dest = (
         constants.HOME_DIR / "openai_chatgpt.json"
     )  # HOME_DIR is the tmp home (see _isolate_home)

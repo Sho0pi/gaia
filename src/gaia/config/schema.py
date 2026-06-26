@@ -25,7 +25,7 @@ class OpenAIConfig(BaseModel):
 
     use_oauth: bool = Field(
         default=False,
-        description="Sign in with ChatGPT (run 'gaia llm auth openai') and use the "
+        description="Sign in with ChatGPT (run 'gaia model') and use the "
         "subscription, instead of an OPENAI_API_KEY.",
     )
 

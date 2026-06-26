@@ -1,6 +1,6 @@
 """Sign in with ChatGPT — Codex-style OAuth + the Responses model backend.
 
-``gaia llm auth openai`` runs the device-code :func:`login`; then
+``gaia model`` (ChatGPT sign-in) runs the device-code :func:`login`; then
 ``llm: { provider: openai, use_oauth: true }`` routes Gaia + souls through :class:`ChatGptOAuthLlm`,
 which calls the ChatGPT subscription's Responses backend with the stored credentials.
 """
