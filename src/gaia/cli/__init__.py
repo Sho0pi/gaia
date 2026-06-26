@@ -25,6 +25,9 @@ from gaia.cli import (
     task,
     user,
 )
+from gaia.cli._help_theme import apply_help_theme
+
+apply_help_theme()  # paint --help / errors in the gaia palette
 
 # The full command tree, composed explicitly in one place.
 app = root.app
