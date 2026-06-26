@@ -36,6 +36,25 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 logger = logging.getLogger(__name__)
 
 
+def _resolve_runtime(name: str) -> str | None:
+    """Absolute path to runtime ``name`` — PATH first, then the installers' well-known dirs.
+
+    The daemon (and the launchd/systemd service) don't inherit the shell rc PATH, so a bun
+    installed at ``~/.bun/bin`` is invisible to a bare ``shutil.which("bunx")`` — the browser
+    then silently falls back to native (#296). Check the common no-sudo install locations so
+    gaia finds the runtime however it was launched. Already-absolute names pass through.
+    """
+    found = shutil.which(name)
+    if found:
+        return found
+    home = Path.home()
+    for directory in (home / ".bun" / "bin", home / ".local" / "bin", home / ".cargo" / "bin"):
+        candidate = directory / name
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
 def _stdio_env(server: MCPServerConfig) -> dict[str, str]:
     """The env a stdio server runs with: literal ``env`` + copied ``env_passthrough``.
 
@@ -65,9 +84,12 @@ def server_to_params(
             raise ValueError(f"mcp server {server.name!r}: stdio transport needs a 'command'")
         from mcp import StdioServerParameters
 
+        # Resolve to an absolute path so the launch doesn't depend on the daemon/service PATH
+        # (bunx lives in ~/.bun/bin, which isn't on a service's PATH) — #296.
+        command = _resolve_runtime(server.command) or server.command
         return StdioConnectionParams(
             server_params=StdioServerParameters(
-                command=server.command, args=server.args, env=_stdio_env(server), cwd=server.cwd
+                command=command, args=server.args, env=_stdio_env(server), cwd=server.cwd
             )
         )
     if not server.url:
@@ -80,7 +102,7 @@ def server_to_params(
 def _runtime_available(server: MCPServerConfig) -> bool:
     """True if the server's runtime is reachable (stdio command on PATH); others assumed up."""
     if server.transport == "stdio" and server.command:
-        if shutil.which(server.command) is None:
+        if _resolve_runtime(server.command) is None:
             logger.warning(
                 "mcp server %r disabled: command %r not found on PATH",
                 server.name,
@@ -151,7 +173,7 @@ def resolve_browser_backend(config: BrowserConfig) -> Literal["native", "mcp"]:
     """
     if config.backend != "mcp":
         return "native"
-    if shutil.which(config.runtime) is None:
+    if _resolve_runtime(config.runtime) is None:
         logger.warning(
             "browser backend 'mcp' requested but %r is not on PATH; falling back to the "
             "native browser tools (install bun: https://bun.sh)",
