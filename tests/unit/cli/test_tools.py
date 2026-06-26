@@ -101,3 +101,24 @@ def test_tools_mcp_remove_rewrites_servers(monkeypatch: pytest.MonkeyPatch) -> N
     assert result.exit_code == 0, result.output
     names = [s["name"] for s in _yaml()["mcp"]["servers"]]
     assert names == ["keep"]  # drop removed
+
+
+def test_tools_configure_image_sets_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("gaia.cli._select.select_manage", lambda *a, **k: (["generate_image"], []))
+    monkeypatch.setattr("gaia.cli._select.select_one", lambda *a, **k: "openai")
+
+    result = runner.invoke(app, ["tools"])
+    assert result.exit_code == 0, result.output
+    assert _yaml()["tools"]["generate_image"]["provider"] == "openai"
+
+
+def test_tools_image_in_default_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_manage(title, rows, *, marked=()):  # type: ignore[no-untyped-def]
+        captured["ids"] = [r[0] for r in rows]
+        return [], []
+
+    monkeypatch.setattr("gaia.cli._select.select_manage", fake_manage)
+    runner.invoke(app, ["tools"])
+    assert "generate_image" in captured["ids"]  # the 🎨 image row shows by default
