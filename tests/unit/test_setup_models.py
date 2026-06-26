@@ -37,9 +37,9 @@ def test_available_models_swallows_sdk_errors(monkeypatch: pytest.MonkeyPatch) -
     )  # → caller falls back
 
 
-def test_resolve_multi_none_selected_takes_cursor() -> None:
-    assert _select._resolve_multi(set(), 2) == [2]  # nothing ticked -> the cursor row
-    assert _select._resolve_multi({0, 2}, 1) == [0, 2]  # ticked ones, sorted
+def test_confirm_multi_none_selected_takes_cursor() -> None:
+    assert _select._confirm_multi(set(), "c") == {"c"}  # nothing ticked -> the cursor row
+    assert _select._confirm_multi({"a", "c"}, "b") == {"a", "c"}  # ticked ones kept
 
 
 def test_select_many_numbered_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
