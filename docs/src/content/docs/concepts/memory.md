@@ -94,8 +94,8 @@ batch, not per turn, and runs **in the background** off the reply's critical pat
    this path).
 2. When the buffered **turn count** hits `memory.ingest_batch_size` (default 10),
    `_schedule_flush` kicks off a background `_drain`. Below that, each turn (re)arms an idle
-   timer (`memory.ingest_interval_seconds`, default 300s) so a conversation that goes quiet
-   still drains — no next message required.
+   timer (`memory.ingest_interval_seconds`, default 600s = 10 min) so a conversation that goes
+   quiet still drains — no next message required.
 3. `_drain` calls `Mem0MemoryService.add_events_to_memory`, which maps the ADK events to
    mem0 `{role, content}` messages (`_events_to_messages`, ADK `model` → mem0 `assistant`)
    and calls `mem0.add(messages, user_id=…, infer=True)`. mem0 extracts/updates facts.
@@ -224,7 +224,7 @@ In-chat surface:
 | `enabled` | `true` | run long-term memory at all (off = session-only) |
 | `auto_ingest` | `true` | passively extract facts from conversation (Path A) |
 | `ingest_batch_size` | `10` | flush after this many buffered turns |
-| `ingest_interval_seconds` | `300` | flush an idle conversation this long after its last turn |
+| `ingest_interval_seconds` | `600` | flush an idle conversation this long after its last turn |
 | `recall_limit` | `5` | hits `load_memory` returns per search |
 | `preload` | `true` | distil + inject the session-start profile |
 | `preload_limit` | `20` | max bullets the profile keeps (importance-ranked) |
