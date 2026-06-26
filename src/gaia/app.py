@@ -128,6 +128,7 @@ def run_dev(
     from gaia.dev import serve_dev
 
     settings = settings or get_settings(env_file)
+    write_default_config(settings.config_path)  # fresh home: drop the commented default (#55)
     gaia = Gaia(settings)
     setup_logging(settings, gaia.config.logging)
     serve_dev(gaia, host=host, port=port)
