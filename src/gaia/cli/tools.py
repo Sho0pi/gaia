@@ -28,6 +28,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 _CONFIGURABLE = {
     "browser": ("🌐", "browser", "drive a real web browser"),
     "web_search": ("🔎", "web_search", "search the web"),
+    "generate_image": ("🎨", "image", "generate images"),
     "mcp": ("🧩", "mcp", "custom MCP servers (extra tools)"),
 }
 #: Optional on/off tools surfaced under ``--all`` (no flow — just enable/disable): id → (emoji, …).
@@ -114,6 +115,9 @@ def _configured(cfg: GaiaConfig, tid: str) -> bool:
     if tid == "web_search":
         ws = cfg.tools.get("web_search")
         return bool(ws and getattr(ws, "engine", None))
+    if tid == "generate_image":
+        img = cfg.tools.get("generate_image")
+        return bool(img and getattr(img, "provider", None))
     if tid == "mcp":
         return bool(cfg.mcp.servers)
     if tid == "browser":
@@ -131,6 +135,8 @@ def _configure(tid: str, ctx: typer.Context) -> None:
         setup.browser(ctx)
     elif tid == "web_search":
         setup.search(ctx)
+    elif tid == "generate_image":
+        _configure_image(ctx)
     elif tid == "mcp":
         _manage_mcp(ctx)
 
@@ -142,12 +148,76 @@ def _reset(tid: str, cfg_path: Path) -> None:
     out = console()
     if tid == "web_search":
         set_config_value(cfg_path, "tools.web_search.engine", "duckduckgo")  # the no-key default
+    elif tid == "generate_image":
+        set_config_value(cfg_path, "tools.generate_image.provider", "gemini")  # the default backend
     elif tid == "browser":
         set_config_value(cfg_path, "browser.backend", "mcp")
         set_config_value(cfg_path, "browser.headless", True)
     elif tid == "mcp":
         set_config_value(cfg_path, "mcp.servers", [])
     out.print(f"[dim]{tid} reset to defaults[/]")
+
+
+def _configure_image(ctx: typer.Context) -> None:
+    """Pick the image backend: gemini/openai (reuse the model key) or a Cloudflare worker."""
+    from gaia import constants
+    from gaia.cli import setup  # _save_key lives with the other secret prompts
+    from gaia.cli._envfile import get_env_var
+    from gaia.cli._select import select_one
+    from gaia.cli._yamledit import set_config_value
+    from gaia.config import ConfigSupplier, get_settings
+
+    out = console()
+    settings = get_settings(state(ctx).env_file)
+    cfg_path = settings.config_path
+    env_path = state(ctx).env_file or constants.ENV_FILE
+    img = ConfigSupplier(cfg_path).current.tools.get("generate_image")
+    cur = getattr(img, "provider", None) or "gemini"
+
+    prov = select_one(
+        "Image provider",
+        [
+            (
+                "gemini",
+                "Google Imagen",
+                "uses GEMINI_API_KEY",
+                "current" if cur == "gemini" else "",
+            ),
+            (
+                "openai",
+                "OpenAI gpt-image-1",
+                "uses OPENAI_API_KEY",
+                "current" if cur == "openai" else "",
+            ),
+            (
+                "cloudflare",
+                "Cloudflare worker (SDXL)",
+                "custom URL + token",
+                "current" if cur == "cloudflare" else "",
+            ),
+        ],
+        default=cur,
+    )
+    if prov is None:
+        out.print("[yellow]cancelled[/]")
+        raise typer.Exit(1)
+    set_config_value(cfg_path, "tools.generate_image.provider", prov)
+
+    if prov == "cloudflare":
+        url = typer.prompt("Cloudflare worker URL").strip()
+        if url:
+            set_config_value(cfg_path, "tools.generate_image.cloudflare_url", url)
+        existing = get_env_var(env_path, "GAIA_CLOUDFLARE_AI_TOKEN") or settings.cloudflare_ai_token
+        setup._save_key(
+            env_path,
+            "GAIA_CLOUDFLARE_AI_TOKEN",
+            existing=existing,
+            flag=None,
+            label="Cloudflare AI token",
+        )
+    else:
+        out.print(f"[dim]image uses your {prov} API key — set it via `gaia model`[/]")
+    out.print(f"image provider set to [bold]{prov}[/]")
 
 
 def _manage_mcp(ctx: typer.Context) -> None:
