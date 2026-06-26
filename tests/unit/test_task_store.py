@@ -151,3 +151,22 @@ def test_concurrent_read_during_write_is_wal_safe(tmp_path: Path) -> None:
 
     assert errors == []
     assert len(store.list()) == 60
+
+
+def test_pending_columns_round_trip(tmp_path: Path) -> None:
+    # P3: a parked-on-ask_user task persists its serialized SoulPending + the answer durably.
+    store = _store(tmp_path)
+    t = store.create(
+        Task(
+            title="weather",
+            owner="itay",
+            status=TaskStatus.AWAITING_INPUT,
+            pending='{"warm_key": "writer/p", "question": "city?"}',
+            pending_answer="Tel Aviv",
+        )
+    )
+    got = store.get(t.id)
+    assert got is not None
+    assert got.status is TaskStatus.AWAITING_INPUT
+    assert got.pending == '{"warm_key": "writer/p", "question": "city?"}'
+    assert got.pending_answer == "Tel Aviv"

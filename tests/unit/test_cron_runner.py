@@ -6,18 +6,10 @@ from typing import Any
 
 import pytest
 
+from _fakes import FakeSender as _FakeSender
 from gaia.config import Settings
-from gaia.connectors.base import Reply
 from gaia.cron.runner import make_runner
 from gaia.cron.store import CronJob
-
-
-class _FakeSender:
-    def __init__(self) -> None:
-        self.sent: list[tuple[str, Reply]] = []
-
-    async def send_to(self, chat: str, reply: Reply) -> None:
-        self.sent.append((chat, reply))
 
 
 def _gaia(tmp_path: Any, deliver: str = "") -> Any:

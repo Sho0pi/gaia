@@ -1,0 +1,49 @@
+name: Docs
+
+# Builds the Starlight docs site (docs/) and deploys it to GitHub Pages → docs.gaia-agent.com.
+# The Reference pages are regenerated from the Python code first so the site never ships stale.
+on:
+  push:
+    branches: [master]
+    paths: ["docs/**", "scripts/gen_reference.py", "src/gaia/**", ".github/workflows/docs.yml"]
+  pull_request:
+    paths: ["docs/**", "scripts/gen_reference.py", "src/gaia/**", ".github/workflows/docs.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: docs-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --all-groups
+      - name: Regenerate the reference pages from code
+        run: uv run python scripts/gen_reference.py
+      - name: Build the Starlight site + upload the Pages artifact
+        uses: withastro/action@v6
+        with:
+          path: docs
+          package-manager: bun@latest
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

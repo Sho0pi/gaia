@@ -25,7 +25,7 @@ class OpenAIConfig(BaseModel):
 
     use_oauth: bool = Field(
         default=False,
-        description="Sign in with ChatGPT (run 'gaia llm auth openai') and use the "
+        description="Sign in with ChatGPT (run 'gaia model') and use the "
         "subscription, instead of an OPENAI_API_KEY.",
     )
 
@@ -214,6 +214,44 @@ class AnalysisConfig(BaseModel):
     )
 
 
+class MonitorGithubConfig(BaseModel):
+    """File GitHub issues for monitor findings (needs a GITHUB_TOKEN; off by default)."""
+
+    create_issues: bool = Field(
+        default=False,
+        description="File a GitHub issue for file_issue findings. Needs GITHUB_TOKEN; falls back "
+        "to notify-only if the token is missing.",
+    )
+    repo: str = Field(
+        default="", description="Target repo 'owner/name' (e.g. 'Sho0pi/gaia'). Required to file."
+    )
+    label: str = Field(
+        default="gaia-monitor", description="Label put on filed issues (also used to find dupes)."
+    )
+
+
+class MonitorConfig(BaseModel):
+    """The self-monitoring loop: gaia mines its own error logs and reports problems."""
+
+    enabled: bool = Field(
+        default=False,
+        description="Run the self-monitoring loop in the daemon — periodically read the error "
+        "logs, judge what's a real problem, and report it. Off by default (opt-in).",
+    )
+    interval_hours: float = Field(
+        default=24.0,
+        description="How often the monitor cycle runs (hours). Also the per-signature report "
+        "cooldown (the same error is reported at most once per cycle).",
+    )
+    window_hours: int = Field(
+        default=24, description="How many hours of error logs each cycle analyzes."
+    )
+    notify: bool = Field(
+        default=True, description="DM the admin about new findings (turn off for issues-only)."
+    )
+    github: MonitorGithubConfig = Field(default_factory=MonitorGithubConfig)
+
+
 class MissionsConfig(BaseModel):
     """The missions task board engine (the dispatcher inside the daemon)."""
 
@@ -254,7 +292,7 @@ class MissionsConfig(BaseModel):
         default_factory=list,
         description="Action classes that require human approval before a task runs "
         "(e.g. spend, book, send_as_me, destructive). A gated task parks in awaiting_approval "
-        "and pushes you an 'approve?' — release with /tasks approve <id>.",
+        "and pushes you an 'approve?' — release with /task approve <id>.",
     )
 
 
@@ -306,13 +344,13 @@ class GroupTrigger(BaseModel):
 
 
 class WhatsAppConnectorConfig(BaseModel):
-    """WhatsApp connector toggle + access policy."""
+    """WhatsApp connector toggle + access policy.
+
+    Access is governed by roles + guest-gating (a first-seen remote sender is a gated ``guest``
+    until an admin approves), not a per-connector allow-list — see the access-control concept doc.
+    """
 
     enabled: bool = Field(default=False, description="Run the WhatsApp connector.")
-    allow: list[str] = Field(
-        default_factory=list,
-        description="Allowed sender ids; empty = everyone (enforcement is a follow-up).",
-    )
     group_trigger: GroupTrigger = Field(default_factory=GroupTrigger)
     show_active: bool = Field(
         default=True,
@@ -429,8 +467,8 @@ class MemoryConfig(BaseModel):
         description="Flush buffered turns to mem0 once this many have accumulated.",
     )
     ingest_interval_seconds: int = Field(
-        default=3600,
-        description="Also flush if this many seconds have passed since the first buffered turn.",
+        default=600,
+        description="Flush an idle conversation this many seconds after its last buffered turn.",
     )
     extraction_instructions: str = Field(
         default="",
@@ -531,6 +569,7 @@ class GaiaConfig(BaseModel):
     cron: CronConfig = Field(default_factory=CronConfig)
     missions: MissionsConfig = Field(default_factory=MissionsConfig)
     analysis: AnalysisConfig = Field(default_factory=AnalysisConfig)
+    monitor: MonitorConfig = Field(default_factory=MonitorConfig)
     voice: VoiceConfig = Field(default_factory=VoiceConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     default_communication_style: str = Field(

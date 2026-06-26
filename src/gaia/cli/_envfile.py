@@ -25,6 +25,16 @@ def get_env_var(path: Path, key: str) -> str | None:
     return None
 
 
+def unset_env_var(path: Path, key: str) -> None:
+    """Remove ``key``'s line from the env file (no-op if absent). Used when disconnecting."""
+    if not path.exists():
+        return
+    pattern = re.compile(rf"^\s*{re.escape(key)}\s*=")
+    kept = [line for line in path.read_text().splitlines() if not pattern.match(line)]
+    path.write_text("\n".join(kept) + ("\n" if kept else ""))
+    os.chmod(path, 0o600)
+
+
 def set_env_var(path: Path, key: str, value: str) -> None:
     """Set ``key=value`` in the env file: update in place or append; create ``0600``."""
     pattern = re.compile(rf"^\s*{re.escape(key)}\s*=")

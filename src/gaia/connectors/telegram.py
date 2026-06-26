@@ -6,9 +6,22 @@ installed, so unit tests can exercise wiring without a live bot.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
-from gaia.connectors.base import Dispatch, Inbound, Media, Reply, as_text, current_chat
+from gaia.connectors.base import (
+    TELEGRAM_LIMIT,
+    Dispatch,
+    Inbound,
+    Media,
+    Reply,
+    as_text,
+    chunk_text,
+    current_chat,
+)
+
+#: Telegram bot-command names must fully match this; non-conforming ones are skipped in the menu.
+_TG_COMMAND_NAME = re.compile(r"[a-z0-9_]{1,32}")
 
 #: Media.kind → (Message.reply_* method, Bot.send_* method). python-telegram-bot accepts a
 #: ``Path`` as the file argument and opens it itself.
@@ -38,9 +51,14 @@ class TelegramConnector:
     #: Connector id used in cron job channel fields / the daemon's connector registry.
     NAME = "telegram"
 
-    def __init__(self, token: str, dispatch: Dispatch) -> None:
+    def __init__(
+        self, token: str, dispatch: Dispatch, commands: list[tuple[str, str]] | None = None
+    ) -> None:
         self._token = token
         self._dispatch = dispatch  # channel-bound: (sender_id, name, text, send)
+        # (name, summary) pairs registered via setMyCommands so typing '/' shows a menu. Plain
+        # tuples — the connector stays a dumb pipe; the caller flattens the command registry.
+        self._commands = commands or []
         self._app: Any = None  # the live Application while start() runs (for send_to)
 
     def build_application(self) -> object:
@@ -64,7 +82,10 @@ class TelegramConnector:
                         except Exception:
                             await message.reply_text(as_text(reply))
                     else:
-                        await message.reply_text(reply)
+                        # str passes through (Question → numbered text); split past Telegram's
+                        # 4096-char cap so a long reply arrives as several messages, not an error.
+                        for part in chunk_text(as_text(reply), TELEGRAM_LIMIT):
+                            await message.reply_text(part)
 
                 # Record where this turn came from, so scheduling tools (cron) can
                 # capture the chat for later proactive delivery (the chat, not the sender).
@@ -92,6 +113,7 @@ class TelegramConnector:
 
         app: Any = self.build_application()
         await app.initialize()
+        await self._register_commands(app)
         await app.start()
         await app.updater.start_polling()
         self._app = app  # expose the live bot for proactive send_to
@@ -114,4 +136,22 @@ class TelegramConnector:
         if isinstance(reply, Media):
             await _tg_send_media(self._app.bot, chat, reply)
         else:
-            await self._app.bot.send_message(chat_id=chat, text=reply)
+            for part in chunk_text(as_text(reply), TELEGRAM_LIMIT):
+                await self._app.bot.send_message(chat_id=chat, text=part)
+
+    async def _register_commands(self, app: Any) -> None:
+        """Register the in-chat commands with Telegram (setMyCommands) so typing '/' shows a menu.
+
+        Only conforming names (``[a-z0-9_]{1,32}``) are sent; summaries are capped at 256 chars.
+        """
+        if not self._commands:
+            return
+        from telegram import BotCommand
+
+        menu = [
+            BotCommand(name, summary[:256])
+            for name, summary in self._commands
+            if _TG_COMMAND_NAME.fullmatch(name)
+        ]
+        if menu:
+            await app.bot.set_my_commands(menu)

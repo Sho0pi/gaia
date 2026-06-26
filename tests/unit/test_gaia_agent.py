@@ -46,7 +46,9 @@ def test_root_agent_attaches_all_registered_tools(
     tools = kwargs["tools"]
     assert isinstance(tools[0], AclToolset)
     # delegate_to_soul / message_user / manage_permission are appended for Gaia alone.
-    names = {getattr(t, "__name__", t) for t in tools}  # type: ignore[union-attr]
+    # delegate_to_soul is a LongRunningFunctionTool (a BaseTool, name on ``.name``), the others
+    # are bare callables (``__name__``) — read whichever each exposes.
+    names = {getattr(t, "__name__", None) or getattr(t, "name", t) for t in tools}  # type: ignore[union-attr]
     expected = {"delegate_to_soul", "message_user", "manage_permission"}
     assert expected <= names
 

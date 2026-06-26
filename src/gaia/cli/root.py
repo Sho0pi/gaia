@@ -91,8 +91,32 @@ def root(
     if no_color:
         os.environ["NO_COLOR"] = "1"  # rich honors it
     ctx.obj = CliState(env_file=env_file, json=json_output, no_color=no_color)
+    # Persistent pre-run: require first-run acceptance of the disclaimer before anything runs
+    # (#251). --help / --version are eager and short-circuit before this, so they're never gated.
+    from gaia.legal import ensure_accepted
+
+    ensure_accepted()
     if ctx.invoked_subcommand is None:
+        _nudge_setup_if_unconfigured(ctx.obj)
         _chat(ctx.obj)
+
+
+def _nudge_setup_if_unconfigured(st: CliState) -> None:
+    """On bare invocation, if no model is configured yet, point the user at `gaia setup`."""
+    from gaia.config import ConfigSupplier, get_settings
+
+    settings = get_settings(st.env_file)
+    cfg = ConfigSupplier(settings.config_path).current
+    configured = (
+        cfg.llm.openai.use_oauth or bool(settings.google_api_key) or bool(settings.openai_api_key)
+    )
+    if not configured:
+        from gaia.cli._console import console
+
+        console().print(
+            "[yellow]gaia isn't configured yet.[/] Run [cyan]gaia setup[/] to pick a model + "
+            "connectors, then [cyan]gaia start[/]."
+        )
 
 
 @app.command()

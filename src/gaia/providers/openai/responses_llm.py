@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any
 from google.adk.models.base_llm import BaseLlm
 from google.adk.models.llm_response import LlmResponse
 from google.genai import types
+from pydantic import BaseModel
 
 from gaia.providers.openai import device_auth
 from gaia.providers.openai.store import Credentials, load_credentials
@@ -67,6 +68,16 @@ def _jsonable(obj: Any) -> Any:
 def _dumps(value: Any) -> str:
     """``json.dumps`` that never raises on a tool's pydantic/odd return value."""
     return json.dumps(value, default=_jsonable)
+
+
+def _call_args(arguments: str | None) -> dict[str, Any]:
+    """Parse a function-call ``arguments`` JSON, dropping null values.
+
+    gpt-5.x emits an explicit ``null`` for an *omitted* optional tool arg (Gemini just leaves it
+    out). Passing that ``None`` through to ADK would override the tool's default (e.g. ``""``) and
+    crash its string ops — so drop nulls here and let the default apply, matching Gemini.
+    """
+    return {key: value for key, value in json.loads(arguments or "{}").items() if value is not None}
 
 
 def _shrink(value: Any) -> Any:
@@ -231,6 +242,25 @@ def _system_text(llm_request: LlmRequest) -> str:
     return ""
 
 
+def _output_format(llm_request: LlmRequest) -> dict[str, Any] | None:
+    """The Responses ``text.format`` for an agent's ``output_schema``, else None.
+
+    ADK's ``set_output_schema`` stores the pydantic model on ``config.response_schema``. Off Gemini
+    that schema was previously dropped (the model only saw it as instruction text → flaky JSON);
+    passing it as a json_schema format constrains the output. ``strict=False`` because our schemas
+    carry defaults/optional fields, which strict mode rejects.
+    """
+    schema = getattr(llm_request.config, "response_schema", None)
+    if isinstance(schema, type) and issubclass(schema, BaseModel):
+        return {
+            "type": "json_schema",
+            "name": schema.__name__,
+            "schema": _json_schema(schema.model_json_schema()),
+            "strict": False,
+        }
+    return None
+
+
 class ChatGptOAuthLlm(BaseLlm):
     """Run an LLM turn over the user's ChatGPT subscription (Responses backend)."""
 
@@ -265,6 +295,9 @@ class ChatGptOAuthLlm(BaseLlm):
         }
         if self.effort:
             body["reasoning"] = {"effort": self.effort}
+        fmt = _output_format(llm_request)
+        if fmt is not None:
+            body["text"]["format"] = fmt  # constrain output to the agent's output_schema
         tools = _tools_from_request(llm_request)
         if tools:
             body["tools"] = tools
@@ -277,7 +310,7 @@ class ChatGptOAuthLlm(BaseLlm):
 
         creds = load_credentials()
         if creds is None:
-            raise ChatGptNotAuthenticatedError("no ChatGPT login — run: gaia llm auth openai")
+            raise ChatGptNotAuthenticatedError("no ChatGPT login — run: gaia model")
 
         session_id = str(uuid.uuid4())
         body = self._request_body(llm_request, session_id)
@@ -376,7 +409,7 @@ class ChatGptOAuthLlm(BaseLlm):
                                 function_call=types.FunctionCall(
                                     id=item.get("call_id"),
                                     name=item.get("name"),
-                                    args=json.loads(item.get("arguments") or "{}"),
+                                    args=_call_args(item.get("arguments")),
                                 )
                             )
                         )

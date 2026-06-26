@@ -26,6 +26,7 @@ from uuid import uuid4
 
 from gaia import constants
 from gaia.connectors.base import inbound_attachments, media_kind
+from gaia.core.elicit import ASK_USER_TOOL, SoulPending
 from gaia.souls.smith import SoulDecision, build_soul_smith
 from gaia.tools.fs.base import _safe_dir, current_agent, current_project, is_denied, sandbox_for
 
@@ -69,6 +70,34 @@ class SoulRun:
     #: in :func:`gaia.core.screenshots.media_for_outputs`.
     media: list[str] = field(default_factory=list)
     error: str = ""
+    #: Set when the soul paused on ``ask_user`` mid-run (P2): the run is neither ok nor failed —
+    #: it's waiting on the user. The caller surfaces the question and later calls ``resume_soul``.
+    pending: SoulPending | None = None
+
+
+@dataclass
+class _AgentTurn:
+    """One soul turn's outcome: its final text, media, and the ask_user call if it paused."""
+
+    text: str
+    media: list[str]
+    paused: Any | None = None  # the soul's ask_user function_call (ADK), if the run paused
+
+
+def _soul_ask_call(event: Any) -> Any | None:
+    """The soul's ``ask_user`` function call in ``event`` if it paused the run, else None.
+
+    Same shape as ``GaiaHandler._ask_call``: a long-running call flagged on
+    ``event.long_running_tool_ids`` whose name is ``ask_user``.
+    """
+    ids = getattr(event, "long_running_tool_ids", None)
+    if not ids or not (event.content and event.content.parts):
+        return None
+    for part in event.content.parts:
+        call = getattr(part, "function_call", None)
+        if call is not None and call.id in ids and call.name == ASK_USER_TOOL:
+            return call
+    return None
 
 
 def existing_souls(gaia: Gaia) -> str:
@@ -187,35 +216,26 @@ def _deliverable_media(primary: Path, files: list[str], run_media: list[str]) ->
     return list(seen.values())
 
 
-async def run_soul_agent(
+async def _run_soul_content(
     gaia: Gaia,
     soul: Any,
     key: str,
-    task: str,
     user_id: str,
+    content: Any,
     *,
     state: dict[str, Any] | None = None,
     warm_key: str | None = None,
-) -> tuple[str, list[str]]:
-    """Run ``soul`` on ``task`` in a nested Runner; return its final text and any media.
+) -> _AgentTurn:
+    """Drive ``soul`` over one ADK turn for ``content`` (a task message or a resume
+    function-response) and return its text/media — or the ask_user call if it paused.
 
     The runner is given Gaia's ``memory_service`` and the caller's ``user_id`` so the soul's
     ``load_memory``/``remember`` tools read and write the *same* user's long-term memory.
-
-    ``state`` seeds the soul's ADK session state — the seam the soul's tools read to learn which
-    task they're running (so ``task_create`` files a subtask of it) and the consult depth/chain
-    that bounds in-turn recursion.
-
-    ``warm_key`` (``soul/project``) keeps the session alive across delegations via
-    :class:`gaia.souls.sessions.SoulSessionManager`, so the soul resumes instead of re-reading its
-    workspace each time; ``None`` (the smith) uses a fresh throwaway session that must not persist.
-
-    The media list is the paths of any files the soul produced for the user this run — extracted
-    from its event stream with the same scanner the handler uses, so the root can deliver them.
+    ``warm_key`` (``soul/project``) keeps the session alive across delegations and across a
+    pause, so a resume re-enters the same session (its events carry the paused ask_user call).
     """
     from google.adk.runners import Runner
     from google.adk.sessions import InMemorySessionService
-    from google.genai import types
 
     from gaia.core.plugins import ToolLoggingPlugin, ToolPermissionPlugin
     from gaia.core.screenshots import media_for_outputs
@@ -240,9 +260,9 @@ async def run_soul_agent(
         memory_service=gaia.memory_service,
         plugins=[ToolPermissionPlugin(gaia), ToolLoggingPlugin()],
     )
-    content = types.Content(role="user", parts=[types.Part(text=task)])
     parts: list[str] = []
     events: list[Any] = []
+    paused: Any | None = None
     # NB: we deliberately never call ``runner.close()``. Runner.close() closes the agent's
     # toolsets — and the soul's tools include the *shared* MCP/Skills singletons (same objects on
     # the root agent, see AgentFactory); closing them mid-conversation makes the root's later turns
@@ -254,10 +274,35 @@ async def run_soul_agent(
             user_id=user_id, session_id=session_id, new_message=content
         ):
             events.append(event)
+            # The soul paused on ask_user. Record it but keep draining: a long-running tool
+            # emits no function-response, so run_async ends on its own right after — letting it
+            # finish closes the run cleanly (see GaiaHandler._drive for the same reasoning).
+            if (call := _soul_ask_call(event)) is not None:
+                paused = call
+                continue
             if event.is_final_response() and event.content and event.content.parts:
                 parts.extend(p.text for p in event.content.parts if p.text)
     media = [str(m.path) for m in media_for_outputs(events)]
-    return "\n".join(parts), media
+    return _AgentTurn("\n".join(parts), media, paused)
+
+
+async def run_soul_agent(
+    gaia: Gaia,
+    soul: Any,
+    key: str,
+    task: str,
+    user_id: str,
+    *,
+    state: dict[str, Any] | None = None,
+    warm_key: str | None = None,
+) -> _AgentTurn:
+    """Run ``soul`` on ``task`` in a nested Runner; return its turn outcome (text/media/pause)."""
+    from google.genai import types
+
+    content = types.Content(role="user", parts=[types.Part(text=task)])
+    return await _run_soul_content(
+        gaia, soul, key, user_id, content, state=state, warm_key=warm_key
+    )
 
 
 async def decide_soul(gaia: Gaia, task: str) -> SoulDecision:
@@ -272,9 +317,10 @@ async def decide_soul(gaia: Gaia, task: str) -> SoulDecision:
     model = gaia.config.llm.model or gaia.settings.model
     smith = build_soul_smith(model, gaia.config.llm.provider, gaia.config.llm.openai.use_oauth)
     request = f"TASK:\n{task}\n\nEXISTING SOULS:\n{existing_souls(gaia)}"
-    # The smith only emits a JSON decision (no screenshots/files), so its media is always empty.
-    raw, _media = await run_soul_agent(gaia, smith, "smith", request, user_id="gaia")
-    return SoulDecision.model_validate(json.loads(raw))
+    # The smith only emits a JSON decision (no screenshots/files, never ask_user), so its turn is
+    # always a plain text result.
+    turn = await run_soul_agent(gaia, smith, "smith", request, user_id="gaia")
+    return SoulDecision.model_validate(json.loads(turn.text))
 
 
 def resolve_spec(gaia: Gaia, decision: SoulDecision) -> tuple[Any, bool] | None:
@@ -361,16 +407,11 @@ async def execute_decision(
         before = _snapshot(primary)
         timeout = gaia.config.souls.timeout_seconds  # read per call so yaml edits hot-reload
         run_state = {**(state or {}), "created_by": spec.key}
+        warm_key = f"{spec.key}/{slug}"  # keep this (soul, project) session warm
         try:
-            summary, run_media = await asyncio.wait_for(
+            turn = await asyncio.wait_for(
                 run_soul_agent(
-                    gaia,
-                    soul,
-                    spec.key,
-                    task,
-                    user_id,
-                    state=run_state,
-                    warm_key=f"{spec.key}/{slug}",  # keep this (soul, project) session warm
+                    gaia, soul, spec.key, task, user_id, state=run_state, warm_key=warm_key
                 ),
                 timeout=timeout,
             )
@@ -381,8 +422,21 @@ async def execute_decision(
         except Exception as exc:
             return SoulRun(False, spec.key, spec.name, created, error=f"soul run failed: {exc}")
 
+        if turn.paused is not None:
+            # The soul asked the user mid-run: hand the pause up so the root surfaces the
+            # question; ``before`` rides along so a later resume reports the cumulative diff.
+            return SoulRun(
+                False,
+                spec.key,
+                spec.name,
+                created,
+                project=slug,
+                workspace=str(primary),
+                pending=_soul_pending(turn.paused, warm_key, spec, slug, user_id, before),
+            )
+
         files = _changed(before, _snapshot(primary))
-        media = _deliverable_media(primary, files, run_media)
+        media = _deliverable_media(primary, files, turn.media)
     finally:
         current_project.reset(token)
         current_agent.reset(agent_token)
@@ -392,9 +446,149 @@ async def execute_decision(
         soul_name=spec.name,
         created=created,
         reason=decision.reason,
-        summary=summary,
+        summary=turn.text,
         workspace=str(primary),
         project=slug,
+        files=files,
+        media=media,
+    )
+
+
+def soul_result(run: SoulRun) -> dict[str, Any]:
+    """The tool-result dict for a finished soul run — ``delegate_to_soul``'s success/error
+    return, also used to resume the root once a paused soul completes."""
+    if not run.ok:
+        return {
+            "status": "error",
+            "soul": run.soul_key,
+            "created": run.created,
+            "error_message": run.error,
+        }
+    return {
+        "status": "success",
+        "soul": run.soul_name,
+        "created": run.created,
+        "reason": run.reason,
+        "workspace": run.workspace,
+        "project": run.project,
+        "files": run.files,
+        "media": run.media,
+        "summary": run.summary,
+    }
+
+
+def _soul_pending(
+    call: Any, warm_key: str, spec: Any, slug: str, user_id: str, before: dict[str, float]
+) -> SoulPending:
+    """Build a :class:`SoulPending` from the soul's paused ``ask_user`` call."""
+    args = call.args or {}
+    return SoulPending(
+        warm_key=warm_key,
+        soul_key=spec.key,
+        project=slug,
+        soul_fc_id=call.id,
+        question=str(args.get("question", "")),
+        options=tuple(args.get("options") or ()),
+        secret=bool(args.get("secret", False)),
+        soul_name=spec.name,
+        user_id=user_id,
+        before=before,
+    )
+
+
+async def resume_soul(gaia: Gaia, pending: SoulPending, answer: str) -> SoulRun:
+    """Resume the soul paused on ``ask_user`` by feeding ``answer`` as the tool's result.
+
+    Re-enters the *same* warm session (its events carry the paused call), so the soul continues
+    where it stopped — no smith re-run, no attachment re-copy. Returns a finished ``SoulRun``, or
+    one whose ``pending`` is set again if the soul asked a further question.
+    """
+    from google.genai import types
+
+    from gaia.souls.consult import make_consult_soul
+
+    spec = gaia.souls.get(pending.soul_key)
+    if spec is None:  # the soul was deleted between pause and answer
+        return SoulRun(
+            False, pending.soul_key, pending.soul_name, False, error="soul no longer exists"
+        )
+    soul = gaia.factory.create_or_reuse(
+        spec, effort=gaia.config.llm.effort, extra_tools=[make_consult_soul(gaia)]
+    )
+    token = current_project.set(pending.project)
+    agent_token = current_agent.set(spec.key)
+    try:
+        primary = sandbox_for(constants.AGENTS_DIR, spec.key).primary
+        timeout = gaia.config.souls.timeout_seconds
+        fr = types.Content(
+            role="user",
+            parts=[
+                types.Part(
+                    function_response=types.FunctionResponse(
+                        id=pending.soul_fc_id, name=ASK_USER_TOOL, response={"answer": answer}
+                    )
+                )
+            ],
+        )
+        try:
+            turn = await asyncio.wait_for(
+                _run_soul_content(
+                    gaia, soul, spec.key, pending.user_id, fr, warm_key=pending.warm_key
+                ),
+                timeout=timeout,
+            )
+        except TimeoutError:
+            return SoulRun(
+                False,
+                spec.key,
+                spec.name,
+                False,
+                project=pending.project,
+                error=f"soul timed out after {timeout:.0f}s",
+            )
+        except Exception as exc:
+            return SoulRun(
+                False,
+                spec.key,
+                spec.name,
+                False,
+                project=pending.project,
+                error=f"soul run failed: {exc}",
+            )
+
+        if turn.paused is not None:  # the soul asked something else — pause again
+            return SoulRun(
+                False,
+                spec.key,
+                spec.name,
+                False,
+                project=pending.project,
+                workspace=str(primary),
+                pending=_soul_pending(
+                    turn.paused,
+                    pending.warm_key,
+                    spec,
+                    pending.project,
+                    pending.user_id,
+                    pending.before,
+                ),
+            )
+
+        # Cumulative diff against the baseline taken before the soul first ran (carried across
+        # the pause in ``pending.before``), so files written before the question are reported too.
+        files = _changed(pending.before, _snapshot(primary))
+        media = _deliverable_media(primary, files, turn.media)
+    finally:
+        current_project.reset(token)
+        current_agent.reset(agent_token)
+    return SoulRun(
+        ok=True,
+        soul_key=spec.key,
+        soul_name=spec.name,
+        created=False,
+        summary=turn.text,
+        workspace=str(primary),
+        project=pending.project,
         files=files,
         media=media,
     )

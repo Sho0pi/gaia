@@ -1,33 +1,42 @@
 # gaia
 
+[![gaia-agent.com](https://img.shields.io/badge/gaia--agent.com-0F172A?style=flat&logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAA4AAAAOCAYAAAAfSC3RAAAABGdBTUEAALGPC/xhBQAAACBjSFJNAAB6JgAAgIQAAPoAAACA6AAAdTAAAOpgAAA6mAAAF3CculE8AAAAeGVYSWZNTQAqAAAACAAEARoABQAAAAEAAAA+ARsABQAAAAEAAABGASgAAwAAAAEAAgAAh2kABAAAAAEAAABOAAAAAAAAAEgAAAABAAAASAAAAAEAA6ABAAMAAAABAAEAAKACAAQAAAABAAAADqADAAQAAAABAAAADgAAAACOfw3NAAAACXBIWXMAAAsTAAALEwEAmpwYAAACmmlUWHRYTUw6Y29tLmFkb2JlLnhtcAAAAAAAPHg6eG1wbWV0YSB4bWxuczp4PSJhZG9iZTpuczptZXRhLyIgeDp4bXB0az0iWE1QIENvcmUgNi4wLjAiPgogICA8cmRmOlJERiB4bWxuczpyZGY9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkvMDIvMjItcmRmLXN5bnRheC1ucyMiPgogICAgICA8cmRmOkRlc2NyaXB0aW9uIHJkZjphYm91dD0iIgogICAgICAgICAgICB4bWxuczp0aWZmPSJodHRwOi8vbnMuYWRvYmUuY29tL3RpZmYvMS4wLyIKICAgICAgICAgICAgeG1sbnM6ZXhpZj0iaHR0cDovL25zLmFkb2JlLmNvbS9leGlmLzEuMC8iPgogICAgICAgICA8dGlmZjpYUmVzb2x1dGlvbj43MjwvdGlmZjpYUmVzb2x1dGlvbj4KICAgICAgICAgPHRpZmY6WVJlc29sdXRpb24+NzI8L3RpZmY6WVJlc29sdXRpb24+CiAgICAgICAgIDx0aWZmOlJlc29sdXRpb25Vbml0PjI8L3RpZmY6UmVzb2x1dGlvblVuaXQ+CiAgICAgICAgIDxleGlmOlBpeGVsWURpbWVuc2lvbj4xMjQ8L2V4aWY6UGl4ZWxZRGltZW5zaW9uPgogICAgICAgICA8ZXhpZjpQaXhlbFhEaW1lbnNpb24+MTI0PC9leGlmOlBpeGVsWERpbWVuc2lvbj4KICAgICAgICAgPGV4aWY6Q29sb3JTcGFjZT4xPC9leGlmOkNvbG9yU3BhY2U+CiAgICAgIDwvcmRmOkRlc2NyaXB0aW9uPgogICA8L3JkZjpSREY+CjwveDp4bXBtZXRhPgqvVIrFAAAB/0lEQVQoFaWSu2tUQRTGvzMz9+7eXbK7bNZkTZQQEBRiaTob0cLGRgVRsEwrdiIETKFNYkjjvxBLESwsLQSxsJDVYAoFCxsNkrD37n3N4zh3zUMsdYbDnGG+3znfDAP846C/ufaTNxebfdzsd/PTJya0m2+JwUyoNu/NX3j7p/YIXHmlWmiuUc/diWat6HczzLcNTrUlZiWXXUWrt49fekBEriogDqp0f7SWhQvv2jIXeRpznKW8myX8M9lzQ52ErsbLmzsv7x/oxx1nrgzO2LZ+V3azZjFdME9naEwWmOoUmGtZnmsQTjYC6tVUKhUtLvWuflJVBZmV1ylQTR04h8iSbTiM6gY7oQErDePdacqZ681mVLprHnk4BoOUFoy0EIGDSBgcOxSRhQ01rNTkJxfEcDWLNrmFqtkYVIklCAEZ+EtHzDQEOGLSoUMsPSxKcsKy8C4mha24fTClAaS8IUNve+ThOvsCgKs7mMAi9XaFj5o28Ma3KnD8qtLQMxR6JDMhREaQKYFSf5pVYWFyg7Qsxe4wzr8Xw+eH4Iev57adM6vC1UAFhA9AM2C8LWMYWpPxFuMsW/+y+PjjIVgln7e/PdIcr1li44QSLODbOoLyGUqDOF5P1fuVSluNo5/ze4+Jyy/O553RLTMVn+Vje0BnuIV68hRLG6/3Jf+3/AKwAunY2GH4ZwAAAABJRU5ErkJggg==&logoColor=white)](https://gaia-agent.com)
+[![Docs](https://img.shields.io/badge/docs-0F172A?style=flat&logo=astro&logoColor=white)](https://docs.gaia-agent.com)
+[![CI](https://img.shields.io/github/actions/workflow/status/Sho0pi/gaia/ci.yml?branch=master&style=flat&logo=githubactions&logoColor=white&label=CI&labelColor=0F172A)](https://github.com/Sho0pi/gaia/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/Sho0pi/gaia?style=flat&logo=opensourceinitiative&logoColor=white&label=license&labelColor=0F172A&color=0F172A)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.11+-0F172A?style=flat&logo=python&logoColor=white)](https://www.python.org/)
+
 > I hate python — here is Gaia, the best agent you will ever use.
 
-**Gaia** is an AI agent that spawns task-specific subagents on demand, **stores them for
-reuse** (no recreating), and fine-tunes them to you over time. Inspired by openclaw,
-hermes-agent, and picoclaw.
+Gaia builds its own specialists. Hand it a task and it grabs the right **soul** (a subagent) for the
+job, or forges a new one and keeps it around for next time — so it gets sharper the more you use it.
+It remembers you, runs long jobs in the background, and you talk to it on Telegram, WhatsApp, or your
+terminal.
 
-## Design
+## Quickstart
 
-- **Reuse over rebuild.** Every capability leans on a proven library, never a from-scratch
-  reinvention.
-- **Gaia orchestrator** ([`src/gaia/core`](src/gaia/core)) routes a task to the best subagent.
-- **Agent factory + registry** ([`src/gaia/agents`](src/gaia/agents)) builds an ADK agent
-  for a new task and persists it as an A2A `AgentCard` so it is reused next time.
-- **Two-tier memory** ([`src/gaia/memory`](src/gaia/memory)): short-term = ADK session
-  state; long-term = [mem0](https://github.com/mem0ai/mem0).
-- **Connectors** ([`src/gaia/connectors`](src/gaia/connectors)): Telegram, WhatsApp, CLI —
-  thin I/O adapters only.
-- **Config** ([`src/gaia/config`](src/gaia/config)): secrets come from env/`.env`
-  ([`Settings`](src/gaia/config/settings.py)); everything else lives in a hot-reloaded
-  `~/.gaia/gaia.yaml` ([`ConfigSupplier`](src/gaia/config/store.py)) — toggle connectors and
-  edit settings without restarting. A commented default is scaffolded on first run.
+```bash
+git clone https://github.com/Sho0pi/gaia.git
+cd gaia
+uv sync --all-groups
+echo "GEMINI_API_KEY=your-key" >> ~/.gaia/.env
+uv run gaia                     # chat in your terminal
+```
 
-## Stack
+Hooking up Telegram/WhatsApp and everything else: **[docs.gaia-agent.com](https://docs.gaia-agent.com)**.
 
-[google-adk](https://github.com/google/adk-python) · [a2a-sdk](https://a2a-protocol.org) ·
-[mem0ai](https://github.com/mem0ai/mem0) ·
-[python-telegram-bot](https://github.com/python-telegram-bot/python-telegram-bot) ·
-[pywa](https://github.com/david-lev/pywa). Managed with [uv](https://docs.astral.sh/uv/).
+## Built on
+
+Gaia leans on a lot of great open-source work, each under its own license:
+[google-adk](https://github.com/google/adk-python) (runtime),
+[a2a-sdk](https://a2a-protocol.org),
+[mem0](https://github.com/mem0ai/mem0) (memory),
+[python-telegram-bot](https://github.com/python-telegram-bot/python-telegram-bot) /
+[pywa](https://github.com/david-lev/pywa) /
+[neonize](https://github.com/krypton-byte/neonize) (connectors),
+[Typer](https://typer.tiangolo.com) + [Textual](https://textual.textualize.io) (CLI),
+docs on [Astro Starlight](https://starlight.astro.build), all run with
+[uv](https://docs.astral.sh/uv/). Gaia's own code is [MIT](LICENSE).
 
 ## Develop
 
@@ -38,4 +47,18 @@ uv run mypy src                 # types
 uv run pytest                   # tests
 ```
 
-See [CLAUDE.md](CLAUDE.md) for the full development workflow.
+Architecture and conventions are in [CLAUDE.md](CLAUDE.md); how to contribute in
+[CONTRIBUTING.md](CONTRIBUTING.md). The docs site is in [`docs/`](docs/) — its reference pages are
+generated by [`scripts/gen_reference.py`](scripts/gen_reference.py).
+
+---
+
+## ⚠️ Disclaimer
+
+Gaia runs LLM-driven actions on your machine: shell commands, a browser, your files, messages sent as
+you. Models get things wrong and can be tricked, so it can do dumb or destructive things. Run it at
+your own risk.
+
+It's provided **as-is, with no warranty**, and the authors aren't liable for anything it does — that
+is the [MIT License](LICENSE), and it's the binding text. You own what you point it at and what it
+does, so read [SECURITY.md](SECURITY.md) and keep it on least privilege.

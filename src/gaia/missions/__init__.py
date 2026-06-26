@@ -1,7 +1,7 @@
 """Missions — the durable task board (multi-agent orchestration substrate).
 
-P1 ships the store; tools (`gaia.tools.task`), the `/tasks` command and the `gaia tasks`
-CLI sit on top. See ``docs/missions-design.md`` for the full epic.
+P1 ships the store; tools (`gaia.tools.task`), the `/task` command and the `gaia task`
+CLI sit on top. See ``concepts/missions`` for the full epic.
 """
 
 from __future__ import annotations

@@ -17,7 +17,6 @@ llm:
 connectors:
   whatsapp:
     enabled: true
-    allow: ['123456789']
   telegram:
     enabled: true
   cli:
@@ -33,5 +32,4 @@ def test_real_yaml_drives_connector_launch(tmp_path: Path) -> None:
     config = supplier.current
 
     assert config.llm.model == "gemini-3.1-flash-lite"
-    assert config.connectors.whatsapp.allow == ["123456789"]
     assert plan_launch(config) == ["whatsapp", "telegram"]

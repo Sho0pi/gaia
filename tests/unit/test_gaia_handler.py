@@ -319,6 +319,66 @@ async def test_auto_ingest_off_never_buffers() -> None:
     assert gaia.memory_service.calls == []
 
 
+async def test_idle_flush_fires_without_a_new_message() -> None:
+    # A quiet conversation drains on the timer, not only when the next message arrives.
+
+    gaia = _gaia(batch_size=100, interval=0.05)  # never hits batch; short idle timer
+    handler = GaiaHandler(gaia)
+    handler._runner = _FakeRunner([_event("ok")])
+
+    await _collect(handler, "lonely")
+    assert gaia.memory_service.calls == []  # below batch, not drained yet
+    assert handler._idle_task is not None
+    await handler._idle_task  # the timer sleeps then drains
+
+    assert len(gaia.memory_service.calls) == 1 and handler._buffer == []
+
+
+async def test_threshold_counts_turns_not_events() -> None:
+    # One turn that emits 6 events must not trip a batch size of 5 (turn-counting).
+    gaia = _gaia(batch_size=5, interval=3600)
+    handler = GaiaHandler(gaia)
+    handler._runner = _FakeRunner([_event(f"e{i}") for i in range(6)])  # 6 events, ONE turn
+
+    await _collect(handler, "msg")
+
+    assert gaia.memory_service.calls == []  # 1 turn < 5 → no flush
+    assert handler._buffered_turns == 1 and len(handler._buffer) == 6
+
+
+async def test_reset_session_cancels_the_idle_timer() -> None:
+    import asyncio
+
+    gaia = _gaia(batch_size=100, interval=3600)  # arms the idle timer, won't fire
+    handler = GaiaHandler(gaia)
+    handler._runner = _FakeRunner([_event("ok")])
+
+    await _collect(handler, "msg")
+    idle = handler._idle_task
+    assert idle is not None and not idle.done()
+
+    handler.reset_session()
+    await asyncio.sleep(0)  # let the cancellation propagate (the task catches it and returns)
+    assert idle.done() and gaia.memory_service.calls == []  # no late drain
+    assert handler._buffer == [] and handler._buffered_turns == 0
+
+
+async def test_flush_cancels_the_idle_timer() -> None:
+    import asyncio
+
+    gaia = _gaia(batch_size=100, interval=3600)
+    handler = GaiaHandler(gaia)
+    handler._runner = _FakeRunner([_event("ok")])
+
+    await _collect(handler, "msg")
+    idle = handler._idle_task
+    assert idle is not None
+
+    await handler.flush()  # cancels the timer, then drains once
+    await asyncio.sleep(0)  # let the cancelled timer settle
+    assert idle.done() and len(gaia.memory_service.calls) == 1
+
+
 def _screenshot_event(path: str, status: str = "success") -> SimpleNamespace:
     """A fake event whose tool response is a browser_screenshot result."""
     resp = SimpleNamespace(name="browser_screenshot", response={"status": status, "path": path})
@@ -480,3 +540,67 @@ async def test_mcp_screenshot_error_is_not_sent() -> None:
     sent = await _collect_replies(handler, "shot")
 
     assert not [r for r in sent if isinstance(r, Media)]
+
+
+def test_calls_delegate_detects_delegate_function_call() -> None:
+    # The preface-streaming branch keys off this: a delegate function-call event vs plain text.
+    from gaia.souls.delegate import NAME as DELEGATE
+
+    call_ev = SimpleNamespace(
+        content=SimpleNamespace(
+            parts=[SimpleNamespace(function_call=SimpleNamespace(name=DELEGATE), text=None)]
+        )
+    )
+    text_ev = SimpleNamespace(content=SimpleNamespace(parts=[SimpleNamespace(text="hi")]))
+    assert GaiaHandler._calls_delegate(call_ev) is True
+    assert GaiaHandler._calls_delegate(text_ev) is False
+
+
+async def test_completed_delegate_delivers_media_not_paused() -> None:
+    # Regression: ADK sets long_running_tool_ids on a delegate call even when it COMPLETES in the
+    # same turn, so the handler must NOT treat a finished delegate as paused — it should deliver
+    # the soul's media via the normal reply, not emit the "lost the question" fail-safe. (#268)
+    from gaia.connectors.base import Media
+    from gaia.souls.delegate import NAME as DELEGATE
+
+    png = "/tmp/shot.png"
+    call_ev = SimpleNamespace(
+        long_running_tool_ids={"d1"},
+        content=SimpleNamespace(
+            parts=[
+                SimpleNamespace(text=None, function_call=SimpleNamespace(id="d1", name=DELEGATE))
+            ]
+        ),
+        is_final_response=lambda: True,
+        get_function_responses=lambda: [],
+    )
+    resp = SimpleNamespace(
+        id="d1",
+        name=DELEGATE,
+        response={"status": "success", "media": [png], "summary": "built it"},
+    )
+    resp_ev = SimpleNamespace(
+        content=SimpleNamespace(parts=[]),
+        is_final_response=lambda: False,
+        get_function_responses=lambda: [resp],
+    )
+    final_ev = SimpleNamespace(
+        content=SimpleNamespace(parts=[SimpleNamespace(text="Done!", function_call=None)]),
+        is_final_response=lambda: True,
+        get_function_responses=lambda: [],
+    )
+    handler = GaiaHandler(SimpleNamespace(memory_service=None))
+    handler._runner = _FakeRunner([call_ev, resp_ev, final_ev])
+
+    sent: list[Any] = []
+
+    async def send(x: Any) -> None:
+        sent.append(x)
+
+    await handler(Inbound(text="build + screenshot"), send)
+
+    medias = [s for s in sent if isinstance(s, Media)]
+    assert medias and str(medias[0].path) == png  # the soul's screenshot was delivered
+    assert not any(
+        isinstance(s, str) and "lost the question" in s for s in sent
+    )  # not the fail-safe

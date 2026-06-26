@@ -31,6 +31,7 @@ def test_run_dev_builds_gaia_and_serves(monkeypatch: pytest.MonkeyPatch) -> None
     fake_gaia = SimpleNamespace(config=SimpleNamespace(logging=None))
     monkeypatch.setattr("gaia.app.Gaia", lambda settings: fake_gaia)
     monkeypatch.setattr("gaia.app.setup_logging", lambda *a, **k: None)
+    monkeypatch.setattr("gaia.app.write_default_config", lambda path: None)  # tested elsewhere
 
     import gaia.dev as devmod
 
@@ -42,6 +43,6 @@ def test_run_dev_builds_gaia_and_serves(monkeypatch: pytest.MonkeyPatch) -> None
 
     from gaia.app import run_dev
 
-    run_dev(settings=SimpleNamespace(), host="0.0.0.0", port=9001)
+    run_dev(settings=SimpleNamespace(config_path="x"), host="0.0.0.0", port=9001)
 
     assert captured == {"gaia": fake_gaia, "host": "0.0.0.0", "port": 9001}

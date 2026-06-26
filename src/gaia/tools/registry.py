@@ -17,7 +17,9 @@ from collections.abc import Awaitable, Callable, Iterable
 from typing import TYPE_CHECKING, Any, Union
 
 from gaia import constants
-from gaia.tools import browser, fs, image, shell
+from gaia.tools import browser, capabilities, fs, image, shell
+from gaia.tools.ask_user import NAME as ASK_USER
+from gaia.tools.ask_user import make_ask_user
 from gaia.tools.cron import NAME as CRON
 from gaia.tools.cron import make_cron
 from gaia.tools.remember import NAME as REMEMBER
@@ -217,6 +219,10 @@ def _register_shell_tools(registry: ToolRegistry, config: GaiaConfig | None, ser
         registry.register(shell.KILL, shell.make_exec_kill(manager))
     if _is_enabled(config, shell.LIST):
         registry.register(shell.LIST, shell.make_exec_list(manager))
+    # capabilities surfaces the SAME live security/allowlist exec was built with (+ the fs/serve
+    # workspace rules) so the model can check what it can run instead of erroring into the sandbox.
+    if _is_enabled(config, capabilities.NAME):
+        registry.register(capabilities.NAME, capabilities.make_capabilities(security, allowlist))
 
 
 def _register_serve_tools(registry: ToolRegistry, config: GaiaConfig | None, served: Any) -> None:
@@ -322,18 +328,28 @@ def default_registry(
             image.NAME, image.make_generate_image(str(provider), str(model), options=options)
         )
 
+    # ask_user pauses the run to ask the human (a choice or a missing credential) and
+    # resumes on their reply; the handler surfaces the question and routes the answer.
+    if _is_enabled(config, ASK_USER):
+        registry.register(ASK_USER, make_ask_user())
+
     # Missions task board (P1): the five task_* tools share one TaskStore so they all hit
     # the same ~/.gaia/tasks.db. Gaia-only for now; souls get them in P3.
     _register_task_tools(registry, config, task_store)
 
     if _is_enabled(config, WEB_SEARCH):
         engine = _tool_setting(config, WEB_SEARCH, "engine")
-        if engine:
-            registry.register(WEB_SEARCH, make_web_search(get_search_provider(engine)))
-        else:
+        if not engine:
             registry.mark_missing(
-                WEB_SEARCH, "set tools.web_search.engine in gaia.yaml (e.g. duckduckgo)"
+                WEB_SEARCH, "set tools.web_search.engine in gaia.yaml (e.g. duckduckgo, brave)"
             )
+        else:
+            try:
+                provider = get_search_provider(engine)  # may need an API key (e.g. brave)
+            except ValueError as exc:
+                registry.mark_missing(WEB_SEARCH, str(exc))
+            else:
+                registry.register(WEB_SEARCH, make_web_search(provider))
 
     agents_dir = constants.AGENTS_DIR
     if _is_enabled(config, fs.READ):

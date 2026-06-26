@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     )
 
     # Connector credentials.
+    # For the self-monitoring loop's GitHub issue filing (PAT with `repo`/`issues` scope).
+    github_token: str | None = Field(default=None, validation_alias="GITHUB_TOKEN")
+    # web_search engine keys (engine-specific; the chosen tools.web_search.engine reads its own).
+    brave_api_key: str | None = Field(default=None, validation_alias="BRAVE_API_KEY")
     telegram_bot_token: str | None = Field(
         default=None, validation_alias=f"{constants.ENV_PREFIX}TELEGRAM_BOT_TOKEN"
     )

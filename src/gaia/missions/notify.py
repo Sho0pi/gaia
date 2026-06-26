@@ -100,7 +100,7 @@ async def notify_approval(gaia: Gaia, task: Task) -> None:
         gaia,
         task,
         f"⏸ {task.title or task.id} needs approval ({cls}).\n"
-        f"Reply: /tasks approve {task.id}  (or /tasks reject {task.id})",
+        f"Reply: /task approve {task.id}  (or /task reject {task.id})",
     )
 
 
@@ -110,13 +110,27 @@ async def notify_paused(gaia: Gaia, task: Task, reason: str) -> None:
         gaia,
         task,
         f"⏸ Mission {task.title or task.id} paused — {reason}.\n"
-        f"Reply: /tasks approve {task.id} to continue, or /tasks reject {task.id} to stop.",
+        f"Reply: /task approve {task.id} to continue, or /task reject {task.id} to stop.",
     )
 
 
 async def notify_rejected(gaia: Gaia, task: Task) -> None:
     """Tell the human a gated task was rejected (and so the mission step won't run)."""
     await _push(gaia, task, f"✗ {task.title or task.id} was rejected — it won't run.")
+
+
+async def notify_ask_user(
+    gaia: Gaia, task: Task, question: str, options: tuple[str, ...] = ()
+) -> None:
+    """Ask the human a question a background-mission soul raised mid-run (P3).
+
+    Pushed out-of-band to the task's target chat; the user answers with ``/task answer``.
+    Options (if any) render as a numbered list the user picks from in their reply.
+    """
+    lines = [f"❓ {task.title or task.id}: {question}"]
+    lines += [f"  {i}. {opt}" for i, opt in enumerate(options, 1)]
+    lines.append(f"Reply: /task answer {task.id} <your answer>")
+    await _push(gaia, task, "\n".join(lines))
 
 
 async def notify_result(gaia: Gaia, task: Task, run: SoulRun) -> None:

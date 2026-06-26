@@ -9,7 +9,7 @@ import logging
 import os
 from pathlib import Path
 
-from gaia.connectors.base import Dispatch, Inbound, Media, Reply
+from gaia.connectors.base import Dispatch, Inbound, Media, Reply, as_text
 from gaia.connectors.socket_protocol import (
     ProtocolError,
     decode_frame,
@@ -100,7 +100,8 @@ class SocketConnector:
             if isinstance(reply, Media):
                 writer.write(encode_frame(media_frame(str(reply.path), reply.caption, reply.kind)))
             else:
-                writer.write(encode_frame(reply_frame(reply)))
+                # str passes through; a Question degrades to numbered text.
+                writer.write(encode_frame(reply_frame(as_text(reply))))
             await writer.drain()
 
         try:

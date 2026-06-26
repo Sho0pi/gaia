@@ -192,21 +192,14 @@ def make_message_user(
     async def message_user(
         recipient: str, text: str, channel: str = "", *, tool_context: ToolContext
     ) -> dict[str, Any]:
-        """Send a text message to another person, now.
-
-        Resolves ``recipient`` (a known user's id/name, a raw phone/sender id, OR a
-        relationship/nickname like "girlfriend" — looked up in your memory) to their address
-        and delivers ``text`` over the live connector. Use this to proactively reach someone
-        — e.g. "text Grace 'on my way'". Returns an error when the recipient can't be
-        resolved (then ask for a number) or the channel isn't currently running.
+        """Proactively send a text to another person now (e.g. "text Grace 'on my way'").
+        Returns an error if the recipient can't be resolved (then ask for a number) or the
+        channel isn't running.
 
         Args:
-            recipient: who to message — a user id ("grace"), display name ("Grace"), a
-                relationship/nickname in memory ("girlfriend"), a "channel:sender" id, or a
-                raw phone / chat id.
-            text: the message to send.
-            channel: optional connector to send on (whatsapp/telegram); inferred from the
-                recipient or the current conversation when omitted.
+            recipient: a user id/name ("grace"), a relationship/nickname in your memory
+                ("girlfriend"), a "channel:sender" id, or a raw phone/chat id.
+            channel: connector to send on (whatsapp/telegram); inferred when omitted.
         """
         # No self-logging: ToolLoggingPlugin records one tool_used event per call.
         if not text.strip():

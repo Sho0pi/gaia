@@ -128,13 +128,13 @@ async def test_whoami_shows_effort_only_when_set() -> None:
 
 
 async def test_souls_empty_and_populated() -> None:
-    assert "No souls" in await _run("souls", _ctx())
-    assert "- researcher" in await _run("souls", _ctx(agents=["researcher"]))
+    assert "No souls" in await _run("soul", _ctx())
+    assert "- researcher" in await _run("soul", _ctx(agents=["researcher"]))
 
 
 async def test_souls_lists_live_warm_sessions() -> None:
     out = await _run(
-        "souls",
+        "soul",
         _ctx(agents=["frontend_developer"], sessions=[("frontend_developer/pasta", 30.0)]),
     )
     assert "Live now (1)" in out
@@ -194,8 +194,8 @@ async def test_remember_requires_text_and_memory() -> None:
 
 
 async def test_memories_lists_or_reports_empty() -> None:
-    assert "don't remember" in await _run("memories", _ctx(memory=_FakeMemory()))
-    out = await _run("memories", _ctx(memory=_FakeMemory(["likes teal", "owns a cat"])))
+    assert "don't remember" in await _run("memory", _ctx(memory=_FakeMemory()))
+    out = await _run("memory", _ctx(memory=_FakeMemory(["likes teal", "owns a cat"])))
     assert "- likes teal" in out and "- owns a cat" in out
 
 
@@ -218,7 +218,7 @@ async def test_forget_yes_wipes() -> None:
 
 
 async def test_memory_commands_handle_disabled_memory() -> None:
-    assert "off" in await _run("memories", _ctx(memory=None))
+    assert "off" in await _run("memory", _ctx(memory=None))
     assert "nothing to forget" in await _run("forget", _ctx(memory=None))
 
 

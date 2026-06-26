@@ -1,0 +1,24 @@
+# Local pre-commit hooks that mirror the CI gate, using the project's own uv-pinned tools
+# (no version drift vs CI). Enable with: uvx pre-commit install
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --fix
+        language: system
+        types: [python]
+        require_serial: true
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format
+        language: system
+        types: [python]
+        require_serial: true
+      - id: mypy
+        name: mypy (src)
+        entry: uv run mypy src
+        language: system
+        types: [python]
+        pass_filenames: false
+        require_serial: true

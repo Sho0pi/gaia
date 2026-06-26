@@ -8,19 +8,12 @@ from typing import Any
 
 import pytest
 
+from _fakes import FakeSender as _FakeSender
 from gaia.connectors.base import Media
 from gaia.missions import Task
 from gaia.missions.notify import notify_result
 from gaia.souls.run import SoulRun
 from gaia.users import UserStore
-
-
-class _FakeSender:
-    def __init__(self) -> None:
-        self.sent: list[tuple[str, Any]] = []
-
-    async def send_to(self, chat: str, reply: Any) -> None:
-        self.sent.append((chat, reply))
 
 
 def _gaia(connectors: dict[str, Any], users: UserStore, deliver: tuple[str, str] = ("", "")) -> Any:
@@ -135,3 +128,19 @@ async def test_image_artifacts_sent_as_media(tmp_path: Path) -> None:
 
     medias = [r for _, r in wa.sent if isinstance(r, Media)]
     assert len(medias) == 1 and medias[0].path == Path("/w/out.png")  # only the image
+
+
+async def test_notify_ask_user_pushes_the_question(tmp_path: Path) -> None:
+    from gaia.missions.notify import notify_ask_user
+
+    wa = _FakeSender()
+    gaia = _gaia({"whatsapp": wa}, UserStore(tmp_path / "u.json"))
+    task = Task(
+        id="t1", title="weather", notify_channel="whatsapp", notify_chat="972@x", owner="itay"
+    )
+
+    await notify_ask_user(gaia, task, "Which city?", ("TLV", "NYC"))
+
+    assert wa.sent and wa.sent[0][0] == "972@x"
+    text = wa.sent[0][1]
+    assert "Which city?" in text and "/task answer t1" in text and "1. TLV" in text

@@ -56,6 +56,22 @@ async def test_idle_window_reads_a_live_callable() -> None:
     assert mgr._sessions == {}
 
 
+async def test_pinned_session_survives_the_reaper() -> None:
+    # A soul paused on ask_user pins its session so the reaper can't drop it before the user
+    # answers, however long that takes.
+    mgr = SoulSessionManager(idle_seconds=600.0)
+    warm = await mgr.acquire("writer/p1", app_name=constants.APP_NAME, user_id="u")
+    warm.last_access = time.monotonic() - 100000  # far past the idle window
+    mgr.pin("writer/p1")
+
+    mgr._evict_idle()
+    assert "writer/p1" in mgr._sessions  # pinned → kept
+
+    mgr.unpin("writer/p1")
+    mgr._evict_idle()
+    assert mgr._sessions == {}  # unpinned → evicted as usual
+
+
 async def test_close_all_cancels_reaper_and_clears() -> None:
     mgr = SoulSessionManager()
     await mgr.acquire("writer/p1", app_name=constants.APP_NAME, user_id="u")

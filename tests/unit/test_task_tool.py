@@ -183,3 +183,10 @@ def test_create_captures_current_chat_as_notify_target(tmp_path: Path) -> None:
 
     assert out["task"]["notify_channel"] == "whatsapp"
     assert out["task"]["notify_chat"] == "972@s.whatsapp.net"
+
+
+def test_get_without_task_context_is_not_an_error(tmp_path: Path) -> None:
+    # A delegate/chat-run soul has no board task — task_get must say so plainly, not status=error
+    # (else the monitor logs a failure and the model improvises). See fix D.
+    out = make_task_get(_store(tmp_path))(tool_context=SimpleNamespace(user_id="itay", state={}))
+    assert out["status"] == "success" and out["task"] is None

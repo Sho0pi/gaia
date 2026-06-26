@@ -40,6 +40,8 @@ def test_role_default_used_when_no_override() -> None:
         "tasks",
         "serve",
         "skills",
+        "ask",
+        "core",
         "images",
     ]
     assert role_capabilities("admin", None) == [ALL]

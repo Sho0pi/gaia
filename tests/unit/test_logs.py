@@ -81,6 +81,33 @@ def test_event_is_json_and_isolated_from_system_log(tmp_path: Path) -> None:
     assert "tool_used" not in (tmp_path / "system.log").read_text()
 
 
+def test_log_event_exc_fills_error_detail_where(tmp_path: Path) -> None:
+    _setup(tmp_path)
+
+    try:
+        raise ValueError("boom")
+    except ValueError as exc:
+        log_event("turn_error", user="u1", exc=exc)
+
+    record = json.loads((tmp_path / "events.jsonl").read_text().strip().splitlines()[-1])
+    assert record["error"] == "ValueError"
+    assert record["detail"] == "boom"
+    assert record["where"].startswith("test_logs.py:")  # the raising frame (not site-packages)
+    assert record["user"] == "u1"
+
+
+def test_log_event_explicit_field_wins_over_exc(tmp_path: Path) -> None:
+    _setup(tmp_path)
+
+    try:
+        raise ValueError("boom")
+    except ValueError as exc:
+        log_event("turn_error", exc=exc, detail="custom")  # explicit detail must not be overwritten
+
+    record = json.loads((tmp_path / "events.jsonl").read_text().strip().splitlines()[-1])
+    assert record["detail"] == "custom"
+
+
 def test_reserved_field_name_does_not_crash(tmp_path: Path) -> None:
     _setup(tmp_path)
 

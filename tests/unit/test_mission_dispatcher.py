@@ -20,8 +20,18 @@ def store(tmp_path: Path) -> TaskStore:
     return TaskStore(tmp_path / "tasks.db")
 
 
-def _gaia(store: TaskStore, *, approval_classes: list[str] | None = None) -> Any:
-    # The dispatcher only touches gaia via the soul-run core (which we fake) + notify.
+def _gaia(
+    store: TaskStore,
+    *,
+    approval_classes: list[str] | None = None,
+    has_session: bool = True,
+    pinned: list[str] | None = None,
+    unpinned: list[str] | None = None,
+) -> Any:
+    # The dispatcher only touches gaia via the soul-run core (which we fake) + notify +
+    # soul_sessions (pin/unpin/has for the P3 ask_user pause).
+    pins = pinned if pinned is not None else []
+    unpins = unpinned if unpinned is not None else []
     return SimpleNamespace(
         connectors={},
         users=SimpleNamespace(get=lambda _id: None),
@@ -29,7 +39,27 @@ def _gaia(store: TaskStore, *, approval_classes: list[str] | None = None) -> Any
             cron=SimpleNamespace(deliver=SimpleNamespace(channel="", chat="")),
             missions=SimpleNamespace(approval_classes=approval_classes or [], max_hours=0.0),
         ),
+        soul_sessions=SimpleNamespace(
+            pin=lambda k: pins.append(k),
+            unpin=lambda k: unpins.append(k),
+            has=lambda _k: has_session,
+        ),
     )
+
+
+def _pending_run(question: str, *, soul_key: str = "writer", project: str = "p") -> SoulRun:
+    """A SoulRun whose soul paused on ask_user (P3) — what execute_decision returns mid-run."""
+    from gaia.core.elicit import SoulPending
+
+    pending = SoulPending(
+        warm_key=f"{soul_key}/{project}",
+        soul_key=soul_key,
+        project=project,
+        soul_fc_id="sfc",
+        question=question,
+        user_id="itay",
+    )
+    return SoulRun(False, soul_key, "S", False, pending=pending)
 
 
 def _fake_run(monkeypatch: pytest.MonkeyPatch, fn: Any) -> list[str]:
@@ -344,3 +374,136 @@ async def test_concurrency_cap_never_exceeds_limit(
     await asyncio.gather(*d._workers, return_exceptions=True)
 
     assert peak <= 2
+
+
+async def _spy_ask(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
+    """Capture notify_ask_user(task, question) calls (no real connector in the fake gaia)."""
+    asked: list[tuple[str, str]] = []
+
+    async def spy(_g: Any, task: Any, question: str, options: Any = ()) -> None:
+        asked.append((task.id, question))
+
+    monkeypatch.setattr(disp_mod, "notify_ask_user", spy)
+    return asked
+
+
+async def test_soul_ask_user_parks_task_and_asks_out_of_band(
+    store: TaskStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    asked = await _spy_ask(monkeypatch)
+    _fake_run(monkeypatch, lambda _t: _pending_run("Which city?"))
+    pins: list[str] = []
+    t = store.create(Task(title="weather site", owner="itay"))
+    d = MissionDispatcher(_gaia(store, pinned=pins), store=store)
+
+    await _drain(d)
+
+    got = store.get(t.id)
+    assert got is not None and got.status is TaskStatus.AWAITING_INPUT
+    assert "Which city?" in got.pending and got.pending_answer == ""  # parked durably
+    assert pins == ["writer/p"]  # warm session pinned against the reaper
+    assert asked == [(t.id, "Which city?")]  # pushed out-of-band
+
+
+async def test_answer_resumes_exact_run_when_session_is_live(
+    store: TaskStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _spy_ask(monkeypatch)
+    _fake_run(monkeypatch, lambda _t: _pending_run("city?"))
+    unpins: list[str] = []
+    gaia = _gaia(store, has_session=True, unpinned=unpins)
+    t = store.create(Task(title="x", owner="itay"))
+    d = MissionDispatcher(gaia, store=store)
+    await _drain(d)  # parked at AWAITING_INPUT
+
+    resumed: list[tuple[str, str]] = []
+
+    async def fake_resume(_g: Any, pending: Any, answer: str) -> SoulRun:
+        resumed.append((pending.warm_key, answer))
+        return SoulRun(True, "writer", "Writer", False, summary="weather for Tel Aviv")
+
+    monkeypatch.setattr(disp_mod, "resume_soul", fake_resume)
+    parked = store.get(t.id)
+    assert parked is not None
+    parked.pending_answer, parked.status = "Tel Aviv", TaskStatus.INBOX  # /task answer did this
+    store.update(parked)
+
+    await _drain(d)
+
+    got = store.get(t.id)
+    assert (
+        got is not None and got.status is TaskStatus.DONE and got.result == "weather for Tel Aviv"
+    )
+    assert got.pending == "" and got.pending_answer == ""  # slot cleared
+    assert resumed == [("writer/p", "Tel Aviv")]  # exact resume with the answer
+    assert unpins == ["writer/p"]  # session released
+
+
+async def test_answer_reruns_cold_after_restart(
+    store: TaskStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _spy_ask(monkeypatch)
+    calls: list[dict[str, Any]] = []
+
+    async def fake_decide(_g: Any, _t: str) -> Any:
+        return SimpleNamespace(action="forge", reason="", soul_key=None, spec=None)
+
+    async def fake_execute(
+        _g: Any,
+        decision: Any,
+        task: str,
+        _u: str,
+        *,
+        project: str = "",
+        attachments: Any = None,
+        state: Any = None,
+    ) -> SoulRun:
+        calls.append({"task": task, "project": project, "decision": decision})
+        if "They answered" in task:  # the cold re-run with the Q&A folded in
+            return SoulRun(True, "writer", "Writer", False, summary="done cold")
+        return _pending_run("city?")
+
+    monkeypatch.setattr(disp_mod, "decide_soul", fake_decide)
+    monkeypatch.setattr(disp_mod, "execute_decision", fake_execute)
+    t = store.create(Task(title="x", owner="itay", spec="build weather site"))
+    d = MissionDispatcher(_gaia(store, has_session=False), store=store)  # session gone (restarted)
+    await _drain(d)  # parked
+
+    parked = store.get(t.id)
+    assert parked is not None
+    parked.pending_answer, parked.status = "Tel Aviv", TaskStatus.INBOX
+    store.update(parked)
+
+    await _drain(d)  # cold resume → re-run the same soul in its workspace
+
+    got = store.get(t.id)
+    assert got is not None and got.status is TaskStatus.DONE and got.result == "done cold"
+    rerun = calls[-1]
+    assert rerun["project"] == "p"  # reused the paused soul's workspace project
+    assert rerun["decision"].action == "reuse" and rerun["decision"].soul_key == "writer"
+    assert "They answered: Tel Aviv" in rerun["task"]  # the Q&A folded into the prompt
+
+
+async def test_resume_can_re_park_on_a_second_question(
+    store: TaskStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _spy_ask(monkeypatch)
+    _fake_run(monkeypatch, lambda _t: _pending_run("first?"))
+    t = store.create(Task(title="x", owner="itay"))
+    d = MissionDispatcher(_gaia(store, has_session=True), store=store)
+    await _drain(d)  # parked on first?
+
+    parked = store.get(t.id)
+    assert parked is not None
+    parked.pending_answer, parked.status = "a1", TaskStatus.INBOX
+    store.update(parked)
+
+    async def fake_resume(_g: Any, _p: Any, _a: str) -> SoulRun:
+        return _pending_run("second?")  # the soul asks a follow-up
+
+    monkeypatch.setattr(disp_mod, "resume_soul", fake_resume)
+    await _drain(d)
+
+    got = store.get(t.id)
+    assert got is not None and got.status is TaskStatus.AWAITING_INPUT
+    assert "second?" in got.pending and got.pending_answer == ""  # re-parked, old answer consumed

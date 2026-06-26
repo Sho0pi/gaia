@@ -1,0 +1,20 @@
+# Weekly dependency updates. Python deps come from pyproject.toml (uv); the docs site's bun
+# lockfile isn't reliably supported by Dependabot, so it's not tracked here.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "deps"
+    groups:
+      python:
+        patterns: ["*"]

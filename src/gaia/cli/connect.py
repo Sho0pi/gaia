@@ -12,7 +12,6 @@ non-TTY runs use a numbered ``typer.prompt``, so flows run on scripted input.
 
 from __future__ import annotations
 
-import sys
 from typing import TYPE_CHECKING, Annotated
 
 import typer
@@ -81,9 +80,14 @@ def connect(
             out.print(f"unknown connector {name!r} — choose from: {', '.join(CONNECTORS)}")
             raise typer.Exit(2)
     if not selected:
-        selected = _choose(settings)
+        selected, to_remove = _choose(settings)
+        for name in to_remove:
+            _remove_connector(settings, name)
+        if to_remove:
+            out.print(f"[yellow]removed:[/] {', '.join(to_remove)}")
         if not selected:
-            out.print("nothing selected — bye")
+            if not to_remove:
+                out.print("nothing selected — bye")
             return
 
     done: list[str] = []
@@ -102,110 +106,39 @@ def connect(
         raise typer.Exit(1)
 
 
-def _choose(settings: Settings) -> list[str]:
-    """Inline multi-select in a TTY; numbered fallback for scripted runs."""
-    if sys.stdin.isatty() and sys.stdout.isatty():  # pragma: no cover - real terminal path
-        return _choose_interactive(settings)
-    return _choose_numbered(settings)
+def _choose(settings: Settings) -> tuple[list[str], list[str]]:
+    """Grouped picker (gaia style): returns (to_set_up, to_remove). Configured connectors show `―`;
+    space ticks `●` to set up, backspace marks a configured one `✗` for removal."""
+    from gaia.cli._select import select_manage
+
+    options = [(name, name, hint) for name, hint in CONNECTORS.items()]
+    marked = [name for name in CONNECTORS if _configured(settings, name)]
+    return select_manage("Connectors", options, marked=marked)
 
 
-def _choose_numbered(settings: Settings) -> list[str]:
-    """Numbered multi-select fallback for tests, pipes, and non-TTY shells."""
-    out = console()
-    names = list(CONNECTORS)
-    out.print("Connectors:")
-    for i, name in enumerate(names, 1):
-        out.print(f"  {i}. {name}  ({CONNECTORS[name]}) — {_status(settings, name)}")
-    raw = typer.prompt("Select (comma-separated numbers, e.g. 1,2)", default="")
-    picked = []
-    for token_ in raw.split(","):
-        token_ = token_.strip()
-        if token_.isdigit() and 1 <= int(token_) <= len(names):
-            picked.append(names[int(token_) - 1])
-    return picked
+def _configured(settings: Settings, name: str) -> bool:
+    from gaia import constants
 
-
-def _choose_interactive(settings: Settings) -> list[str]:
-    """Robust inline picker powered by prompt_toolkit, not hand-rolled ANSI."""
-    from prompt_toolkit import Application
-    from prompt_toolkit.formatted_text import StyleAndTextTuples
-    from prompt_toolkit.key_binding import KeyBindings
-    from prompt_toolkit.layout import Layout
-    from prompt_toolkit.layout.containers import Window
-    from prompt_toolkit.layout.controls import FormattedTextControl
-
-    rows = [(name, CONNECTORS[name], _status(settings, name)) for name in CONNECTORS]
-    cursor = 0
-    selected: set[int] = set()
-
-    def text() -> StyleAndTextTuples:
-        fragments: StyleAndTextTuples = [
-            ("bold", "Which connectors?"),
-            ("", "  ↑/↓ move · space select · enter submit · esc cancel\n"),
-        ]
-        for i, (name, hint, status) in enumerate(rows):
-            style = "reverse" if i == cursor else ""
-            pointer = ">" if i == cursor else " "
-            mark = "[x]" if i in selected else "[ ]"
-            fragments.append((style, f"{pointer} {mark} {name:<9} {hint} — {status}\n"))
-        return fragments
-
-    control = FormattedTextControl(text, focusable=True)
-    app: Application[list[str]]
-    kb = KeyBindings()
-
-    @kb.add("up")
-    def _up(_event: object) -> None:
-        nonlocal cursor
-        cursor = (cursor - 1) % len(rows)
-        app.invalidate()
-
-    @kb.add("down")
-    def _down(_event: object) -> None:
-        nonlocal cursor
-        cursor = (cursor + 1) % len(rows)
-        app.invalidate()
-
-    @kb.add(" ")
-    def _space(_event: object) -> None:
-        selected.symmetric_difference_update({cursor})
-        app.invalidate()
-
-    @kb.add("enter")
-    def _enter(_event: object) -> None:
-        app.exit(result=_selected_names(rows, cursor, selected))
-
-    @kb.add("escape")
-    @kb.add("c-c")
-    @kb.add("c-d")
-    def _cancel(_event: object) -> None:
-        app.exit(result=[])
-
-    app = Application(
-        layout=Layout(Window(control, always_hide_cursor=True)),
-        key_bindings=kb,
-        full_screen=False,
-    )
-    return app.run()
-
-
-def _selected_names(rows: list[tuple[str, str, str]], cursor: int, selected: set[int]) -> list[str]:
-    if not selected:
-        selected = {cursor}
-    return [rows[i][0] for i in range(len(rows)) if i in selected]
-
-
-def _status(settings: Settings, name: str) -> str:
     if name == "telegram":
-        from gaia import constants
-
-        token = get_env_var(constants.ENV_FILE, "GAIA_TELEGRAM_BOT_TOKEN")
-        if token or settings.telegram_bot_token:
-            return "configured"
-        return "not configured"
+        return bool(
+            get_env_var(constants.ENV_FILE, "GAIA_TELEGRAM_BOT_TOKEN")
+            or settings.telegram_bot_token
+        )
     if name == "whatsapp":
-        return "configured" if settings.whatsapp_session_db.exists() else "not configured"
-    return "built in"
+        return settings.whatsapp_session_db.exists()
+    return False
+
+
+def _remove_connector(settings: Settings, name: str) -> None:
+    """Disconnect a connector: drop its credentials and disable it in gaia.yaml."""
+    from gaia import constants
+    from gaia.cli._envfile import unset_env_var
+
+    if name == "telegram":
+        unset_env_var(constants.ENV_FILE, "GAIA_TELEGRAM_BOT_TOKEN")
+    elif name == "whatsapp":
+        settings.whatsapp_session_db.unlink(missing_ok=True)
+    set_config_value(settings.config_path, f"connectors.{name}.enabled", False)
 
 
 # --- telegram -----------------------------------------------------------------------

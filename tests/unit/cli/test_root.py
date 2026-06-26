@@ -23,7 +23,7 @@ runner = CliRunner()
 def test_help_lists_command_tree() -> None:
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
-    commands = ("chat", "dev", "llm", "version", "serve", "start", "stop", "restart", "status")
+    commands = ("chat", "dev", "model", "version", "serve", "start", "stop", "restart", "status")
     for command in commands:
         assert command in result.output
 

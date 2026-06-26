@@ -71,6 +71,27 @@ async def test_serve_rejects_path_outside_agents(
         await mgr.serve("/etc")
 
 
+def test_serve_resolves_relative_against_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Regression: a relative path must resolve against the caller's workspace (like the fs tools),
+    # not the process cwd — otherwise the model burns retries before discovering the absolute path.
+    from gaia.tools.fs.base import current_agent
+
+    ws = _workspace(tmp_path, monkeypatch)  # agents/demo/workspace + index.html
+    (ws / "site").mkdir()
+    token = current_agent.set("demo")
+    try:
+        d_file, entry = _resolve_under_agents("index.html")  # was "can only serve…" before the fix
+        assert entry == "index.html" and d_file.name == "workspace"
+        d_dir, entry2 = _resolve_under_agents("site")
+        assert entry2 == "" and d_dir.name == "site"
+        root, _ = _resolve_under_agents(".")
+        assert root.name == "workspace"
+    finally:
+        current_agent.reset(token)
+
+
 async def test_serve_file_serves_parent_points_at_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

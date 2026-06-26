@@ -41,25 +41,18 @@ def make_serve(
     """Return the ADK ``serve`` tool bound to ``manager`` (and an optional ``tunnel``)."""
 
     async def serve(path: str, public: bool | None = None) -> dict[str, Any]:
-        """Serve a built *website* so you can open or screenshot it (or share a live preview).
+        """Serve a built website locally so you can screenshot it or share a live preview.
+        For previewing a site only — to hand over a file (doc/image/zip), use send_file.
 
-        This is for previewing a website. To hand the user a FILE (document, image, a zip of
-        files), use send_file — never serve a link for that.
-
-        Pass a soul's workspace directory (or a specific .html file in it). Open the
-        returned ``url`` with browser_navigate and browser_screenshot to render it — a real
-        http render, unlike a blank file:// one. The server stays up (for live testing)
-        until idle or serve_stop.
-
-        Remote users (whatsapp/telegram) always get a public https URL (``public_url``) to
-        share — a 127.0.0.1 link is useless on their phone. A local user (cli) stays
-        local-only by default; pass public=True there to also expose it.
+        Open the returned url with browser_navigate + browser_screenshot to render it (a
+        real http render). Remote users get a public https url to share; a local (cli) user
+        stays local-only unless public=True.
 
         Args:
-            path: absolute path to a workspace directory under the agents tree, or an
-                .html file inside one.
-            public: for a local (cli) user, force a public URL on; ignored for remote users
-                (they always get one).
+            path: a workspace-relative dir or .html (e.g. 'index.html', '.'); an absolute
+                path under the agents tree also works.
+            public: for a local user, force a shareable public url (ignored for remote —
+                they always get one).
         """
         try:
             site, url = await manager.serve(path.strip())

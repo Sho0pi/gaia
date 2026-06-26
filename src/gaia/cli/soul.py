@@ -365,7 +365,3 @@ def delete(
         raise typer.Exit(0)
     registry.delete(key)
     out.print(f"deleted soul {key!r}")
-
-
-# `remove` is a visible alias for `rm`.
-app.command("remove")(delete)

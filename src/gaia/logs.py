@@ -100,6 +100,7 @@ def _build_redactor(settings: Settings) -> Redactor:
             settings.whatsapp_token,
             settings.google_api_key,
             settings.openai_api_key,
+            settings.github_token,
         )
         if v
     ]
@@ -286,16 +287,63 @@ def setup_logging(
     return log_dir
 
 
-def log_event(action: str, **fields: Any) -> None:
+def log_event(action: str, *, exc: BaseException | None = None, **fields: Any) -> None:
     """Record a structured user-activity event (message in/out, tool used, …).
 
     ``action`` is the event name; ``fields`` are structured key/values written verbatim
     to ``events.jsonl`` and mirrored to the console. Keep secrets out of ``fields`` —
     redaction is best-effort, not a guarantee.
 
+    Pass ``exc=`` to auto-fill ``error`` (type), ``detail`` (message) and ``where`` (the gaia
+    frame) from an exception — so an error call site is just ``log_event("turn_error", user=…,
+    exc=exc)`` instead of extracting them by hand. Explicitly-passed fields win over the extract.
+
     A field whose name collides with a reserved ``LogRecord`` attribute (e.g. ``created``,
     ``name``, ``module``) is suffixed with ``_`` rather than crashing ``logging`` — so a
     field name can never take down the caller (usually a tool mid-run).
     """
+    if exc is not None:
+        detail, where = error_details(exc)
+        fields.setdefault("error", type(exc).__name__)
+        fields.setdefault("detail", detail)
+        if where:
+            fields.setdefault("where", where)
+        # One error call, two sinks (not a duplicate): the full traceback goes to system.log/
+        # errors.log for a human debugging; the structured event below goes to events.jsonl for the
+        # monitor. So a call site never needs its own logging.exception() next to this.
+        label = str(fields.get("source") or action)
+        logging.getLogger(constants.LOGGER_NAME).error("%s", label, exc_info=exc)
     safe = {(f"{k}_" if k in _STD_ATTRS else k): v for k, v in fields.items()}
     logging.getLogger(constants.EVENTS_LOGGER_NAME).info(action, extra=safe)
+
+
+def error_details(exc: BaseException) -> tuple[str, str]:
+    """A short message + the deepest *gaia* frame (``file:line``) for a structured error event.
+
+    The self-monitoring loop reads these off ``events.jsonl``, so an error event needs enough to
+    triage without parsing ``errors.log`` tracebacks: ``str(exc)`` (truncated) and the innermost
+    non-site-packages frame (our code, where it's actionable; falls back to the innermost frame).
+    """
+    import traceback
+
+    detail = str(exc)[:300]
+    frames = traceback.extract_tb(exc.__traceback__)
+    where = ""
+    for frame in reversed(frames):
+        if "site-packages" not in frame.filename:
+            where = f"{Path(frame.filename).name}:{frame.lineno}"
+            break
+    if not where and frames:
+        last = frames[-1]
+        where = f"{Path(last.filename).name}:{last.lineno}"
+    return detail, where
+
+
+def log_error(source: str, exc: BaseException, **fields: Any) -> None:
+    """Emit a structured ``error`` event for a *background* failure (no live turn to report it).
+
+    ``source`` is a logical location (e.g. ``"cron_runner"``, ``"monitor_loop"``); the event also
+    carries the exception type, a truncated message, and the deepest gaia frame — so daemon/cron/
+    loop failures show up in ``events.jsonl`` for the monitor, not only as ``system.log`` text.
+    """
+    log_event("error", source=source, exc=exc, **fields)

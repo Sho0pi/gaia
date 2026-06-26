@@ -156,11 +156,15 @@ def test_remember_dropped_when_tool_disabled_but_load_memory_kept() -> None:
     assert "load_memory" in names  # gated independently per tool
 
 
-def test_default_registry_rejects_unknown_engine() -> None:
+def test_default_registry_marks_unknown_engine_missing() -> None:
+    # An unknown (or key-less) engine degrades gracefully: the tool is marked missing with a clear
+    # reason, not raised — so one bad config value never breaks the whole registry build.
     config = GaiaConfig(tools={"web_search": ToolConfig(engine="bing")})  # type: ignore[call-arg]
 
-    with pytest.raises(ValueError, match="unknown web_search engine 'bing'"):
-        default_registry(config)
+    registry = default_registry(config)
+
+    assert "web_search" not in registry.names()
+    assert "unknown web_search engine 'bing'" in registry.missing["web_search"]
 
 
 async def test_aclose_runs_every_closeable_even_when_one_raises() -> None:
