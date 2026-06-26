@@ -11,7 +11,10 @@ so unit tests pass a fake and nothing here imports a vector store.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+import asyncio
+import functools
+from collections.abc import Callable, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, Protocol
 
 from google.adk.memory.base_memory_service import BaseMemoryService, SearchMemoryResponse
@@ -78,10 +81,26 @@ class Mem0MemoryService(BaseMemoryService):
     def __init__(self, backend: Mem0Client, *, recall_limit: int = DEFAULT_RECALL_LIMIT) -> None:
         self._backend = backend
         self._recall_limit = recall_limit
+        # mem0.add() does blocking LLM-extract + embed network calls; run them OFF the event loop
+        # so a slow provider (Gemini on a Pi) never freezes the daemon — and so the shutdown flush
+        # can be time-boxed instead of stalling Ctrl-C (#300). A dedicated single-worker pool (not
+        # asyncio's default executor) keeps writes serialized AND keeps a wedged write out of
+        # asyncio's loop-close join, so shutdown stays fast.
+        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mem0")
+
+    async def aclose(self) -> None:
+        """Drop the ingest pool without waiting — a wedged write is abandoned (best-effort)."""
+        self._executor.shutdown(wait=False, cancel_futures=True)
+
+    async def _off_loop(self, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+        """Run a blocking mem0 call on the dedicated pool, not the event loop."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(self._executor, functools.partial(fn, *args, **kwargs))
 
     async def add_session_to_memory(self, session: Session) -> None:
         """Ingest a whole session — every turn so far — into long-term memory."""
-        self._ingest(
+        await self._off_loop(
+            self._ingest,
             _events_to_messages(session.events),
             user_id=session.user_id,
             run_id=session.id,
@@ -97,7 +116,9 @@ class Mem0MemoryService(BaseMemoryService):
         custom_metadata: Mapping[str, object] | None = None,
     ) -> None:
         """Ingest just the latest turn's events (the incremental auto-ingest path)."""
-        self._ingest(_events_to_messages(events), user_id=user_id, run_id=session_id)
+        await self._off_loop(
+            self._ingest, _events_to_messages(events), user_id=user_id, run_id=session_id
+        )
 
     async def add_memory(
         self,
@@ -113,7 +134,7 @@ class Mem0MemoryService(BaseMemoryService):
             for entry in memories
             if (text := _text_of(entry.content))
         ]
-        self._ingest(messages, user_id=user_id, infer=False)
+        await self._off_loop(self._ingest, messages, user_id=user_id, infer=False)
 
     async def search_memory(
         self, *, app_name: str, user_id: str, query: str

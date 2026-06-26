@@ -58,7 +58,11 @@ def serve(
         raise typer.Exit(EXIT_DAEMON)
     from gaia.app import run_daemon
 
-    raise typer.Exit(run_daemon(env_file=state(ctx).env_file, hold=hold))
+    code = run_daemon(env_file=state(ctx).env_file, hold=hold)
+    # The daemon has shut down gracefully (connectors stopped, Gaia.close ran). A dependency can
+    # still hold a wedged non-daemon thread (e.g. mem0 mid-Gemini-call) that would hang Python's
+    # interpreter-exit join — force a clean exit so stopping is instant, not slow (#297/#300).
+    os._exit(code)
 
 
 def start(ctx: typer.Context) -> None:
