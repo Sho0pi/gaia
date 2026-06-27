@@ -23,28 +23,31 @@ long-term memory *present* without the model having to go fetch it.
 ## 1. Short-term memory — the session
 
 One **`GaiaHandler`** (`src/gaia/core/handler.py`) == one conversation. It owns an ADK
-`Runner` over an `InMemorySessionService`; the session accumulates the turn events
-(user message, model responses, tool calls/results), and that event history *is* the
-context the model sees on the next turn. This is what gives Gaia memory **within** a
-conversation.
+`Runner` over the shared **`DatabaseSessionService`** (`gaia.session_service`); the session
+accumulates the turn events (user message, model responses, tool calls/results), and that event
+history *is* the context the model sees on the next turn. This is what gives Gaia memory **within**
+a conversation.
 
 Key properties:
 
-- **In-process, not durable.** `InMemorySessionService` lives in RAM; a daemon restart
-  starts a fresh session. (Durable sessions are a separate roadmap item, #76.)
-- **Built once, reused.** The `Runner` + session are created on the first message
-  (`_ensure_runner`) and kept on the handler; later turns reuse them. They are only
-  rebuilt when `gaia.yaml` changes (config hot-reload, #60) — and the rebuild reuses the
-  **same** session service, so the conversation history survives a model/instruction swap.
+- **Durable.** Sessions live in `~/.gaia/sessions.db`, keyed on a stable `session_id`
+  (`{user.id}:{channel}`), so a daemon restart **resumes** the exact conversation (#76).
+- **Windowed replay.** `SessionWindowPlugin` (`core/plugins.py`) replays only the last
+  `sessions.window_turns` (default 30) user turns to the model, so a long durable session can't
+  bloat the context/tokens. The whole conversation stays on disk; older turns return via long-term
+  memory recall.
+- **Built once, reused.** The `Runner` is created on the first message (`_ensure_runner`,
+  get-or-create on the durable session) and kept on the handler; later turns reuse it. It's rebuilt
+  when `gaia.yaml` changes (config hot-reload, #60) — the durable session keeps the history.
 - **Both sides are recorded.** The handler runs `run_async(..., yield_user_message=True)`
   so the user's own message is in the event stream too (ADK omits it by default). The
   user-role event is excluded from the *reply* path (so Gaia doesn't echo you) but is kept
-  for long-term ingest (§3).
-- **`/reset`** (`reset_session`) drops the runner + session + the pending ingest buffer →
+  for consolidation (§3).
+- **`/reset`** (`reset_session`) consolidates the conversation, then deletes the durable session →
   a clean slate. Long-term memory is untouched.
 
-Short-term memory needs no configuration — it's ADK session state, per the two-tier
-design in `CLAUDE.md`.
+Short-term sessions need only `sessions.window_turns` / `sessions.idle_consolidate_minutes`; the
+two-tier design is per `CLAUDE.md`.
 
 ---
 
@@ -83,28 +86,30 @@ install with `memory.extraction_instructions`.
 
 ## 3. Creating long-term memories — two write paths (+ one)
 
-### Path A — auto-ingest (passive, the common case)
+### Path A — idle consolidation (passive, the common case)
 
-Every turn, the handler buffers the turn's events and periodically flushes them to mem0,
-which extracts facts. Flushing is **batched** so mem0's extraction LLM call fires once per
-batch, not per turn, and runs **in the background** off the reply's critical path.
+The conversation lives in a **durable, windowed session** (§1). gaia grows
+long-term memory the way a person does: once a conversation goes quiet, it **consolidates** the
+whole thing into mem0 — extracting only the important facts, with full conversation context — then
+clears the session for a fresh, memory-informed start. No per-turn ingest.
 
-1. After a turn, `_buffer_turn` appends the events to `self._buffer` (skipped entirely
-   when `memory.enabled` is off or `memory.auto_ingest` is off; slash commands never reach
-   this path).
-2. When the buffered **turn count** hits `memory.ingest_batch_size` (default 10),
-   `_schedule_flush` kicks off a background `_drain`. Below that, each turn (re)arms an idle
-   timer (`memory.ingest_interval_seconds`, default 600s = 10 min) so a conversation that goes
-   quiet still drains — no next message required.
-3. `_drain` calls `Mem0MemoryService.add_events_to_memory`, which maps the ADK events to
-   mem0 `{role, content}` messages (`_events_to_messages`, ADK `model` → mem0 `assistant`)
-   and calls `mem0.add(messages, user_id=…, infer=True)`. mem0 extracts/updates facts.
-4. `flush()` drains synchronously on shutdown (`Dispatcher.aclose`) and `/reset`, so a
-   pending batch is never lost.
+1. After each turn, the handler (re)arms an idle timer for `sessions.idle_consolidate_minutes`
+   (default 30; skipped when `memory.enabled` or `memory.auto_ingest` is off; slash commands never
+   reach this path). The turn is already saved in the durable session — there's no separate buffer.
+2. When the timer fires, `flush()` reads the **whole** session and calls
+   `Mem0MemoryService.add_session_to_memory`, which maps the ADK events to mem0 `{role, content}`
+   messages (`_events_to_messages`, ADK `model` → mem0 `assistant`) and calls
+   `mem0.add(messages, user_id=…, infer=True)` off the loop — mem0 extracts/updates the important
+   facts and dedups against the existing store. Then the session is deleted (a clean slate).
+3. A **startup sweep** (`_consolidate_idle_sessions`) digests conversations that idled out while
+   gaia was off, so nothing lingers un-consolidated across a restart.
+4. There is **no shutdown flush**: a stop/crash just leaves the conversation in the durable session,
+   to be consolidated on the next idle (or the startup sweep). `/reset` consolidates, then clears.
 
-Because `yield_user_message=True` (§1), the batch contains **both** the user's statements
-and Gaia's replies — so mem0 can extract user-stated facts ("I'm vegetarian", "Grace is my
-girlfriend"), not just things Gaia said.
+Because `yield_user_message=True` (§1), the session holds **both** the user's statements and Gaia's
+replies — so mem0 can extract user-stated facts ("I'm vegetarian", "Grace is my girlfriend"), not
+just things Gaia said. And because consolidation sees the full conversation, a fact's importance is
+judged in context (the still-present turns), not from an isolated fragment.
 
 ### Path B — the `remember` tool (active, verbatim)
 
@@ -179,15 +184,15 @@ inbound text ─▶ GaiaHandler.__call__
   │    │     _profile_block ─▶ distill_profile (1 LLM call: facts + recent projects)
   │    │     build_root_agent(profile=…)  ─▶ <USER_PROFILE> baked into the prompt
   │    └─ else: reuse the cached Runner (+ its session)
-  ├─ run_async(yield_user_message=True)
+  ├─ run_async(yield_user_message=True)   [SessionWindowPlugin trims replay to window_turns]
   │    └─ model turn; may call  load_memory(query)  /  remember(fact)  ─▶ mem0
   ├─ emit reply (user-role event excluded so we don't echo the user)
-  └─ _buffer_turn ─▶ (batch full or stale?) ─▶ background _drain ─▶ add_events_to_memory ─▶ mem0
+  └─ _arm_idle_consolidate ─▶ (idle N min?) ─▶ flush ─▶ add_session_to_memory ─▶ mem0 ─▶ clear session
 ```
 
-Other lifecycle points: **`/reset`** clears session + buffer; **shutdown** flushes pending
-buffers; a **`gaia.yaml` edit** rebuilds the Runner (and re-distils the profile) while
-keeping the session.
+Other lifecycle points: **`/reset`** consolidates then clears the session; **shutdown** does
+*nothing* to memory (the durable session is digested on the next idle / startup sweep); a
+**`gaia.yaml` edit** rebuilds the Runner (and re-distils the profile) while keeping the session.
 
 ---
 
@@ -222,14 +227,19 @@ In-chat surface:
 | Field | Default | Meaning |
 |-------|---------|---------|
 | `enabled` | `true` | run long-term memory at all (off = session-only) |
-| `auto_ingest` | `true` | passively extract facts from conversation (Path A) |
-| `ingest_batch_size` | `10` | flush after this many buffered turns |
-| `ingest_interval_seconds` | `600` | flush an idle conversation this long after its last turn |
+| `auto_ingest` | `true` | passively consolidate a conversation on idle (Path A) |
 | `recall_limit` | `5` | hits `load_memory` returns per search |
 | `preload` | `true` | distil + inject the session-start profile |
 | `preload_limit` | `20` | max bullets the profile keeps (importance-ranked) |
 | `extraction_instructions` | `""` | override what mem0 extracts (empty = the built-in default) |
 | `llm` / `embedder` / `vector_store` | gemini / gemini / chroma | mem0's three components |
+
+`gaia.yaml` `sessions:` reference (`SessionsConfig`) — the short-term/consolidation knobs:
+
+| Field | Default | Meaning |
+|-------|---------|---------|
+| `window_turns` | `30` | recent turns replayed to the model each message (token cap) |
+| `idle_consolidate_minutes` | `30.0` | idle this long → consolidate the conversation + clear the session |
 
 ---
 
@@ -237,7 +247,7 @@ In-chat surface:
 
 | Concern | Module |
 |---------|--------|
-| Conversation glue, session, ingest buffer, profile hook | `src/gaia/core/handler.py` |
+| Conversation glue, durable session, idle consolidation, profile hook | `src/gaia/core/handler.py` |
 | mem0 ↔ ADK adapter (add/search/list/forget) | `src/gaia/memory/service.py` |
 | Build the mem0 client + extraction steering | `src/gaia/memory/backend.py` |
 | Session-start profile distillation | `src/gaia/memory/profile.py` |

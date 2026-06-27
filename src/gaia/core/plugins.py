@@ -30,10 +30,44 @@ from gaia.logs import log_event
 from gaia.tools.fs.base import current_project
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
+    from google.adk.agents.callback_context import CallbackContext
+    from google.adk.models.llm_request import LlmRequest
+    from google.adk.models.llm_response import LlmResponse
     from google.adk.tools.base_tool import BaseTool
     from google.adk.tools.tool_context import ToolContext
 
     from gaia.core.agent import Gaia
+
+
+class SessionWindowPlugin(BasePlugin):
+    """Sliding window: replay only the last ``max_turns`` user turns to the model.
+
+    A durable session grows forever and ADK replays all of it each request, so without a cap the
+    context (and token cost) climbs until it breaks. We trim ``llm_request.contents`` to the last
+    ``max_turns`` real user messages + everything after — slicing at a user-message boundary keeps
+    complete turns (a ``function_call`` is never split from its ``function_response``). The full
+    session stays on disk (idle-consolidated to memory); only the window reaches the model.
+    """
+
+    def __init__(self, max_turns: int) -> None:
+        super().__init__(name="session_window")
+        self._max_turns = max(1, max_turns)
+
+    async def before_model_callback(
+        self, *, callback_context: CallbackContext, llm_request: LlmRequest
+    ) -> LlmResponse | None:
+        contents = llm_request.contents or []
+        # Count *real* user messages as turn marks — ADK also tags function_responses role="user",
+        # so require a text part to avoid counting tool results as turns.
+        marks = [
+            i
+            for i, c in enumerate(contents)
+            if c.role == "user" and any(getattr(p, "text", None) for p in (c.parts or []))
+        ]
+        if len(marks) > self._max_turns:
+            llm_request.contents = contents[marks[-self._max_turns] :]
+        return None
+
 
 #: Arg keys whose value is replaced with ``[filtered]`` regardless of tool. Substrings
 #: follow Rails' filter_parameters defaults (``passw`` not ``pass`` to spare "compass";

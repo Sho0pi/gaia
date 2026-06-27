@@ -53,12 +53,8 @@ connectors:
 memory:
   # Run long-term memory (mem0). Off = session-only, no cross-session recall.
   enabled: true
-  # Auto-extract facts from the conversation; off = remember-tool only. Turns are batched (see ingest_batch_size / ingest_interval_seconds) to keep cost down.
+  # Grow long-term memory automatically; off = remember-tool only. When a chat goes idle (sessions.idle_consolidate_minutes) gaia distils its important facts into mem0 — like a person processing a conversation after it ends.
   auto_ingest: true
-  # Flush buffered turns to mem0 once this many have accumulated.
-  ingest_batch_size: 10
-  # Debounce: flush a conversation this many seconds after its last buffered turn (each new turn resets the timer, so a back-and-forth coalesces into one ingest). Lower = memory persists sooner in the background, so shutdown rarely has a buffer to flush.
-  ingest_interval_seconds: 600
   # Override what long-term memory extracts (mem0 custom_instructions); empty = the built-in default (durable user facts only, no assistant action logs).
   extraction_instructions: ""
   # How many memories load_memory returns per search.
@@ -161,6 +157,11 @@ voice:
   device: cpu
   # Weight quantisation: 'int8' (smallest/fastest on CPU); GPUs usually pair device 'cuda' with 'float16'.
   compute_type: int8
+sessions:
+  # How many recent conversation turns gaia replays to the model each message. The whole conversation is kept on disk; older turns come back via long-term memory. Lower = fewer tokens per message, shorter verbatim memory.
+  window_turns: 30
+  # After a conversation is idle this long, gaia distils its important facts into long-term memory and clears the session (a fresh, memory-informed start next time).
+  idle_consolidate_minutes: 30.0
 logging:
   # Root log level (DEBUG/INFO/WARNING/ERROR).
   level: INFO

@@ -33,6 +33,8 @@ LOG_DIR = HOME_DIR / "logs"
 CRASHES_DIR = HOME_DIR / "crashes"
 SKILLS_DIR = HOME_DIR / "skills"
 SESSION_DB = HOME_DIR / "whatsapp.db"
+# ADK conversation sessions (durable, sliding-window) — survive restarts; idle-consolidated to mem0.
+SESSIONS_DB = HOME_DIR / "sessions.db"
 AGENT_REGISTRY_DIR = HOME_DIR / "agent_registry"
 # Pidfile for the background daemon (gaia start/stop/status).
 PID_FILE = HOME_DIR / f"{APP_NAME}.pid"

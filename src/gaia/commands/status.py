@@ -16,7 +16,7 @@ class StatusCommand(Command):
         effort = f"  (effort: {cfg.llm.effort})" if cfg.llm.effort else ""
         mem = cfg.memory
         memory_line = (
-            f"on (auto_ingest={mem.auto_ingest}, batch={mem.ingest_batch_size})"
+            f"on (auto_ingest={mem.auto_ingest}, idle={cfg.sessions.idle_consolidate_minutes}m)"
             if mem.enabled
             else "off"
         )

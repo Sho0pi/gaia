@@ -246,3 +246,46 @@ def test_run_until_complete_does_not_join_default_executor() -> None:
     release.set()  # let the orphaned worker finish (so the test process exits clean)
 
     assert elapsed < 2.0  # returned promptly; did NOT join the busy executor worker
+
+
+async def test_startup_sweep_consolidates_only_stale_sessions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_consolidate_idle_sessions digests + clears sessions idle past the threshold; keeps fresh."""
+    import time
+
+    consolidated: list[str] = []
+    deleted: list[str] = []
+    now = time.time()
+    stale = SimpleNamespace(id="u:cli", last_update_time=now - 99999, events=[object()])
+    fresh = SimpleNamespace(id="u:tg", last_update_time=now, events=[object()])
+    by_id = {"u:cli": stale, "u:tg": fresh}
+
+    async def add_session_to_memory(session: Any) -> None:
+        consolidated.append(session.id)
+
+    async def list_sessions(**_kw: Any) -> Any:
+        return SimpleNamespace(sessions=[stale, fresh])  # metadata carries last_update_time
+
+    async def get_session(*, session_id: str, **_kw: Any) -> Any:
+        return by_id[session_id]
+
+    async def delete_session(*, session_id: str, **_kw: Any) -> None:
+        deleted.append(session_id)
+
+    gaia = SimpleNamespace(
+        memory_service=SimpleNamespace(add_session_to_memory=add_session_to_memory),
+        session_service=SimpleNamespace(
+            list_sessions=list_sessions, get_session=get_session, delete_session=delete_session
+        ),
+        config=SimpleNamespace(
+            memory=SimpleNamespace(auto_ingest=True),
+            sessions=SimpleNamespace(idle_consolidate_minutes=30.0),
+        ),
+        users=SimpleNamespace(list=lambda: [SimpleNamespace(id="u")]),
+    )
+
+    await app._consolidate_idle_sessions(gaia)
+
+    assert consolidated == ["u:cli"] and deleted == ["u:cli"]  # stale digested + cleared
+    # fresh one (within idle window) left alone

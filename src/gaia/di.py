@@ -142,6 +142,21 @@ def _build_memory_service(
     return service
 
 
+def _build_session_service() -> Any:
+    """Durable ADK session store; conversations survive restarts (``~/.gaia/sessions.db``).
+
+    Shared by every handler + soul (they key off distinct ``session_id``s). ADK import is lazy so
+    the container builds without a model backend. ADK's service uses an async SQLAlchemy engine, so
+    the URL needs the ``aiosqlite`` driver.
+    """
+    from google.adk.sessions import DatabaseSessionService
+
+    from gaia import constants
+
+    constants.SESSIONS_DB.parent.mkdir(parents=True, exist_ok=True)
+    return DatabaseSessionService(f"sqlite+aiosqlite:///{constants.SESSIONS_DB}")
+
+
 def _build_mcp_toolsets(config: GaiaConfig, lifecycle: LifecycleManager) -> list[McpToolset]:
     """The MCP toolsets, plus playwright-mcp when ``browser.backend`` resolves to ``mcp``.
 
@@ -230,6 +245,9 @@ class Container(containers.DeclarativeContainer):
     memory_service: providers.Singleton[Mem0MemoryService] = providers.Singleton(
         _build_memory_service, settings, config, lifecycle
     )
+    # Durable conversation sessions (ADK DatabaseSessionService) — one shared store for all
+    # handlers + souls; survives restarts, idle-consolidated into mem0 (#76).
+    session_service: providers.Singleton[Any] = providers.Singleton(_build_session_service)
     mcp_toolsets: providers.Singleton[list[McpToolset]] = providers.Singleton(
         _build_mcp_toolsets, config, lifecycle
     )

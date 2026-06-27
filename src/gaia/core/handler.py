@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -28,10 +27,6 @@ from gaia.logs import log_event
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from gaia.core.agent import Gaia
-
-#: Hard cap on how long buffered turns may sit before a forced background flush, regardless of the
-#: (re-armed) idle timer or batch size — bounds a slow drip so the buffer never grows unbounded.
-_MAX_BUFFER_AGE_SECONDS = 1800.0
 
 
 def _friendly_error(exc: Exception) -> str:
@@ -72,21 +67,14 @@ class GaiaHandler:
         # admin so single-user / cron / test callers that don't resolve a user are trusted.
         self._role = role
         self._runner: Any | None = None
-        # The session service is built once and reused across runner rebuilds, so the
-        # conversation history survives a hot-reload (see _ensure_runner). The config the
-        # runner was built against; when gaia.yaml changes, ConfigSupplier hands back a new
-        # object and we rebuild (None until the first build, so injected-runner tests skip).
-        self._session_service: Any = None
+        # The config the runner was built against; when gaia.yaml changes, ConfigSupplier hands back
+        # a new object and we rebuild (None until the first build, so injected-runner tests skip).
+        # The session is durable + shared (gaia.session_service), so the conversation survives both
+        # hot-reloads and process restarts (#76).
         self._runner_config: Any | None = None
-        # Auto-ingest buffer: turns accumulate here and flush in batches (by turn count or
-        # idle age) so mem0's per-add extraction LLM call fires once per batch, not per turn.
-        self._buffer: list[Any] = []
-        self._buffer_started: float | None = None
-        self._buffered_turns = 0  # count turns (not events) against ingest_batch_size
-        # The in-flight background ingest, if any. Threshold flushes run off the turn's
-        # critical path so mem0's extraction LLM call never delays the next reply.
-        self._flush_task: asyncio.Task[None] | None = None
-        # Deferred flush so an idle conversation still lands in memory (refreshed per turn).
+        # Idle consolidation: the conversation lives in the durable session; when it goes idle this
+        # timer fires, distils the whole session into long-term memory, and clears it (human-like).
+        # Re-armed on every turn; injected-runner tests skip it.
         self._idle_task: asyncio.Task[None] | None = None
         # A question the model asked via ``ask_user`` that this conversation is paused on;
         # the user's next message is its answer, fed back to resume the run (see _resume).
@@ -115,24 +103,33 @@ class GaiaHandler:
         """
         from google.adk.runners import Runner
 
-        from gaia.core.plugins import ToolLoggingPlugin, ToolPermissionPlugin
+        from gaia.core.plugins import SessionWindowPlugin, ToolLoggingPlugin, ToolPermissionPlugin
 
+        window = self._gaia.config.sessions.window_turns
         return Runner(
             app_name=constants.APP_NAME,
             agent=self._gaia.build_root_agent(self, profile=profile),
-            session_service=self._session_service,
+            session_service=self._gaia.session_service,
             memory_service=self._gaia.memory_service,
-            plugins=[ToolPermissionPlugin(self._gaia), ToolLoggingPlugin()],
+            plugins=[
+                ToolPermissionPlugin(self._gaia),
+                ToolLoggingPlugin(),
+                SessionWindowPlugin(window),  # cap replayed turns; full session stays on disk
+            ],
         )
 
     async def _ensure_runner(self) -> Any:
-        from google.adk.sessions import InMemorySessionService
-
         if self._runner is None:
-            self._session_service = InMemorySessionService()  # type: ignore[no-untyped-call]
-            await self._session_service.create_session(
+            # Durable shared session: resume by the stable id, create only if it's new. Survives
+            # process restarts (#76); the window plugin bounds what's replayed.
+            svc = self._gaia.session_service
+            existing = await svc.get_session(
                 app_name=constants.APP_NAME, user_id=self._user_id, session_id=self._session_id
             )
+            if existing is None:
+                await svc.create_session(
+                    app_name=constants.APP_NAME, user_id=self._user_id, session_id=self._session_id
+                )
             self._runner_config = self._gaia.config
             self._runner = self._build_runner(await self._profile_block())
         elif self._runner_config is not None and self._gaia.config is not self._runner_config:
@@ -380,8 +377,10 @@ class GaiaHandler:
                 await self._begin_elicitation(ask_call, send)
         else:
             await self._emit_reply(turn_events, texts, send)
+        # The turn is already in the durable session; just (re)arm the idle timer so the
+        # conversation consolidates into long-term memory once it goes quiet.
         if not secret:
-            await self._buffer_turn(turn_events)
+            self._arm_idle_consolidate()
 
     def _paused_call(self, event: Any) -> Any | None:
         """The long-running call in ``event`` that paused the run for the user, else None.
@@ -495,19 +494,14 @@ class GaiaHandler:
             log_event("turn_empty", user=self._user_id, session=self._session_id)
             await send("(Done — I didn't have anything to add there.)")
 
-    def reset_session(self) -> None:
-        """Drop the live ADK session and pending memory buffer (used by ``/reset``).
+    async def reset_session(self) -> None:
+        """Delete the durable ADK session so the next message starts fresh (used by ``/reset``).
 
-        Nulling ``_runner`` (and its session service) makes the next message build a fresh
-        session with no prior turns; long-term memory is untouched.
+        ``/reset`` calls ``flush()`` first (consolidate to long-term), then this. Long-term memory
+        is untouched — only this conversation's thread is cleared.
         """
-        self._runner = None
-        self._session_service = None
-        self._runner_config = None
-        self._buffer = []
-        self._buffer_started = None
-        self._buffered_turns = 0
         self._cancel_idle()
+        await self._clear_session()  # delete the durable session + drop the runner
         self._clear_elicitation()  # unpin a paused soul's warm session before wiping the session
         self._pending = None  # drop any unanswered question; /reset starts clean
 
@@ -556,89 +550,56 @@ class GaiaHandler:
         await send(reply)
         return True
 
-    async def _buffer_turn(self, events: list[Any]) -> None:
-        """Add a turn to the auto-ingest buffer, flushing when it's full or stale."""
-        service = self._gaia.memory_service
-        if service is None or not self._gaia.config.memory.auto_ingest:
+    def _arm_idle_consolidate(self) -> None:
+        """(Re)start the idle timer; when it fires the conversation is digested into memory."""
+        if self._gaia.memory_service is None or not self._gaia.config.memory.auto_ingest:
             return
-        if not events:
-            return
-        if self._buffer_started is None:
-            self._buffer_started = time.monotonic()
-        self._buffer.extend(events)
-        self._buffered_turns += 1
-
-        memory = self._gaia.config.memory
-        aged_out = time.monotonic() - self._buffer_started >= _MAX_BUFFER_AGE_SECONDS
-        if self._buffered_turns >= memory.ingest_batch_size or aged_out:
-            # Drain in the background: mem0's extraction LLM call must not sit on the
-            # critical path between this reply and the next inbound turn (one handler
-            # serves one conversation, so an awaited flush would delay the next message).
-            # ``aged_out`` bounds a slow drip — turns trickling in just under the batch size,
-            # each re-arming the idle timer — so the buffer can't sit unflushed forever and
-            # shutdown never faces a large backlog.
-            self._schedule_flush()
-        else:
-            # Below the batch size — arm a timer so an idle conversation still flushes,
-            # instead of waiting for a next message that may never come.
-            self._arm_idle_flush(memory.ingest_interval_seconds)
-
-    def _schedule_flush(self) -> None:
-        """Kick off a background ingest, unless one is already draining the buffer."""
-        self._cancel_idle()  # the size threshold supersedes the idle timer
-        if self._flush_task is not None and not self._flush_task.done():
-            return
-        self._flush_task = asyncio.create_task(self._drain())
-
-    def _arm_idle_flush(self, delay: float) -> None:
-        """(Re)start the deferred flush so a quiet conversation drains after ``delay`` seconds."""
         self._cancel_idle()
-        self._idle_task = asyncio.create_task(self._idle_flush(delay))
+        delay = self._gaia.config.sessions.idle_consolidate_minutes * 60.0
+        self._idle_task = asyncio.create_task(self._idle_consolidate(delay))
 
-    async def _idle_flush(self, delay: float) -> None:
+    async def _idle_consolidate(self, delay: float) -> None:
         try:
             await asyncio.sleep(delay)
         except asyncio.CancelledError:
-            return  # a new turn (or flush/reset) refreshed or cancelled the timer
-        await self._drain()
+            return  # a new turn / reset refreshed or cancelled the timer
+        await self.flush()  # consolidate the whole conversation…
+        await self._clear_session()  # …then start fresh (human-like)
 
     def _cancel_idle(self) -> None:
         if self._idle_task is not None and not self._idle_task.done():
             self._idle_task.cancel()
 
     async def flush(self) -> None:
-        """Ingest the buffered turns into long-term memory and clear the buffer.
+        """Distil the whole durable session into long-term memory (the conversation's facts).
 
-        Blocks until memory is durable — called on shutdown and ``/reset`` where the
-        caller wants the buffer drained before proceeding. Awaits any in-flight
-        background ingest first so nothing is lost.
-        """
-        self._cancel_idle()
-        if self._flush_task is not None and not self._flush_task.done():
-            await self._flush_task
-        await self._drain()
-
-    async def _drain(self) -> None:
-        """Send the buffered turns to long-term memory and clear the buffer.
-
-        Best-effort: the reply is already sent, so a mem0 hiccup is logged and swallowed
-        rather than surfaced. No-op when memory is off or the buffer is empty.
+        Best-effort: the replies are already sent, so a mem0 hiccup is logged and swallowed. No-op
+        when memory is off / disabled or the session has no turns. mem0's ``infer`` extracts only
+        the important facts (with full conversation context) and dedups against the existing store.
         """
         service = self._gaia.memory_service
-        if service is None or not self._buffer:
+        if service is None or not self._gaia.config.memory.auto_ingest:
             return
-        events, self._buffer = self._buffer, []
-        self._buffer_started = None
-        self._buffered_turns = 0
+        session = await self._gaia.session_service.get_session(
+            app_name=constants.APP_NAME, user_id=self._user_id, session_id=self._session_id
+        )
+        if session is None or not session.events:
+            return
         try:
-            await service.add_events_to_memory(
-                app_name=constants.APP_NAME,
-                user_id=self._user_id,
-                events=events,
-                session_id=self._session_id,
+            await service.add_session_to_memory(session)  # off-loop; infer=True extraction
+        except Exception:
+            logging.getLogger(constants.LOGGER_NAME).warning("memory consolidation failed")
+
+    async def _clear_session(self) -> None:
+        """Delete the durable session + drop the runner so the next turn starts fresh."""
+        try:
+            await self._gaia.session_service.delete_session(
+                app_name=constants.APP_NAME, user_id=self._user_id, session_id=self._session_id
             )
         except Exception:
-            logging.getLogger(constants.LOGGER_NAME).warning("auto-ingest to memory failed")
+            logging.getLogger(constants.LOGGER_NAME).debug("session delete failed", exc_info=True)
+        self._runner = None
+        self._runner_config = None
 
 
 def build_handler(
