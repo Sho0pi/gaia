@@ -29,6 +29,10 @@ from gaia.logs import log_event
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from gaia.core.agent import Gaia
 
+#: Hard cap on how long buffered turns may sit before a forced background flush, regardless of the
+#: (re-armed) idle timer or batch size — bounds a slow drip so the buffer never grows unbounded.
+_MAX_BUFFER_AGE_SECONDS = 1800.0
+
 
 def _friendly_error(exc: Exception) -> str:
     """A short, user-facing message for a failed turn (rate limit / outage / network / other)."""
@@ -565,10 +569,14 @@ class GaiaHandler:
         self._buffered_turns += 1
 
         memory = self._gaia.config.memory
-        if self._buffered_turns >= memory.ingest_batch_size:
+        aged_out = time.monotonic() - self._buffer_started >= _MAX_BUFFER_AGE_SECONDS
+        if self._buffered_turns >= memory.ingest_batch_size or aged_out:
             # Drain in the background: mem0's extraction LLM call must not sit on the
             # critical path between this reply and the next inbound turn (one handler
             # serves one conversation, so an awaited flush would delay the next message).
+            # ``aged_out`` bounds a slow drip — turns trickling in just under the batch size,
+            # each re-arming the idle timer — so the buffer can't sit unflushed forever and
+            # shutdown never faces a large backlog.
             self._schedule_flush()
         else:
             # Below the batch size — arm a timer so an idle conversation still flushes,
