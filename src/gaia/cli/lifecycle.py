@@ -67,6 +67,14 @@ def update(ref: RefOpt = None, extras: ExtrasOpt = "all") -> None:
     )
     out.print(f"[green]updated[/] — {(after.stdout or '').strip() or 'gaia'}")
 
+    # Repair the runtime deps too — `uv pip install` only touches the Python package, so a
+    # playwright-mcp bump (which moves the browser revision) would otherwise leave screenshots
+    # broken until the next install.sh run (#303).
+    from gaia.runtime import ensure_runtime_deps
+
+    for note in ensure_runtime_deps(venv / "bin" / "python"):
+        out.print(f"[dim]{note}[/]")
+
     if PidFile().read_live() is not None:  # the daemon is up → reload the new code
         out.print("restarting the daemon to apply…")
         subprocess.run([_gaia_cmd(), "restart"])

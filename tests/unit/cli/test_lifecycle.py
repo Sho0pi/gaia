@@ -39,11 +39,15 @@ def test_update_runs_uv_pip_upgrade(
     (constants.HOME_DIR / "venv").mkdir(parents=True)  # the venv must exist
     monkeypatch.setattr("gaia.cli._pidfile.PidFile.read_live", lambda self: None)  # daemon down
 
+    monkeypatch.setattr("gaia.mcp._resolve_runtime", lambda _n: "/opt/bunx")  # bunx present
+
     result = runner.invoke(app, ["update"])
     assert result.exit_code == 0, result.output
     pip = next(c for c in calls if c[:3] == ["uv", "pip", "install"])
     assert "--upgrade" in pip and pip[-1] == f"gaia[all] @ git+{lifecycle.REPO}"
     assert not any(c[-1:] == ["restart"] for c in calls)  # daemon down → no restart
+    # update also repairs the runtime deps (the playwright-mcp browser) — #303 self-heal
+    assert any(isinstance(c, list) and "install-browser" in c for c in calls)
 
 
 def test_update_restarts_running_daemon(
