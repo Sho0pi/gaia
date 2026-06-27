@@ -52,15 +52,17 @@ class Dispatcher:
         users = self._gaia.users
         user = users.resolve(channel, sender_id)
         if user is None:
-            # First-contact bootstrap: on an instance with no admin yet (fresh install, owner
-            # never declared in config.admin nor captured at WhatsApp pairing), the first remote
-            # sender is the owner → make them admin. Only when truly admin-less; afterwards the
-            # normal guest gate applies. (cli is always admin regardless, via _default_role.)
+            # First-contact bootstrap: on an instance with no admin yet (fresh install, owner not
+            # in config.admin), the first remote sender in a **DM** is the owner → make them admin.
+            # DM-only so a stranger in a group can't grab admin if gaia is added to one first.
+            # Only when truly admin-less; then the normal guest gate applies. (cli is always admin.)
             role = self._default_role(channel)
-            if role != "admin" and not users.has_admin():
+            if role != "admin" and not inbound.is_group and not users.has_admin():
                 role = "admin"
                 logger.warning(
-                    "no admin yet — bootstrapping first sender %s:%s as admin", channel, sender_id
+                    "no admin yet — bootstrapping first DM sender %s:%s as admin",
+                    channel,
+                    sender_id,
                 )
             user = users.register(channel, sender_id, name, role=role)
             logger.info(

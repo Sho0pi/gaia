@@ -106,6 +106,24 @@ async def test_first_contact_becomes_admin_when_no_admin_exists(
     assert built  # reached the model (not gated)
 
 
+async def test_first_contact_in_group_does_not_grant_admin(
+    tmp_path: Path, built: list[_FakeHandler]
+) -> None:
+    # No admin yet, but the message is from a GROUP — a stranger there must not grab admin.
+    gaia = _gaia(tmp_path)
+    d = Dispatcher(gaia)
+    out: list[str] = []
+
+    send = await _send_collect(out)
+    await d.for_channel("whatsapp")(
+        "555@s.whatsapp.net", "Stranger", Inbound(text="hi", is_group=True), send
+    )
+
+    user = gaia.users.resolve("whatsapp", "555@s.whatsapp.net")
+    assert user is not None and user.role == "guest"  # default, not admin
+    assert built == []  # gated
+
+
 async def test_approved_user_routes_to_per_user_handler(
     tmp_path: Path, built: list[_FakeHandler]
 ) -> None:

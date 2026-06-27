@@ -435,7 +435,10 @@ class WhatsAppWebConnector:
                 name = getattr(message.Info, "Pushname", "") or ""
                 try:
                     await self._dispatch(
-                        _sender_jid(source), name, Inbound(text=text, media=media), send
+                        _sender_jid(source),
+                        name,
+                        Inbound(text=text, media=media, is_group=getattr(source, "IsGroup", False)),
+                        send,
                     )
                 finally:
                     await self._end_typing(client, chat, typing)
