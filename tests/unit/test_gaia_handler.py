@@ -604,3 +604,35 @@ async def test_completed_delegate_delivers_media_not_paused() -> None:
     assert not any(
         isinstance(s, str) and "lost the question" in s for s in sent
     )  # not the fail-safe
+
+
+def _ingest_handler(monkeypatch: pytest.MonkeyPatch) -> tuple[Any, dict[str, int]]:
+    """A handler with auto-ingest on; _schedule_flush / _arm_idle_flush replaced by counters."""
+    from gaia.config import GaiaConfig
+
+    gaia = SimpleNamespace(config=GaiaConfig(), memory_service=SimpleNamespace())
+    handler = GaiaHandler(gaia)
+    calls = {"flush": 0, "idle": 0}
+    monkeypatch.setattr(handler, "_schedule_flush", lambda: calls.__setitem__("flush", 1))
+    monkeypatch.setattr(handler, "_arm_idle_flush", lambda _d: calls.__setitem__("idle", 1))
+    return handler, calls
+
+
+async def test_young_buffer_arms_idle_not_flush(monkeypatch: pytest.MonkeyPatch) -> None:
+    handler, calls = _ingest_handler(monkeypatch)
+    await handler._buffer_turn([SimpleNamespace()])  # 1 fresh turn, below batch
+    assert calls == {"flush": 0, "idle": 1}
+
+
+async def test_aged_buffer_forces_background_flush(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A slow drip (always under batch, idle re-armed each turn) must still flush once it's too old.
+    import time
+
+    from gaia.core import handler as handler_mod
+
+    handler, calls = _ingest_handler(monkeypatch)
+    handler._buffer_started = time.monotonic() - (handler_mod._MAX_BUFFER_AGE_SECONDS + 1)
+    handler._buffered_turns = 2  # well below the batch size
+
+    await handler._buffer_turn([SimpleNamespace()])
+    assert calls == {"flush": 1, "idle": 0}  # aged out → background flush, not another idle wait
