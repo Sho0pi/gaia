@@ -204,7 +204,7 @@ def run_daemon(
     pidfile = PidFile()
     pidfile.write()
     try:
-        asyncio.run(_serve(settings, gaia, selected, hold=hold))
+        _run_until_complete(_serve(settings, gaia, selected, hold=hold))
     except Exception as exc:
         # A fatal crash (not the graceful SIGTERM/SIGINT cancel): capture a redacted report and
         # log it as an event so the self-monitor sees it, then re-raise → non-zero exit → the
@@ -221,11 +221,39 @@ def run_daemon(
     return 0
 
 
-#: How long after a stop signal the daemon force-exits if it hasn't terminated on its own.
-SHUTDOWN_GRACE_SECONDS = 20.0
+def _run_until_complete(coro: Any) -> None:
+    """Run ``coro`` on a fresh loop — like ``asyncio.run`` but WITHOUT joining the default executor.
 
-#: Budget for the best-effort memory flush on shutdown before we abandon it and exit.
-MEMORY_FLUSH_DEADLINE = 5.0
+    ``asyncio.run`` ends with ``loop.shutdown_default_executor()``, which joins every
+    ``asyncio.to_thread`` worker with no timeout (Python 3.11). neonize runs its blocking Go/cgo
+    calls via ``to_thread`` on that default executor (``neonize/aioze/client.py``); on Linux/arm64
+    the whatsmeow ``Stop`` doesn't reliably unblock the long-lived ``Neonize()`` call, so that join
+    hangs forever (mac unblocks it → fast). We cancel pending tasks + close the loop but skip the
+    executor join; the orphaned worker is reaped by ``gaia serve``'s ``os._exit`` (#300). The
+    watchdog stays as the last-resort backstop.
+    """
+    loop = asyncio.new_event_loop()
+    try:
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(coro)
+    finally:
+        pending = [t for t in asyncio.all_tasks(loop) if not t.done()]
+        for task in pending:
+            task.cancel()
+        if pending:
+            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+        try:
+            loop.run_until_complete(loop.shutdown_asyncgens())
+        except Exception:  # pragma: no cover - best-effort
+            logger.debug("asyncgen shutdown failed", exc_info=True)
+        asyncio.set_event_loop(None)
+        loop.close()  # NB: does NOT join the default executor — that's the whole point
+
+
+#: How long after a stop signal the daemon force-exits if it hasn't terminated. The sole cap on
+#: shutdown now — long enough for a real memory flush (Gemini on a Pi ~4-12s) to finish, while still
+#: rescuing a genuinely wedged dependency thread.
+SHUTDOWN_GRACE_SECONDS = 20.0
 
 
 def _arm_shutdown_watchdog(grace: float = SHUTDOWN_GRACE_SECONDS) -> threading.Timer:
@@ -383,15 +411,12 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
                 monitor_scheduler.shutdown()
             if mission_dispatcher is not None:
                 await mission_dispatcher.stop()
-            # Drain any turns still buffered for memory before the process exits (best-effort),
-            # but time-boxed: the ingest runs off-loop now, so a slow provider (Gemini on a Pi)
-            # can't stall Ctrl-C — past the deadline we abandon it and exit (#300).
-            try:
-                await asyncio.wait_for(dispatcher.flush_all(), MEMORY_FLUSH_DEADLINE)
-            except TimeoutError:
-                logger.warning(
-                    "memory flush exceeded %ss on shutdown — abandoning it", MEMORY_FLUSH_DEADLINE
-                )
+            # Drain any turns still buffered for memory before the process exits. Let it finish —
+            # dropping it loses the tail of the conversation, and a Gemini extract+embed on a Pi
+            # legitimately takes ~4-12s (a fixed time-box silently lost memory, #300). Ingest is
+            # off-loop so it doesn't block other shutdown work; a true wedge is still bounded by the
+            # shutdown watchdog.
+            await dispatcher.flush_all()
 
 
 async def _notify_recent_crashes(gaia: Gaia) -> None:
