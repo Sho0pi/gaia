@@ -250,11 +250,10 @@ def _run_until_complete(coro: Any) -> None:
         loop.close()  # NB: does NOT join the default executor — that's the whole point
 
 
-#: How long after a stop signal the daemon force-exits if it hasn't terminated on its own.
+#: How long after a stop signal the daemon force-exits if it hasn't terminated. The sole cap on
+#: shutdown now — long enough for a real memory flush (Gemini on a Pi ~4-12s) to finish, while still
+#: rescuing a genuinely wedged dependency thread.
 SHUTDOWN_GRACE_SECONDS = 20.0
-
-#: Budget for the best-effort memory flush on shutdown before we abandon it and exit.
-MEMORY_FLUSH_DEADLINE = 5.0
 
 
 def _arm_shutdown_watchdog(grace: float = SHUTDOWN_GRACE_SECONDS) -> threading.Timer:
@@ -412,15 +411,12 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
                 monitor_scheduler.shutdown()
             if mission_dispatcher is not None:
                 await mission_dispatcher.stop()
-            # Drain any turns still buffered for memory before the process exits (best-effort),
-            # but time-boxed: the ingest runs off-loop now, so a slow provider (Gemini on a Pi)
-            # can't stall Ctrl-C — past the deadline we abandon it and exit (#300).
-            try:
-                await asyncio.wait_for(dispatcher.flush_all(), MEMORY_FLUSH_DEADLINE)
-            except TimeoutError:
-                logger.warning(
-                    "memory flush exceeded %ss on shutdown — abandoning it", MEMORY_FLUSH_DEADLINE
-                )
+            # Drain any turns still buffered for memory before the process exits. Let it finish —
+            # dropping it loses the tail of the conversation, and a Gemini extract+embed on a Pi
+            # legitimately takes ~4-12s (a fixed time-box silently lost memory, #300). Ingest is
+            # off-loop so it doesn't block other shutdown work; a true wedge is still bounded by the
+            # shutdown watchdog.
+            await dispatcher.flush_all()
 
 
 async def _notify_recent_crashes(gaia: Gaia) -> None:
