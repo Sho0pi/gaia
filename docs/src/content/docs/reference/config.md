@@ -58,7 +58,7 @@ memory:
   # Flush buffered turns to mem0 once this many have accumulated.
   ingest_batch_size: 10
   # Debounce: flush a conversation this many seconds after its last buffered turn (each new turn resets the timer, so a back-and-forth coalesces into one ingest). Lower = memory persists sooner in the background, so shutdown rarely has a buffer to flush.
-  ingest_interval_seconds: 300
+  ingest_interval_seconds: 600
   # Override what long-term memory extracts (mem0 custom_instructions); empty = the built-in default (durable user facts only, no assistant action logs).
   extraction_instructions: ""
   # How many memories load_memory returns per search.

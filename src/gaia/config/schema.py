@@ -468,7 +468,7 @@ class MemoryConfig(BaseModel):
         description="Flush buffered turns to mem0 once this many have accumulated.",
     )
     ingest_interval_seconds: int = Field(
-        default=300,
+        default=600,
         description="Debounce: flush a conversation this many seconds after its last buffered turn "
         "(each new turn resets the timer, so a back-and-forth coalesces into one ingest). Lower = "
         "memory persists sooner in the background, so shutdown rarely has a buffer to flush.",
