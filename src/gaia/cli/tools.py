@@ -58,8 +58,10 @@ def tools(ctx: typer.Context, show_all: AllOpt = False) -> None:
     cfg_path = get_settings(state(ctx).env_file).config_path
     cfg = ConfigSupplier(cfg_path).current
 
-    # default = configurable tools; --all also lists the optional on/off tools (all in one picker)
-    ids = list(_CONFIGURABLE) + (list(_TOGGLEABLE) if show_all else [])
+    # default = configurable tools + serve (public link sharing — a notable feature, so always
+    # shown despite being a plain toggle); --all also lists the remaining optional on/off tools.
+    extra = list(_TOGGLEABLE) if show_all else ["serve"]
+    ids = list(_CONFIGURABLE) + extra
     rows = [
         (tid, f"{_meta(tid)[0]} {_meta(tid)[1]}", _meta(tid)[2], _active_badge(cfg, tid))
         for tid in ids

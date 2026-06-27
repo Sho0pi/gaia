@@ -540,6 +540,14 @@ gaia stop [options]
 |---|---|
 | `--timeout` | Seconds to wait for graceful shutdown before SIGKILL. |
 
+## `gaia style`
+
+Show or set Gaia's communication style (voice).
+
+```
+gaia style <name>
+```
+
 ## `gaia task`
 
 Inspect the missions task board.

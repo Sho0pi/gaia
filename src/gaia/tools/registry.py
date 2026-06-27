@@ -24,6 +24,8 @@ from gaia.tools.cron import NAME as CRON
 from gaia.tools.cron import make_cron
 from gaia.tools.remember import NAME as REMEMBER
 from gaia.tools.remember import make_remember
+from gaia.tools.set_communication_style import NAME as SET_STYLE
+from gaia.tools.set_communication_style import make_set_communication_style
 from gaia.tools.task import (
     TASK_COMPLETE,
     TASK_CREATE,
@@ -311,6 +313,9 @@ def default_registry(
 
     if _is_enabled(config, CRON):
         registry.register(CRON, make_cron())
+
+    if _is_enabled(config, SET_STYLE):
+        registry.register(SET_STYLE, make_set_communication_style())
 
     if _is_enabled(config, image.NAME):
         provider = _tool_setting(config, image.NAME, "provider") or "gemini"
