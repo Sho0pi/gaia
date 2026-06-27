@@ -630,10 +630,17 @@ async def test_start_stops_client_on_cancel(fake_neonize: dict[str, Any], tmp_pa
     assert client.stopped is True  # finally ran stop() on the way out
 
 
-async def test_pair_returns_true_when_connected_event_fires(
+async def test_pair_returns_owner_jid_when_connected(
     fake_neonize: dict[str, Any], tmp_path: Path
 ) -> None:
-    connector = WhatsAppWebConnector(tmp_path / "wa.db", _noop_dispatch)
+    # The QR-scanner's JID (from PairStatusEv) is captured and returned — the admin to seed.
+    owner = SimpleNamespace(ID=SimpleNamespace(User="123", Server="s.whatsapp.net"))
+    hooked: list[str] = []
+
+    async def on_paired(jid: str) -> None:
+        hooked.append(jid)
+
+    connector = WhatsAppWebConnector(tmp_path / "wa.db", _noop_dispatch, on_paired=on_paired)
     real_build = connector.build_client
 
     def _capture() -> _FakeClient:
@@ -641,20 +648,23 @@ async def test_pair_returns_true_when_connected_event_fires(
 
         async def connect() -> None:
             client.connected = True
-            await client.handlers[fake_neonize["ConnectedEv"]](client, object())
+            await client.handlers[fake_neonize["PairStatusEv"]](client, owner)  # sets _owner_jid
+            await client.handlers[fake_neonize["ConnectedEv"]](client, object())  # sets _connected
 
         client.connect = connect  # type: ignore[method-assign]
         return client
 
     connector.build_client = _capture  # type: ignore[method-assign]
 
-    assert await connector.pair(timeout_s=2) is True
+    assert await connector.pair(timeout_s=2) == "123@s.whatsapp.net"
+    await asyncio.sleep(0)  # let the fire-and-forget on_paired task run
+    assert hooked == ["123@s.whatsapp.net"]  # the bootstrap hook fired with the owner JID
 
 
-async def test_pair_returns_false_on_timeout(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
+async def test_pair_returns_none_on_timeout(fake_neonize: dict[str, Any], tmp_path: Path) -> None:
     connector = WhatsAppWebConnector(tmp_path / "wa.db", _noop_dispatch)
 
-    assert await connector.pair(timeout_s=0.01) is False
+    assert await connector.pair(timeout_s=0.01) is None
 
 
 async def test_stop_client_falls_back_to_disconnect() -> None:

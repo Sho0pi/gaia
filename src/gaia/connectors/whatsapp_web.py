@@ -32,10 +32,15 @@ from gaia.connectors.base import (
 )
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
+    from collections.abc import Callable, Coroutine
+
     from neonize.aioze.client import NewAClient
 
     from gaia.config import GroupTrigger
     from gaia.voice import Transcriber
+
+    #: Called once with the owner's JID (``user@server``) when the QR is scanned — admin bootstrap.
+    OnPaired = Callable[[str], Coroutine[Any, Any, None]]
 
 logger = logging.getLogger(__name__)
 
@@ -325,10 +330,14 @@ class WhatsAppWebConnector:
         transcriber: Transcriber | None = None,
         group_trigger: GroupTrigger | None = None,
         show_active: bool = True,
+        on_paired: OnPaired | None = None,
     ) -> None:
         self._session_db = session_db
         self._dispatch = dispatch  # channel-bound: (sender_id, name, text, send)
         self._transcriber = transcriber
+        # The owner who scans the QR — captured at pairing for admin bootstrap.
+        self._on_paired = on_paired
+        self._owner_jid: str | None = None
         if group_trigger is None:
             from gaia.config import GroupTrigger
 
@@ -378,6 +387,10 @@ class WhatsAppWebConnector:
             # session. Don't signal _connected here, or pair() would stop the client mid-pair
             # and leave a half-written session that re-prompts the QR when the daemon starts.
             logger.info("whatsapp paired as %s — finishing handshake", event.ID.User)
+            # The scanner is the device owner → capture their JID for admin bootstrap.
+            self._owner_jid = _jid_to_str(event.ID)
+            if self._on_paired is not None:
+                asyncio.create_task(self._on_paired(self._owner_jid))  # noqa: RUF006 - fire-and-forget
 
         @client.event(MessageEv)  # type: ignore[untyped-decorator]
         async def _on_message(client: NewAClient, message: MessageEv) -> None:
@@ -605,13 +618,14 @@ class WhatsAppWebConnector:
             return None
         return InboundMedia(path=path, mime=mime, kind=kind)
 
-    async def pair(self, timeout_s: float = 120.0) -> bool:
+    async def pair(self, timeout_s: float = 120.0) -> str | None:
         """Foreground QR pairing: connect, wait for the authenticated session, then shut down.
 
         ``connect()`` makes neonize render the QR. We wait for ``ConnectedEv`` — which fires
         only after the post-scan reconnect, i.e. once the session is fully persisted — NOT the
         earlier ``PairStatusEv``; stopping on the latter leaves a half-written session that
-        re-prompts the QR when the daemon starts. Returns True once paired, False on timeout.
+        re-prompts the QR when the daemon starts. Returns the **owner's JID** (``user@server``,
+        the scanner = admin) once paired, or ``None`` on timeout.
         """
         client = self.build_client()
         try:
@@ -620,9 +634,9 @@ class WhatsAppWebConnector:
             # ponytail: external protocol — give whatsmeow a moment to flush the session keys
             # to the db before we stop, so the daemon reconnects silently (no second sign-in).
             await asyncio.sleep(_PAIR_SETTLE_S)
-            return True
+            return self._owner_jid
         except TimeoutError:
-            return False
+            return None
         finally:
             await _stop_client(client)
 

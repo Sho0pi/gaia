@@ -39,3 +39,31 @@ def set_config_value(path: Path, dotted_key: str, value: Any) -> None:
 
     with path.open("w") as fh:
         yaml.dump(data, fh)
+
+
+def add_to_list(path: Path, dotted_key: str, value: Any) -> bool:
+    """Append ``value`` to the list at ``dotted_key`` if absent (comment-preserving).
+
+    Returns True if it was added, False if already present. Used to register an admin / allowed
+    sender without clobbering existing entries.
+    """
+    current = _read_list(path, dotted_key)
+    if value in current:
+        return False
+    set_config_value(path, dotted_key, [*current, value])
+    return True
+
+
+def _read_list(path: Path, dotted_key: str) -> list[Any]:
+    """Read the list at ``dotted_key`` from ``path`` (empty list if missing)."""
+    from ruamel.yaml import YAML
+
+    if not path.exists():
+        return []
+    data = YAML().load(path.read_text()) or {}
+    node: Any = data
+    for part in dotted_key.split("."):
+        if not isinstance(node, dict) or part not in node:
+            return []
+        node = node[part]
+    return list(node) if isinstance(node, list) else []

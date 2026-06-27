@@ -94,28 +94,44 @@ def test_telegram_verify_rejects_bad_token(home: Path, monkeypatch: pytest.Monke
 # --- whatsapp -------------------------------------------------------------------
 
 
-def test_whatsapp_pairs_and_enables(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    paired: list[int] = []
-
-    async def fake_pair(session_db: object, timeout_s: int) -> bool:
-        paired.append(timeout_s)
-        return True
+def test_whatsapp_pairs_enables_and_sets_owner_admin(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def fake_pair(session_db: object, timeout_s: int) -> str:
+        return "123@s.whatsapp.net"  # the scanner = owner
 
     monkeypatch.setattr(connect_mod, "_pair", fake_pair)
 
-    result = runner.invoke(cli_app, ["connect", "whatsapp", "--timeout", "5"])
+    result = runner.invoke(cli_app, ["connect", "whatsapp", "--timeout", "5"], input="\n")
 
     assert result.exit_code == 0, result.output
-    assert paired == [5]
     assert _enabled(home, "whatsapp")
-    assert "Linked Devices" in result.output  # the tutorial showed
+    data = pyyaml.safe_load((home / "gaia.yaml").read_text())
+    assert data["admin"] == ["whatsapp:123@s.whatsapp.net"]  # owner auto-admin, no id typed
+    assert "admin" in result.output.lower()
+
+
+def test_whatsapp_allowlist_seeds_users(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_pair(session_db: object, timeout_s: int) -> str:
+        return "123@s.whatsapp.net"
+
+    monkeypatch.setattr(connect_mod, "_pair", fake_pair)
+
+    # answer the "other numbers" prompt with two numbers
+    runner.invoke(cli_app, ["connect", "whatsapp"], input="972000111, 972000222\n")
+
+    from gaia.users import UserStore
+
+    store = UserStore()
+    assert store.resolve("whatsapp", "972000111@s.whatsapp.net") is not None
+    assert store.resolve("whatsapp", "972000222@s.whatsapp.net") is not None
 
 
 def test_whatsapp_timeout_fails_without_enabling(
     home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def fake_pair(session_db: object, timeout_s: int) -> bool:
-        return False
+    async def fake_pair(session_db: object, timeout_s: int) -> None:
+        return None
 
     monkeypatch.setattr(connect_mod, "_pair", fake_pair)
 
@@ -148,13 +164,13 @@ def test_whatsapp_existing_session_repair_deletes_db(
 ) -> None:
     (home / "whatsapp.db").write_text("session")
 
-    async def fake_pair(session_db: object, timeout_s: int) -> bool:
+    async def fake_pair(session_db: object, timeout_s: int) -> str:
         assert not (home / "whatsapp.db").exists()  # deleted before re-pairing
-        return True
+        return "1@s.whatsapp.net"
 
     monkeypatch.setattr(connect_mod, "_pair", fake_pair)
 
-    result = runner.invoke(cli_app, ["connect", "whatsapp"], input="y\n")
+    result = runner.invoke(cli_app, ["connect", "whatsapp"], input="y\n\n")  # re-pair + skip allow
 
     assert result.exit_code == 0, result.output
     assert _enabled(home, "whatsapp")
@@ -178,12 +194,12 @@ def test_cli_connector_is_not_offered(home: Path) -> None:
 
 
 def test_bare_invocation_numbered_multiselect(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    async def fake_pair(session_db: object, timeout_s: int) -> bool:
-        return True
+    async def fake_pair(session_db: object, timeout_s: int) -> str:
+        return "1@s.whatsapp.net"
 
     monkeypatch.setattr(connect_mod, "_pair", fake_pair)
 
-    result = runner.invoke(cli_app, ["connect"], input="2\n")
+    result = runner.invoke(cli_app, ["connect"], input="2\n\n")  # pick whatsapp + skip allow-list
 
     assert result.exit_code == 0, result.output
     assert "1. telegram" in result.output  # the menu rendered

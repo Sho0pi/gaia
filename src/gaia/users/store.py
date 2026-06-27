@@ -82,6 +82,10 @@ class UserStore:
         ident = qualify(channel, sender_id)
         return next((u for u in self.list() if ident in u.identities), None)
 
+    def has_admin(self) -> bool:
+        """Whether any admin exists yet — drives first-contact bootstrap when none does."""
+        return any(u.role == "admin" for u in self.list())
+
     def register(self, channel: str, sender_id: str, name: str, role: Role) -> User:
         """Create a new user for a first-seen sender and persist them.
 

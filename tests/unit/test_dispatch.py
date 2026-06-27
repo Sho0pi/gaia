@@ -74,6 +74,7 @@ async def test_unknown_remote_sender_is_gated_as_guest(
     tmp_path: Path, built: list[_FakeHandler]
 ) -> None:
     gaia = _gaia(tmp_path)
+    gaia.users.register("whatsapp", "owner@s.whatsapp.net", "Owner", "admin")  # admin exists
     d = Dispatcher(gaia)
     out: list[str] = []
 
@@ -86,6 +87,23 @@ async def test_unknown_remote_sender_is_gated_as_guest(
     # but the sender is now a pending guest the admin can see
     user = gaia.users.resolve("whatsapp", "972@s.whatsapp.net")
     assert user is not None and user.role == "guest" and user.name == "Grace"
+
+
+async def test_first_contact_becomes_admin_when_no_admin_exists(
+    tmp_path: Path, built: list[_FakeHandler]
+) -> None:
+    # Fresh instance, no admin yet → the first remote sender (the owner) is bootstrapped as admin.
+    gaia = _gaia(tmp_path)
+    d = Dispatcher(gaia)
+    out: list[str] = []
+
+    await d.for_channel("whatsapp")(
+        "972@s.whatsapp.net", "Itay", Inbound(text="hi"), await _send_collect(out)
+    )
+
+    user = gaia.users.resolve("whatsapp", "972@s.whatsapp.net")
+    assert user is not None and user.role == "admin"  # bootstrapped
+    assert built  # reached the model (not gated)
 
 
 async def test_approved_user_routes_to_per_user_handler(
