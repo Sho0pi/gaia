@@ -240,6 +240,9 @@ async def _run_soul_content(
     from gaia.core.plugins import ToolLoggingPlugin, ToolPermissionPlugin
     from gaia.core.screenshots import media_for_outputs
 
+    # ponytail: souls stay on in-process warm InMemory sessions (not the durable store) — the
+    # concurrent missions dispatcher sharing one SQLite session store breaks the subtask-yield run
+    # loop. Durable souls is a follow-up (#310); the main handler's sessions are durable (#76).
     if warm_key is not None:
         warm = await gaia.soul_sessions.acquire(
             warm_key, app_name=constants.APP_NAME, user_id=user_id, state=state

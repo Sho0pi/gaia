@@ -460,18 +460,9 @@ class MemoryConfig(BaseModel):
     )
     auto_ingest: bool = Field(
         default=True,
-        description="Auto-extract facts from the conversation; off = remember-tool only. "
-        "Turns are batched (see ingest_batch_size / ingest_interval_seconds) to keep cost down.",
-    )
-    ingest_batch_size: int = Field(
-        default=10,
-        description="Flush buffered turns to mem0 once this many have accumulated.",
-    )
-    ingest_interval_seconds: int = Field(
-        default=600,
-        description="Debounce: flush a conversation this many seconds after its last buffered turn "
-        "(each new turn resets the timer, so a back-and-forth coalesces into one ingest). Lower = "
-        "memory persists sooner in the background, so shutdown rarely has a buffer to flush.",
+        description="Grow long-term memory automatically; off = remember-tool only. When a chat "
+        "goes idle (sessions.idle_consolidate_minutes) gaia distils its important facts into mem0 "
+        "— like a person processing a conversation after it ends.",
     )
     extraction_instructions: str = Field(
         default="",
@@ -525,6 +516,22 @@ class LoggingConfig(BaseModel):
     backup_count: int = Field(default=5, description="How many rotated files to keep.")
 
 
+class SessionsConfig(BaseModel):
+    """Durable conversation sessions: survive restarts, replay a window, consolidate on idle."""
+
+    window_turns: int = Field(
+        default=30,
+        description="How many recent conversation turns gaia replays to the model each message. "
+        "The whole conversation is kept on disk; older turns come back via long-term memory. "
+        "Lower = fewer tokens per message, shorter verbatim memory.",
+    )
+    idle_consolidate_minutes: float = Field(
+        default=30.0,
+        description="After a conversation is idle this long, gaia distils its important facts into "
+        "long-term memory and clears the session (a fresh, memory-informed start next time).",
+    )
+
+
 class SoulsConfig(BaseModel):
     """Settings for delegated souls. ``extra='allow'`` keeps room for the not-yet-wired
     agent-persona keys that used to live under this section."""
@@ -574,6 +581,7 @@ class GaiaConfig(BaseModel):
     analysis: AnalysisConfig = Field(default_factory=AnalysisConfig)
     monitor: MonitorConfig = Field(default_factory=MonitorConfig)
     voice: VoiceConfig = Field(default_factory=VoiceConfig)
+    sessions: SessionsConfig = Field(default_factory=SessionsConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     default_communication_style: str = Field(
         default="human", description="Fallback voice for agents (human/caveman/ai)."

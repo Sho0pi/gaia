@@ -30,6 +30,7 @@ _HOME_PATHS = {
     "USERS_FILE": "users.json",
     "TASKS_DB": "tasks.db",
     "SESSION_DB": "whatsapp.db",
+    "SESSIONS_DB": "sessions.db",
     "CRON_FILE": "cron.json",
     "CONFIG_PATH": "gaia.yaml",
     "LOG_DIR": "logs",

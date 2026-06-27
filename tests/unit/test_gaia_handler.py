@@ -147,16 +147,15 @@ async def test_runner_rebuilds_when_config_changes(monkeypatch: pytest.MonkeyPat
     from gaia.config import GaiaConfig
 
     builds: list[object] = []
-    services: list[object] = []
 
     class _FakeSession:
+        async def get_session(self, **_kwargs: Any) -> None:
+            return None  # new session → create
+
         async def create_session(self, **_kwargs: Any) -> None:
             return None
 
-    def _fake_session_ctor(*_a: Any, **_k: Any) -> _FakeSession:
-        svc = _FakeSession()
-        services.append(svc)
-        return svc
+    session_service = _FakeSession()
 
     class _RebuildRunner:
         def __init__(self, **kwargs: Any) -> None:
@@ -165,10 +164,10 @@ async def test_runner_rebuilds_when_config_changes(monkeypatch: pytest.MonkeyPat
         async def run_async(self, **_kwargs: Any) -> AsyncIterator[SimpleNamespace]:
             yield _event("ok")
 
-    monkeypatch.setattr("google.adk.sessions.InMemorySessionService", _fake_session_ctor)
     monkeypatch.setattr("google.adk.runners.Runner", _RebuildRunner)
     monkeypatch.setattr("gaia.core.plugins.ToolPermissionPlugin", lambda gaia: object())
     monkeypatch.setattr("gaia.core.plugins.ToolLoggingPlugin", lambda: object())
+    monkeypatch.setattr("gaia.core.plugins.SessionWindowPlugin", lambda n: object())
 
     def _build(_handler: object, *, profile: object = None) -> object:
         agent = object()
@@ -176,7 +175,9 @@ async def test_runner_rebuilds_when_config_changes(monkeypatch: pytest.MonkeyPat
         return agent
 
     cfg1, cfg2 = GaiaConfig(), GaiaConfig()
-    gaia = SimpleNamespace(memory_service=None, build_root_agent=_build, config=cfg1)
+    gaia = SimpleNamespace(
+        memory_service=None, build_root_agent=_build, config=cfg1, session_service=session_service
+    )
     handler = GaiaHandler(gaia)
 
     await _collect(handler, "one")  # first turn builds
@@ -186,8 +187,7 @@ async def test_runner_rebuilds_when_config_changes(monkeypatch: pytest.MonkeyPat
     gaia.config = cfg2  # simulate gaia.yaml edit (ConfigSupplier hands back a new object)
     await _collect(handler, "three")
 
-    assert len(builds) == 2  # rebuilt against the new config
-    assert len(services) == 1  # session service reused → conversation history preserved
+    assert len(builds) == 2  # rebuilt; the shared durable session keeps the conversation
 
 
 async def test_user_message_is_included_in_the_event_stream() -> None:
@@ -261,95 +261,90 @@ async def test_network_error_yields_hiccup_message() -> None:
     assert len(sent) == 1 and "network hiccup" in sent[0]
 
 
-def _gaia(*, batch_size: int = 2, interval: int = 3600, auto_ingest: bool = True) -> Any:
-    """Fake Gaia whose memory service records each add_events_to_memory call."""
-    calls: list[dict[str, Any]] = []
+def _gaia(*, auto_ingest: bool = True, idle_minutes: float = 60.0) -> Any:
+    """Fake Gaia: memory records consolidations; session service serves + deletes a session."""
+    consolidated: list[Any] = []
+    fake_session = SimpleNamespace(events=[SimpleNamespace()], user_id="u", id="s")
 
-    async def add_events_to_memory(**kwargs: Any) -> None:
-        calls.append(kwargs)
+    async def add_session_to_memory(session: Any) -> None:
+        consolidated.append(session)
 
-    service = SimpleNamespace(calls=calls, add_events_to_memory=add_events_to_memory)
-    memory = SimpleNamespace(
-        auto_ingest=auto_ingest,
-        ingest_batch_size=batch_size,
-        ingest_interval_seconds=interval,
+    async def get_session(**_kwargs: Any) -> Any:
+        return fake_session
+
+    async def delete_session(**kwargs: Any) -> None:
+        deleted.append(kwargs)
+
+    deleted: list[dict[str, Any]] = []
+    service = SimpleNamespace(
+        consolidated=consolidated, add_session_to_memory=add_session_to_memory
     )
-    return SimpleNamespace(memory_service=service, config=SimpleNamespace(memory=memory))
+    session_service = SimpleNamespace(
+        get_session=get_session, delete_session=delete_session, deleted=deleted
+    )
+    memory = SimpleNamespace(auto_ingest=auto_ingest)
+    sessions = SimpleNamespace(idle_consolidate_minutes=idle_minutes, window_turns=30)
+    return SimpleNamespace(
+        memory_service=service,
+        session_service=session_service,
+        config=SimpleNamespace(memory=memory, sessions=sessions),
+    )
 
 
-async def test_buffers_until_batch_size_then_flushes_once() -> None:
-    gaia = _gaia(batch_size=2)
-    handler = GaiaHandler(gaia)
-    handler._runner = _FakeRunner([_event("ok")])  # one event per turn
-
-    await _collect(handler, "msg 1")
-    assert gaia.memory_service.calls == []  # 1 < 2 buffered, nothing ingested yet
-
-    await _collect(handler, "msg 2")
-    assert handler._flush_task is not None  # threshold reached → background ingest kicked off
-    await handler._flush_task  # the drain runs off the turn's critical path
-    assert len(gaia.memory_service.calls) == 1  # single flush
-    assert len(gaia.memory_service.calls[0]["events"]) == 2  # both turns in one batch
-    assert handler._buffer == []  # buffer drained
-
-
-async def test_flush_drains_remaining_buffer() -> None:
-    gaia = _gaia(batch_size=100)  # never auto-flushes
+async def test_active_chat_is_not_consolidated_yet() -> None:
+    # A turn lives in the durable session; nothing reaches long-term memory until it goes idle.
+    gaia = _gaia(idle_minutes=60.0)  # idle timer armed but won't fire during the test
     handler = GaiaHandler(gaia)
     handler._runner = _FakeRunner([_event("ok")])
 
-    await _collect(handler, "lonely message")
-    assert gaia.memory_service.calls == []  # below threshold
-
-    await handler.flush()  # shutdown-style drain
-    assert len(gaia.memory_service.calls) == 1
-    assert len(gaia.memory_service.calls[0]["events"]) == 1
-    assert handler._buffer == []
+    await _collect(handler, "hi")
+    assert gaia.memory_service.consolidated == []  # still active
+    handler._cancel_idle()
 
 
-async def test_auto_ingest_off_never_buffers() -> None:
+async def test_idle_consolidation_fires_then_clears() -> None:
+    # After idle, the whole session is distilled into memory and the session is deleted.
+    gaia = _gaia(idle_minutes=0.001)  # ~0.06s
+    handler = GaiaHandler(gaia)
+    handler._runner = _FakeRunner([_event("ok")])
+
+    await _collect(handler, "hi")
+    assert handler._idle_task is not None
+    await handler._idle_task  # sleep → consolidate → clear
+
+    assert len(gaia.memory_service.consolidated) == 1  # whole session distilled
+    assert gaia.session_service.deleted  # session cleared (fresh start)
+    assert handler._runner is None
+
+
+async def test_flush_consolidates_the_whole_session() -> None:
+    gaia = _gaia()
+    handler = GaiaHandler(gaia)
+    handler._runner = _FakeRunner([_event("ok")])
+
+    await _collect(handler, "hi")
+    await handler.flush()  # /reset-style consolidate
+
+    assert len(gaia.memory_service.consolidated) == 1
+    handler._cancel_idle()
+
+
+async def test_auto_ingest_off_never_consolidates() -> None:
     gaia = _gaia(auto_ingest=False)
     handler = GaiaHandler(gaia)
     handler._runner = _FakeRunner([_event("ok")])
 
     await _collect(handler, "msg")
 
-    assert handler._buffer == []
+    assert handler._idle_task is None  # never armed
     await handler.flush()
-    assert gaia.memory_service.calls == []
+    assert gaia.memory_service.consolidated == []
 
 
-async def test_idle_flush_fires_without_a_new_message() -> None:
-    # A quiet conversation drains on the timer, not only when the next message arrives.
-
-    gaia = _gaia(batch_size=100, interval=0.05)  # never hits batch; short idle timer
-    handler = GaiaHandler(gaia)
-    handler._runner = _FakeRunner([_event("ok")])
-
-    await _collect(handler, "lonely")
-    assert gaia.memory_service.calls == []  # below batch, not drained yet
-    assert handler._idle_task is not None
-    await handler._idle_task  # the timer sleeps then drains
-
-    assert len(gaia.memory_service.calls) == 1 and handler._buffer == []
-
-
-async def test_threshold_counts_turns_not_events() -> None:
-    # One turn that emits 6 events must not trip a batch size of 5 (turn-counting).
-    gaia = _gaia(batch_size=5, interval=3600)
-    handler = GaiaHandler(gaia)
-    handler._runner = _FakeRunner([_event(f"e{i}") for i in range(6)])  # 6 events, ONE turn
-
-    await _collect(handler, "msg")
-
-    assert gaia.memory_service.calls == []  # 1 turn < 5 → no flush
-    assert handler._buffered_turns == 1 and len(handler._buffer) == 6
-
-
-async def test_reset_session_cancels_the_idle_timer() -> None:
+async def test_reset_consolidates_then_clears() -> None:
     import asyncio
 
-    gaia = _gaia(batch_size=100, interval=3600)  # arms the idle timer, won't fire
+    gaia = _gaia(idle_minutes=60.0)  # arms the idle timer, won't fire
     handler = GaiaHandler(gaia)
     handler._runner = _FakeRunner([_event("ok")])
 
@@ -357,26 +352,13 @@ async def test_reset_session_cancels_the_idle_timer() -> None:
     idle = handler._idle_task
     assert idle is not None and not idle.done()
 
-    handler.reset_session()
-    await asyncio.sleep(0)  # let the cancellation propagate (the task catches it and returns)
-    assert idle.done() and gaia.memory_service.calls == []  # no late drain
-    assert handler._buffer == [] and handler._buffered_turns == 0
+    await handler.flush()  # /reset step 1: consolidate
+    await handler.reset_session()  # step 2: cancel idle + delete the durable session
+    await asyncio.sleep(0)  # let the cancellation propagate
 
-
-async def test_flush_cancels_the_idle_timer() -> None:
-    import asyncio
-
-    gaia = _gaia(batch_size=100, interval=3600)
-    handler = GaiaHandler(gaia)
-    handler._runner = _FakeRunner([_event("ok")])
-
-    await _collect(handler, "msg")
-    idle = handler._idle_task
-    assert idle is not None
-
-    await handler.flush()  # cancels the timer, then drains once
-    await asyncio.sleep(0)  # let the cancelled timer settle
-    assert idle.done() and len(gaia.memory_service.calls) == 1
+    assert idle.done()
+    assert len(gaia.memory_service.consolidated) == 1  # consolidated on reset
+    assert gaia.session_service.deleted and handler._runner is None  # cleared
 
 
 def _screenshot_event(path: str, status: str = "success") -> SimpleNamespace:
@@ -604,35 +586,3 @@ async def test_completed_delegate_delivers_media_not_paused() -> None:
     assert not any(
         isinstance(s, str) and "lost the question" in s for s in sent
     )  # not the fail-safe
-
-
-def _ingest_handler(monkeypatch: pytest.MonkeyPatch) -> tuple[Any, dict[str, int]]:
-    """A handler with auto-ingest on; _schedule_flush / _arm_idle_flush replaced by counters."""
-    from gaia.config import GaiaConfig
-
-    gaia = SimpleNamespace(config=GaiaConfig(), memory_service=SimpleNamespace())
-    handler = GaiaHandler(gaia)
-    calls = {"flush": 0, "idle": 0}
-    monkeypatch.setattr(handler, "_schedule_flush", lambda: calls.__setitem__("flush", 1))
-    monkeypatch.setattr(handler, "_arm_idle_flush", lambda _d: calls.__setitem__("idle", 1))
-    return handler, calls
-
-
-async def test_young_buffer_arms_idle_not_flush(monkeypatch: pytest.MonkeyPatch) -> None:
-    handler, calls = _ingest_handler(monkeypatch)
-    await handler._buffer_turn([SimpleNamespace()])  # 1 fresh turn, below batch
-    assert calls == {"flush": 0, "idle": 1}
-
-
-async def test_aged_buffer_forces_background_flush(monkeypatch: pytest.MonkeyPatch) -> None:
-    # A slow drip (always under batch, idle re-armed each turn) must still flush once it's too old.
-    import time
-
-    from gaia.core import handler as handler_mod
-
-    handler, calls = _ingest_handler(monkeypatch)
-    handler._buffer_started = time.monotonic() - (handler_mod._MAX_BUFFER_AGE_SECONDS + 1)
-    handler._buffered_turns = 2  # well below the batch size
-
-    await handler._buffer_turn([SimpleNamespace()])
-    assert calls == {"flush": 1, "idle": 0}  # aged out → background flush, not another idle wait

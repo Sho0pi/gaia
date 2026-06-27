@@ -108,6 +108,12 @@ class Gaia:
         service: Mem0MemoryService = self.container.memory_service()
         return service
 
+    @property
+    def session_service(self) -> Any:
+        """The shared durable ADK session store (built once; survives restarts). Lazy: the heavy
+        ADK import only happens on first access, keeping ``Gaia()`` construction cheap."""
+        return self.container.session_service()
+
     def ensure_agent(self, spec: AgentSpec) -> LlmAgent:
         """Get a subagent for ``spec`` — reused if known, created+stored if new."""
         return self.factory.create_or_reuse(spec, effort=self.config.llm.effort)

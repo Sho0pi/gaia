@@ -388,6 +388,10 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
         notice = asyncio.create_task(_notify_recent_crashes(gaia))
         notice.add_done_callback(lambda t: t.exception())  # swallow; never warns
 
+        # Digest conversations that idled out while gaia was off (best-effort, non-blocking).
+        sweep = asyncio.create_task(_consolidate_idle_sessions(gaia))
+        sweep.add_done_callback(lambda t: t.exception())
+
         scheduler = _start_cron(gaia)
         mission_dispatcher = _start_dispatcher(gaia)
         improve_scheduler = _start_improve(gaia)
@@ -411,12 +415,9 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
                 monitor_scheduler.shutdown()
             if mission_dispatcher is not None:
                 await mission_dispatcher.stop()
-            # Drain any turns still buffered for memory before the process exits. Let it finish —
-            # dropping it loses the tail of the conversation, and a Gemini extract+embed on a Pi
-            # legitimately takes ~4-12s (a fixed time-box silently lost memory, #300). Ingest is
-            # off-loop so it doesn't block other shutdown work; a true wedge is still bounded by the
-            # shutdown watchdog.
-            await dispatcher.flush_all()
+            # No memory flush on shutdown: the conversation lives in the durable session, so a stop
+            # leaves it to be consolidated on the next idle (or the startup sweep). Fast, simple, no
+            # data loss (#76, replaces #300/#307).
 
 
 async def _notify_recent_crashes(gaia: Gaia) -> None:
@@ -445,6 +446,41 @@ async def _notify_recent_crashes(gaia: Gaia) -> None:
             except Exception:  # best-effort — a down connector never blocks startup
                 logger.debug("crash notice to %s failed", channel, exc_info=True)
     mark_reported()
+
+
+async def _consolidate_idle_sessions(gaia: Gaia) -> None:
+    """Startup sweep: digest + clear conversations that idled out while gaia was off (#76).
+
+    Idle consolidation only runs while the daemon is up, so a conversation that "ended" before a
+    stop/reboot would otherwise linger un-digested. We scan each user's durable sessions and, for
+    any whose last activity is older than the idle threshold, distil it into memory + delete it.
+    Best-effort: a mem0 hiccup is logged and skipped.
+    """
+    import time
+
+    mem = gaia.memory_service
+    if mem is None or not gaia.config.memory.auto_ingest:
+        return
+    svc = gaia.session_service
+    cutoff = gaia.config.sessions.idle_consolidate_minutes * 60.0
+    now = time.time()
+    for user in gaia.users.list():
+        resp = await svc.list_sessions(app_name=constants.APP_NAME, user_id=user.id)
+        for meta in getattr(resp, "sessions", []):
+            if now - (meta.last_update_time or 0) < cutoff:
+                continue  # still "active" — leave it for the live idle timer
+            session = await svc.get_session(
+                app_name=constants.APP_NAME, user_id=user.id, session_id=meta.id
+            )
+            if session is None or not session.events:
+                continue
+            try:
+                await mem.add_session_to_memory(session)
+            except Exception:
+                logger.warning("startup consolidation failed for %s", meta.id)
+            await svc.delete_session(
+                app_name=constants.APP_NAME, user_id=user.id, session_id=meta.id
+            )
 
 
 def _start_improve(gaia: Gaia) -> Any:
