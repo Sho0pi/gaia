@@ -6,7 +6,7 @@ description: "Get gaia running in one line; keep it up to date; remove it cleanl
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Sho0pi/gaia/master/scripts/install.sh | sh
+curl -fsSL https://gaia-agent.com/install.sh | bash
 ```
 
 That one line:
@@ -23,7 +23,7 @@ macOS and Linux are supported. On Windows, install under **WSL**.
 
 ### Flags
 
-`curl … | sh -s -- <flags>`:
+`curl … | bash -s -- <flags>`:
 
 | Flag | Effect |
 |------|--------|

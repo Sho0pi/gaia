@@ -30,7 +30,7 @@ dependencies = [
     # Small pure-Python DI container (providers.Singleton = lazy build-once,
     # providers.Callable for hot-reloaded values). Houses Gaia's build-once
     # services (transcriber, memory, mcp/skill toolsets, registries) in
-    # `gaia.di.Container`; see CLAUDE.md "Service lifecycle & DI".
+    # `gaia.di.Container`; see AGENTS.md "Service lifecycle & DI".
     "dependency-injector>=4.49.1",
     "ruamel-yaml>=0.19.1",
 ]
@@ -112,7 +112,7 @@ src = ["src", "tests"]
 [tool.ruff.lint]
 # PLW0603 ("Using the global statement is discouraged") guards the DI/lifecycle
 # convention: no module-level mutable singletons for service construction.
-# See CLAUDE.md "Service lifecycle & DI".
+# See AGENTS.md "Service lifecycle & DI".
 select = ["E", "F", "I", "N", "UP", "B", "ASYNC", "RUF", "PLW0603"]
 
 [tool.ruff.lint.per-file-ignores]
