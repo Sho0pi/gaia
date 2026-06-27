@@ -99,6 +99,9 @@ class Inbound:
 
     text: str = ""
     media: tuple[InboundMedia, ...] = ()
+    #: True for a group/multi-party chat (vs a 1:1 DM). Keeps first-contact admin bootstrap to
+    #: DMs only — a stranger in a group shouldn't grab admin.
+    is_group: bool = False
 
 
 # What the handler may hand a connector to send back: plain text, a media file, or a

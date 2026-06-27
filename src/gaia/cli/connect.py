@@ -12,7 +12,7 @@ non-TTY runs use a numbered ``typer.prompt``, so flows run on scripted input.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Any
 
 import typer
 
@@ -218,11 +218,41 @@ def _connect_whatsapp(settings: Settings, *, timeout: int) -> bool:
 
     set_config_value(settings.config_path, "connectors.whatsapp.enabled", True)
     out.print("whatsapp paired — the session is saved, no QR needed next time")
+    # The QR links gaia's OWN WhatsApp account (the bot). YOU become admin automatically when you
+    # send gaia its first message (first-contact bootstrap). Optionally pre-allow other people now.
+    out.print("[dim]you'll be admin once you message gaia from your phone.[/]")
+    _prompt_allowed_users(out)
     return True
 
 
+def _prompt_allowed_users(out: Any) -> None:
+    """Pre-allow other people as (non-admin) users; seed them past the guest gate."""
+    from gaia import constants
+    from gaia.users import UserStore
+
+    raw = typer.prompt(
+        "Pre-allow other numbers as users (comma-separated, country code, digits only; blank=none)",
+        default="",
+        show_default=False,
+    ).strip()
+    if not raw:
+        return
+    store = UserStore(constants.USERS_FILE)
+    added = 0
+    for token in raw.split(","):
+        digits = "".join(c for c in token if c.isdigit())
+        if not digits:
+            continue
+        jid = f"{digits}@s.whatsapp.net"
+        if store.resolve("whatsapp", jid) is None:
+            store.register("whatsapp", jid, name=digits, role="user")
+            added += 1
+    if added:
+        out.print(f"allowed [bold]{added}[/] number(s) as users.")
+
+
 async def _pair(session_db: object, timeout_s: int) -> bool:
-    """Run the connector's foreground QR pairing (seam for tests)."""
+    """Run the connector's foreground QR pairing; True once paired (seam for tests)."""
     from pathlib import Path
 
     from gaia.connectors import WhatsAppWebConnector

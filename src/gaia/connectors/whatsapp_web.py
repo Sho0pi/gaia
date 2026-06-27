@@ -377,6 +377,7 @@ class WhatsAppWebConnector:
             # reconnects authenticated, and only THAT (ConnectedEv) has persisted the full
             # session. Don't signal _connected here, or pair() would stop the client mid-pair
             # and leave a half-written session that re-prompts the QR when the daemon starts.
+            # NB: event.ID is gaia's OWN account (the QR links the bot's WhatsApp), not a user.
             logger.info("whatsapp paired as %s — finishing handshake", event.ID.User)
 
         @client.event(MessageEv)  # type: ignore[untyped-decorator]
@@ -434,7 +435,10 @@ class WhatsAppWebConnector:
                 name = getattr(message.Info, "Pushname", "") or ""
                 try:
                     await self._dispatch(
-                        _sender_jid(source), name, Inbound(text=text, media=media), send
+                        _sender_jid(source),
+                        name,
+                        Inbound(text=text, media=media, is_group=getattr(source, "IsGroup", False)),
+                        send,
                     )
                 finally:
                     await self._end_typing(client, chat, typing)

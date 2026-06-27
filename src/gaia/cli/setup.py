@@ -34,10 +34,12 @@ def main(ctx: typer.Context) -> None:
     )
     from gaia.cli.tools import tools as tools_step
 
+    # No Admin step: the owner is set automatically — the WhatsApp QR-scanner becomes admin, and on
+    # any channel the first sender (when none exists yet) is bootstrapped as admin; cli is always
+    # admin. `gaia setup admin --id …` remains for advanced/manual cases.
     for label, step in (
         ("Model", model),
         ("Connectors", connectors),
-        ("Admin", admin),
         ("Tools", tools_step),
     ):
         out.print(f"\n[bold cyan]> {label}[/]")
@@ -419,7 +421,6 @@ def admin(ctx: typer.Context, admin_id: AdminIdOpt = None) -> None:
             [
                 ("telegram", "Telegram", ""),
                 ("whatsapp", "WhatsApp", ""),
-                ("cli", "CLI (local terminal)", ""),
             ],
             default="telegram",
         )

@@ -103,12 +103,30 @@ def test_whatsapp_pairs_and_enables(home: Path, monkeypatch: pytest.MonkeyPatch)
 
     monkeypatch.setattr(connect_mod, "_pair", fake_pair)
 
-    result = runner.invoke(cli_app, ["connect", "whatsapp", "--timeout", "5"])
+    # input "\n" skips the pre-allow-others prompt
+    result = runner.invoke(cli_app, ["connect", "whatsapp", "--timeout", "5"], input="\n")
 
     assert result.exit_code == 0, result.output
     assert paired == [5]
     assert _enabled(home, "whatsapp")
-    assert "Linked Devices" in result.output  # the tutorial showed
+    # the QR links gaia's own account → no admin written at connect (owner = first-contact)
+    data = pyyaml.safe_load((home / "gaia.yaml").read_text())
+    assert data.get("admin", []) == []
+
+
+def test_whatsapp_allowlist_seeds_users(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_pair(session_db: object, timeout_s: int) -> bool:
+        return True
+
+    monkeypatch.setattr(connect_mod, "_pair", fake_pair)
+
+    runner.invoke(cli_app, ["connect", "whatsapp"], input="972000111, 972000222\n")
+
+    from gaia.users import UserStore
+
+    store = UserStore()
+    assert store.resolve("whatsapp", "972000111@s.whatsapp.net") is not None
+    assert store.resolve("whatsapp", "972000222@s.whatsapp.net") is not None
 
 
 def test_whatsapp_timeout_fails_without_enabling(
@@ -154,7 +172,7 @@ def test_whatsapp_existing_session_repair_deletes_db(
 
     monkeypatch.setattr(connect_mod, "_pair", fake_pair)
 
-    result = runner.invoke(cli_app, ["connect", "whatsapp"], input="y\n")
+    result = runner.invoke(cli_app, ["connect", "whatsapp"], input="y\n\n")  # re-pair + skip allow
 
     assert result.exit_code == 0, result.output
     assert _enabled(home, "whatsapp")
@@ -183,7 +201,7 @@ def test_bare_invocation_numbered_multiselect(home: Path, monkeypatch: pytest.Mo
 
     monkeypatch.setattr(connect_mod, "_pair", fake_pair)
 
-    result = runner.invoke(cli_app, ["connect"], input="2\n")
+    result = runner.invoke(cli_app, ["connect"], input="2\n\n")  # pick whatsapp + skip allow-list
 
     assert result.exit_code == 0, result.output
     assert "1. telegram" in result.output  # the menu rendered

@@ -91,7 +91,10 @@ class TelegramConnector:
                 # capture the chat for later proactive delivery (the chat, not the sender).
                 current_chat.set((self.NAME, str(message.chat_id)))
                 name = sender.first_name or sender.username or str(sender.id)
-                await self._dispatch(str(sender.id), name, Inbound(text=message.text or ""), send)
+                is_group = message.chat.type != "private"
+                await self._dispatch(
+                    str(sender.id), name, Inbound(text=message.text or "", is_group=is_group), send
+                )
 
         # filters.TEXT keeps slash-commands (/help, /reset, …) flowing to the handler,
         # which dispatches them itself; ~COMMAND would swallow them before Gaia sees them.
