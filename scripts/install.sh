@@ -187,13 +187,16 @@ if [ "$DO_BROWSER" -eq 1 ]; then
 		curl -fsSL https://bun.sh/install | bash >/dev/null 2>&1 || warn "bun install failed (the playwright-mcp browser backend won't be available)"
 	fi
 	[ -d "$HOME/.bun/bin" ] && ensure_path "$HOME/.bun/bin"
-	# Native fallback uses the python Playwright's Chromium; the default mcp backend uses the
-	# NODE Playwright that playwright-mcp drives — install a browser for each.
+	# Two separate browsers: the native fallback uses the python Playwright's Chromium, while the
+	# default mcp backend uses playwright-mcp's OWN bundled Playwright — which pins a different
+	# Chromium revision and is installed via its `install-browser` command, NOT `playwright install`
+	# (that fetches the standalone build, the wrong revision → "chrome-for-testing is not installed").
 	"$VENV/bin/playwright" install chromium >/dev/null 2>&1 || warn "Chromium (native) install failed"
-	if have bunx || [ -x "$HOME/.bun/bin/bunx" ]; then
-		"${HOME}/.bun/bin/bunx" playwright install chromium >/dev/null 2>&1 \
-			|| bunx playwright install chromium >/dev/null 2>&1 \
-			|| warn "Chromium (playwright-mcp) install failed — the mcp browser backend may need it"
+	bunx_bin="$HOME/.bun/bin/bunx"
+	have bunx && bunx_bin=bunx
+	if command -v "$bunx_bin" >/dev/null 2>&1; then
+		"$bunx_bin" @playwright/mcp@latest install-browser chrome-for-testing >/dev/null 2>&1 \
+			|| warn "playwright-mcp browser install failed — screenshots via the mcp backend may not work"
 	fi
 	ok "browser ready"
 else
