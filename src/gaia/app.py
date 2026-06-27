@@ -51,7 +51,6 @@ def select_connector(
     transcriber: Any = None,
     group_trigger: Any = None,
     show_active: bool = True,
-    on_paired: Any = None,
 ) -> WhatsAppConnector | WhatsAppWebConnector:
     """Choose the WhatsApp backend from configured credentials.
 
@@ -59,8 +58,7 @@ def select_connector(
     (``gaia.voice.Transcriber`` or None) turns inbound voice notes into text on the web
     backend; the business backend has no voice path yet (webhook, #3). ``group_trigger``
     (``gaia.config.GroupTrigger`` or None) drives the group-chat gating; ``show_active``
-    drives the web backend's blue-tick + "typing…" presence. ``on_paired`` is fired with the
-    owner's JID when the QR is scanned in the live client (admin bootstrap).
+    drives the web backend's blue-tick + "typing…" presence.
     """
     if settings.has_whatsapp_business:
         assert settings.whatsapp_phone_id and settings.whatsapp_token  # narrowed by property
@@ -71,7 +69,6 @@ def select_connector(
         transcriber=transcriber,
         group_trigger=group_trigger,
         show_active=show_active,
-        on_paired=on_paired,
     )
 
 
@@ -350,24 +347,12 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
 
         if "whatsapp" in selected:
             wa_cfg = gaia.config.connectors.whatsapp
-
-            async def _owner_paired(owner_jid: str) -> None:
-                # Owner scanned the QR in the live daemon (no prior `gaia connect`) → make them
-                # admin now (persist to config.admin + seed live, no restart needed).
-                from gaia.cli._yamledit import add_to_list
-
-                ident = f"whatsapp:{owner_jid}"
-                add_to_list(settings.config_path, "admin", ident)
-                gaia.users.seed_admins([ident])
-                logger.info("whatsapp owner %s set as admin", owner_jid)
-
             connector = select_connector(
                 settings,
                 dispatcher.for_channel(WhatsAppWebConnector.NAME),
                 transcriber=gaia.container.transcriber(),
                 group_trigger=wa_cfg.group_trigger,
                 show_active=wa_cfg.show_active,
-                on_paired=_owner_paired,
             )
             if isinstance(connector, WhatsAppWebConnector):
                 tasks.append(asyncio.create_task(connector.start()))

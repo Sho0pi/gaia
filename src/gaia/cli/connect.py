@@ -209,8 +209,8 @@ def _connect_whatsapp(settings: Settings, *, timeout: int) -> bool:
         session_db.unlink()
 
     out.print("starting the pairing client — the QR appears below…\n")
-    owner = asyncio.run(_pair(session_db, timeout))
-    if owner is None:
+    paired = asyncio.run(_pair(session_db, timeout))
+    if not paired:
         out.print(
             f"[red]not paired within {timeout}s[/] — run [cyan]gaia connect whatsapp[/] again"
         )
@@ -218,23 +218,20 @@ def _connect_whatsapp(settings: Settings, *, timeout: int) -> bool:
 
     set_config_value(settings.config_path, "connectors.whatsapp.enabled", True)
     out.print("whatsapp paired — the session is saved, no QR needed next time")
-
-    # The scanner is the device owner → make them admin automatically (no need to know your JID).
-    from gaia.cli._yamledit import add_to_list
-
-    if add_to_list(settings.config_path, "admin", f"whatsapp:{owner}"):
-        out.print(f"set you ([bold]{owner}[/]) as admin — your messages get a real reply.")
+    # The QR links gaia's OWN WhatsApp account (the bot). YOU become admin automatically when you
+    # send gaia its first message (first-contact bootstrap). Optionally pre-allow other people now.
+    out.print("[dim]you'll be admin once you message gaia from your phone.[/]")
     _prompt_allowed_users(out)
     return True
 
 
 def _prompt_allowed_users(out: Any) -> None:
-    """Ask for other phone numbers to allow as (non-admin) users; seed them past the guest gate."""
+    """Pre-allow other people as (non-admin) users; seed them past the guest gate."""
     from gaia import constants
     from gaia.users import UserStore
 
     raw = typer.prompt(
-        "Other numbers to allow as users (comma-separated, country code, digits only; blank=none)",
+        "Pre-allow other numbers as users (comma-separated, country code, digits only; blank=none)",
         default="",
         show_default=False,
     ).strip()
@@ -254,8 +251,8 @@ def _prompt_allowed_users(out: Any) -> None:
         out.print(f"allowed [bold]{added}[/] number(s) as users.")
 
 
-async def _pair(session_db: object, timeout_s: int) -> str | None:
-    """Run the connector's foreground QR pairing; return the owner JID (seam for tests)."""
+async def _pair(session_db: object, timeout_s: int) -> bool:
+    """Run the connector's foreground QR pairing; True once paired (seam for tests)."""
     from pathlib import Path
 
     from gaia.connectors import WhatsAppWebConnector
