@@ -220,3 +220,29 @@ def test_build_mem0_disables_telemetry(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert os.environ["MEM0_TELEMETRY"] == "false"
     assert os.environ["ANONYMIZED_TELEMETRY"] == "False"  # chromadb's own telemetry, off (#297)
+
+
+def test_run_until_complete_does_not_join_default_executor() -> None:
+    # neonize runs its blocking Go call via asyncio.to_thread (the default executor); asyncio.run
+    # force-joins that on close and hangs on Linux. _run_until_complete must NOT wait for it (#300).
+    import asyncio
+    import threading
+    import time
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def block() -> None:
+        started.set()
+        release.wait(5)  # a wedged worker: a join would stall here for up to 5s
+
+    async def main() -> None:
+        asyncio.get_running_loop().run_in_executor(None, block)  # fire-and-forget on default pool
+        started.wait(2)  # make sure the worker is running before the loop tears down
+
+    t0 = time.monotonic()
+    app._run_until_complete(main())
+    elapsed = time.monotonic() - t0
+    release.set()  # let the orphaned worker finish (so the test process exits clean)
+
+    assert elapsed < 2.0  # returned promptly; did NOT join the busy executor worker
