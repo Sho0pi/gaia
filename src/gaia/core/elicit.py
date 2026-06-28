@@ -21,6 +21,16 @@ ASK_USER_TOOL = "ask_user"
 #: a long-running pause on this tool as a *soul* asking the user (P2), via :class:`SoulPending`.
 DELEGATE_TOOL = "delegate_to_soul"
 
+#: ADK's synthetic long-running call name for a tool that called ``request_confirmation`` (mirrors
+#: ``google.adk.flows.llm_flows.functions.REQUEST_CONFIRMATION_FUNCTION_CALL_NAME``). The handler
+#: treats a pause on it like ask_user, but resumes with a ``ToolConfirmation`` instead of an answer.
+REQUEST_CONFIRMATION_TOOL = "adk_request_confirmation"
+
+#: True only during a human-facing conversation turn (set by ``GaiaHandler._drive``). exec reads it
+#: so a risky command in ``ask`` mode running with no human to approve (cron / mission dispatcher /
+#: background daemon) is auto-denied instead of hanging on a confirmation no one will answer.
+interactive_turn: ContextVar[bool] = ContextVar("interactive_turn", default=False)
+
 
 @dataclass
 class SoulPending:
@@ -83,6 +93,9 @@ class Pending:
     options: tuple[str, ...] = ()
     secret: bool = False
     soul: SoulPending | None = None
+    #: A tool-confirmation pause (ADK ``request_confirmation``), not an ``ask_user`` question: the
+    #: reply resumes with a ``ToolConfirmation(confirmed=…)`` instead of an answer string.
+    confirmation: bool = False
 
 
 def resolve_answer(pending: Pending, text: str) -> str:

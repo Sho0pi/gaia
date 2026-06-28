@@ -108,9 +108,21 @@ def test_off_mode_allows_anything_not_denylisted() -> None:
     assert check_command("anything goes", security="off", allowlist=()) is None
 
 
-def test_ask_mode_points_at_issue_29() -> None:
-    error = check_command("echo hi", security="ask", allowlist=())
-    assert error is not None and "#29" in error
+def test_ask_mode_never_hard_refuses_past_the_denylist() -> None:
+    # 'ask' defers risky commands to a confirmation (run.py); check_command only refuses denylist.
+    assert check_command("echo hi", security="ask", allowlist=()) is None
+    assert check_command("python -c 'x'", security="ask", allowlist=("echo",)) is None
+    # the denylist still bites in every mode
+    assert check_command("rm -rf /", security="ask", allowlist=()) is not None
+
+
+def test_needs_confirmation_only_for_risky() -> None:
+    from gaia.tools.shell.base import needs_confirmation
+
+    allow = ("echo", "ls")
+    assert needs_confirmation("echo hi", allowlist=allow) is False  # safe
+    assert needs_confirmation("python -c 'x'", allowlist=allow) is True  # binary off-list
+    assert needs_confirmation("echo a && rm x", allowlist=allow) is True  # chaining
 
 
 def test_truncate_keeps_tail() -> None:
@@ -282,3 +294,85 @@ async def test_close_all_kills_everything() -> None:
 
     assert proc.terminated is True
     assert mgr.list("tester") == []
+
+
+# --- ask-mode HITL approval -------------------------------------------------------
+
+
+class _ConfCtx:
+    """A ToolContext fake with ADK's confirmation surface."""
+
+    def __init__(self, agent: str = "tester", confirmation: Any = None) -> None:
+        self.agent_name = agent
+        self.tool_confirmation = confirmation  # None, or SimpleNamespace(confirmed=bool)
+        self.requested: list[str] = []
+
+    def request_confirmation(self, *, hint: str | None = None, payload: Any = None) -> None:
+        self.requested.append(hint or "")
+
+
+async def test_ask_safe_command_runs_without_confirmation() -> None:
+    proc = _FakeProc(communicate_out=b"hi\n", returncode=0)
+    tool = shell.make_exec(
+        ProcessManager(_spawner(proc)), _spawner(proc), security="ask", allowlist=("echo",)
+    )
+    ctx = _ConfCtx()
+    result = await tool("echo hi", tool_context=ctx)
+
+    assert result["status"] == "success" and not ctx.requested  # never asked
+
+
+async def test_ask_risky_requests_confirmation_when_interactive() -> None:
+    from gaia.core.elicit import interactive_turn
+
+    token = interactive_turn.set(True)
+    try:
+        proc = _FakeProc(communicate_out=b"x", returncode=0)
+        tool = shell.make_exec(
+            ProcessManager(_spawner(proc)), _spawner(proc), security="ask", allowlist=("echo",)
+        )
+        ctx = _ConfCtx()
+        result = await tool("python -c 'x'", tool_context=ctx)
+
+        assert result["status"] == "awaiting_approval"
+        assert ctx.requested and "python" in ctx.requested[0]  # asked, with the command in the hint
+    finally:
+        interactive_turn.reset(token)
+
+
+async def test_ask_risky_runs_when_confirmed() -> None:
+    from types import SimpleNamespace
+
+    proc = _FakeProc(communicate_out=b"done\n", returncode=0)
+    tool = shell.make_exec(
+        ProcessManager(_spawner(proc)), _spawner(proc), security="ask", allowlist=("echo",)
+    )
+    ctx = _ConfCtx(confirmation=SimpleNamespace(confirmed=True))
+    result = await tool("python -c 'print(1)'", tool_context=ctx)
+
+    assert result["status"] == "success" and not ctx.requested  # resumed → ran, no re-ask
+
+
+async def test_ask_risky_refused_when_denied() -> None:
+    from types import SimpleNamespace
+
+    proc = _FakeProc(communicate_out=b"", returncode=0)
+    tool = shell.make_exec(
+        ProcessManager(_spawner(proc)), _spawner(proc), security="ask", allowlist=("echo",)
+    )
+    ctx = _ConfCtx(confirmation=SimpleNamespace(confirmed=False))
+    result = await tool("python -c 'x'", tool_context=ctx)
+
+    assert result["status"] == "error" and "not approved" in result["error_message"]
+
+
+async def test_ask_risky_auto_denied_when_non_interactive() -> None:
+    # interactive_turn defaults False (cron / dispatcher / background daemon) → no hang, just deny.
+    proc = _FakeProc(communicate_out=b"", returncode=0)
+    tool = shell.make_exec(
+        ProcessManager(_spawner(proc)), _spawner(proc), security="ask", allowlist=("echo",)
+    )
+    ctx = _ConfCtx()
+    result = await tool("python -c 'x'", tool_context=ctx)
+
+    assert result["status"] == "error" and not ctx.requested  # never asked, denied

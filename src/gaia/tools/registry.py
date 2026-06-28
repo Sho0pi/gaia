@@ -196,12 +196,13 @@ def _register_browser_tools(
 def _register_shell_tools(registry: ToolRegistry, config: GaiaConfig | None, served: Any) -> None:
     """Attach the exec tool + its background-process trio, sharing one ProcessManager.
 
-    Safety comes from ``tools.exec.security`` (default ``allowlist``) and an optional
-    ``tools.exec.allowlist`` override, both read from config. The trio (poll/kill/list)
+    Safety comes from ``tools.exec.security`` (default ``ask`` — safe commands run, risky/unknown
+    ones pause for the admin's approval) and an optional ``tools.exec.allowlist`` override, both
+    read from config. The trio (poll/kill/list)
     is only useful alongside ``exec``, but each stays individually gateable. ``served`` (the
     shared ServedPorts) lets a background dev server's port be opened by browser_navigate.
     """
-    security = _tool_setting(config, shell.EXEC, "security") or "allowlist"
+    security = _tool_setting(config, shell.EXEC, "security") or "ask"
     configured = _tool_setting(config, shell.EXEC, "allowlist")
     allowlist = tuple(configured) if configured else shell.DEFAULT_ALLOWLIST
 

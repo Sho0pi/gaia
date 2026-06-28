@@ -98,7 +98,10 @@ def check_command(command: str, *, security: str, allowlist: tuple[str, ...]) ->
     if security == "off":
         return None
     if security == "ask":
-        return "exec 'ask' security mode needs the human-in-the-loop ask tool (see issue #29)"
+        # Denylist already applied above. A safe command runs; a risky/unknown one isn't refused
+        # here — exec asks the human to approve it (see needs_confirmation + run.py). So 'ask' never
+        # hard-refuses past the denylist.
+        return None
     if security == "allowlist":
         if _CHAIN_RE.search(stripped):
             return "refused: command chaining is not allowed in allowlist mode (run one command)"
@@ -107,6 +110,19 @@ def check_command(command: str, *, security: str, allowlist: tuple[str, ...]) ->
             return f"refused: {binary!r} is not in the exec allowlist (tools.exec.allowlist)"
         return None
     return f"unknown exec security mode {security!r} (use off/allowlist/ask)"
+
+
+def needs_confirmation(command: str, *, allowlist: tuple[str, ...]) -> bool:
+    """Whether ``ask`` mode should pause for human approval before running ``command``.
+
+    A command is "safe" (auto-runs) when it's a single, un-chained call to an allowlisted binary —
+    the same bar ``allowlist`` mode would let through. Anything else (chaining/substitution, or a
+    binary not on the list — e.g. an arbitrary ``python -c``) is risky → ask first.
+    """
+    stripped = command.strip()
+    if _CHAIN_RE.search(stripped):
+        return True
+    return not stripped or stripped.split()[0] not in allowlist
 
 
 def truncate(text: str, cap: int = OUTPUT_CHAR_CAP) -> tuple[str, bool]:

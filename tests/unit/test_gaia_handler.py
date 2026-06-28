@@ -586,3 +586,72 @@ async def test_completed_delegate_delivers_media_not_paused() -> None:
     assert not any(
         isinstance(s, str) and "lost the question" in s for s in sent
     )  # not the fail-safe
+
+
+# --- exec approval (ADK request_confirmation pause) -------------------------------
+
+
+async def test_confirmation_pause_surfaces_yes_no() -> None:
+    from gaia.connectors.base import Question
+    from gaia.core.elicit import REQUEST_CONFIRMATION_TOOL
+
+    call = SimpleNamespace(
+        id="c1",
+        name=REQUEST_CONFIRMATION_TOOL,
+        args={
+            "toolConfirmation": {"hint": "Run this command? 'rm x'"},
+            "originalFunctionCall": {"name": "exec", "args": {"command": "rm x"}},
+        },
+    )
+    ev = SimpleNamespace(
+        long_running_tool_ids={"c1"},
+        content=SimpleNamespace(parts=[SimpleNamespace(text=None, function_call=call)]),
+        is_final_response=lambda: True,
+        get_function_responses=lambda: [],
+    )
+    handler = GaiaHandler(SimpleNamespace(memory_service=None))
+    handler._runner = _FakeRunner([ev])
+    sent: list[Any] = []
+
+    async def send(x: Any) -> None:
+        sent.append(x)
+
+    await handler(Inbound(text="rm a file"), send)
+
+    qs = [s for s in sent if isinstance(s, Question)]
+    assert qs and qs[0].options == ("yes", "no") and "Run this command" in qs[0].text
+    assert handler._pending is not None
+    assert handler._pending.confirmation and handler._pending.fc_id == "c1"
+
+
+async def _resume_confirmation(answer: str) -> dict[str, Any]:
+    from gaia.core.elicit import Pending
+
+    captured: dict[str, Any] = {}
+
+    class _CapturingRunner:
+        async def run_async(self, **kwargs: Any) -> Any:
+            captured.update(kwargs)
+            yield _event("ok")
+
+    handler = GaiaHandler(SimpleNamespace(memory_service=None))
+    handler._runner = _CapturingRunner()
+    handler._pending = Pending(fc_id="c1", options=("yes", "no"), confirmation=True)
+
+    async def send(_x: Any) -> None: ...
+
+    await handler(Inbound(text=answer), send)
+    return captured
+
+
+async def test_confirmation_resume_yes_confirms() -> None:
+    from gaia.core.elicit import REQUEST_CONFIRMATION_TOOL
+
+    captured = await _resume_confirmation("yes")
+    fr = captured["new_message"].parts[0].function_response
+    assert fr.name == REQUEST_CONFIRMATION_TOOL and fr.response == {"confirmed": True}
+
+
+async def test_confirmation_resume_no_denies() -> None:
+    captured = await _resume_confirmation("no")
+    assert captured["new_message"].parts[0].function_response.response == {"confirmed": False}

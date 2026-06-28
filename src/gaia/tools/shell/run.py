@@ -14,6 +14,7 @@ from gaia.tools.shell.base import (
     Spawner,
     check_command,
     err,
+    needs_confirmation,
     run_foreground,
     truncate,
 )
@@ -25,11 +26,30 @@ MIN_TIMEOUT = 1.0
 MAX_TIMEOUT = 300.0
 
 
+def _confirmation_gate(tool_context: ToolContext, command: str) -> dict[str, Any] | None:
+    """Gate a risky command on the human's approval (ADK native tool confirmation).
+
+    Returns ``None`` when it's approved (run it). Returns a result dict to stop: the first call
+    requests confirmation and ADK pauses the run (``awaiting_approval``); on resume the user's
+    decision is in ``tool_context.tool_confirmation``. With no human reachable this turn the command
+    is denied rather than left hanging.
+    """
+    from gaia.core.elicit import interactive_turn
+
+    conf = tool_context.tool_confirmation
+    if conf is not None:  # resumed with the user's decision
+        return None if conf.confirmed else err("command was not approved by the user")
+    if not interactive_turn.get():
+        return err("command needs approval but no one is available to approve it")
+    tool_context.request_confirmation(hint=f"Run this command? {command!r}")
+    return {"status": "awaiting_approval", "command": command}
+
+
 def make_exec(
     manager: ProcessManager,
     spawner: Spawner,
     *,
-    security: str = "allowlist",
+    security: str = "ask",
     allowlist: tuple[str, ...] = (),
 ) -> Callable[..., Awaitable[dict[str, Any]]]:
     """Return the ADK ``exec`` tool bound to ``manager``/``spawner`` and the safety policy."""
@@ -45,6 +65,10 @@ def make_exec(
     ) -> dict[str, Any]:
         """Run a shell command in your workspace (install deps, build, test, CLIs).
 
+        A risky or unfamiliar command may need the user's approval first — you'll get back
+        ``status: "awaiting_approval"`` and the run pauses until they answer; you don't need to do
+        anything, it resumes automatically. Common, safe commands run without asking.
+
         Set background=True for a long-running process (dev server, long build): returns a
         process_id for exec_poll/exec_kill/exec_list. For a background dev server, pass its
         port (e.g. 'vite --port 5173' + port=5173) so you can browser_navigate to it.
@@ -59,6 +83,13 @@ def make_exec(
         policy_error = check_command(command, security=security, allowlist=allowlist)
         if policy_error is not None:
             return err(policy_error)
+
+        # 'ask' mode: a risky/unknown command pauses for the human's yes/no via ADK's native tool
+        # confirmation (the model can't bypass it). A safe (allowlisted) command runs unprompted.
+        if security == "ask" and needs_confirmation(command, allowlist=allowlist):
+            denied = _confirmation_gate(tool_context, command)
+            if denied is not None:
+                return denied
 
         sandbox = sandbox_for(constants.AGENTS_DIR, agent)
         try:

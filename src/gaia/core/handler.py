@@ -18,8 +18,10 @@ from gaia.connectors.base import Inbound, Question, Send, inbound_attachments
 from gaia.core.elicit import (
     ASK_USER_TOOL,
     DELEGATE_TOOL,
+    REQUEST_CONFIRMATION_TOOL,
     Pending,
     SoulPending,
+    interactive_turn,
     resolve_answer,
     soul_elicitation_sink,
 )
@@ -214,6 +216,25 @@ class GaiaHandler:
             await self._resume_soul(pending, answer, send)
             return
 
+        if pending.confirmation:
+            # Resume the paused tool with the user's decision. Anything not clearly affirmative is
+            # a deny (fail-safe). ADK matches this to the original call and re-runs it with it.
+            confirmed = answer.strip().casefold() in {"yes", "y", "approve", "ok", "confirm"}
+            content = types.Content(
+                role="user",
+                parts=[
+                    types.Part(
+                        function_response=types.FunctionResponse(
+                            id=pending.fc_id,
+                            name=REQUEST_CONFIRMATION_TOOL,
+                            response={"confirmed": confirmed},
+                        )
+                    )
+                ],
+            )
+            await self._drive(content, send, secret=False, yield_user_message=False)
+            return
+
         content = types.Content(
             role="user",
             parts=[
@@ -297,6 +318,9 @@ class GaiaHandler:
         # returns None to pause). A fresh list per turn; read after the loop.
         sink: list[SoulPending] = []
         token = soul_elicitation_sink.set(sink)
+        # A human is on the other end this turn, so exec may pause to ask for approval (a
+        # non-interactive cron/dispatcher run leaves this False → risky exec is auto-denied).
+        itoken = interactive_turn.set(True)
         try:
             async for event in runner.run_async(
                 user_id=self._user_id,
@@ -352,6 +376,7 @@ class GaiaHandler:
             return
         finally:
             soul_elicitation_sink.reset(token)
+            interactive_turn.reset(itoken)
 
         # ADK flags long_running_tool_ids on a call even when the tool COMPLETES in the same turn,
         # so a finished delegate looks paused. It's only truly paused if it got no response this
@@ -362,7 +387,9 @@ class GaiaHandler:
         if ask_call is not None:
             # Paused: stream any preface text, then surface the question.
             await self._emit_texts(texts, send)
-            if ask_call.name == DELEGATE_TOOL:
+            if ask_call.name == REQUEST_CONFIRMATION_TOOL:
+                await self._begin_confirmation(ask_call, send)
+            elif ask_call.name == DELEGATE_TOOL:
                 soul = sink[-1] if sink else None
                 if soul is None:  # shouldn't happen — fail safe rather than hang the conversation
                     logging.getLogger(constants.LOGGER_NAME).warning(
@@ -394,7 +421,11 @@ class GaiaHandler:
             return None
         for part in event.content.parts:
             call = getattr(part, "function_call", None)
-            if call is not None and call.id in ids and call.name in (ASK_USER_TOOL, DELEGATE_TOOL):
+            if call is not None and call.id in ids and call.name in (
+                ASK_USER_TOOL,
+                DELEGATE_TOOL,
+                REQUEST_CONFIRMATION_TOOL,
+            ):
                 return call
         return None
 
@@ -454,6 +485,20 @@ class GaiaHandler:
             "elicit_asked", user=self._user_id, options=len(options) or None, secret=secret or None
         )
         await send(Question(text=str(args.get("question", "")), options=options, secret=secret))
+
+    async def _begin_confirmation(self, call: Any, send: Send) -> None:
+        """Surface an ADK ``request_confirmation`` pause (a tool asking yes/no before it runs).
+
+        The synthetic ``adk_request_confirmation`` call carries the original call + the tool's hint;
+        we record a confirmation :class:`Pending` and ask the user, then ``_resume`` feeds back a
+        ``ToolConfirmation`` so ADK re-runs the original tool with the decision.
+        """
+        args = call.args or {}
+        hint = str(args.get("toolConfirmation", {}).get("hint") or "Approve this action?")
+        options = ("yes", "no")
+        self._pending = Pending(fc_id=call.id, options=options, confirmation=True)
+        log_event("confirm_asked", user=self._user_id)
+        await send(Question(text=hint, options=options))
 
     async def _emit_reply(self, events: list[Any], texts: list[str], send: Send) -> None:
         """Send the turn's reply: an image (with the text as its caption) when a screenshot
