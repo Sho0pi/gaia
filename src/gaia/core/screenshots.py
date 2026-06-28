@@ -41,23 +41,12 @@ def media_for_outputs(events: list[Any]) -> list[Media]:
     so the root needn't re-serve/re-screenshot to show them.
     """
     media: list[Media] = []
-    seen: set[str] = set()
     for event in events:
         get_responses = getattr(event, "get_function_responses", None)
         if get_responses is None:
             continue
         for resp in get_responses() or []:
-            for item in _output_media(resp.name, resp.response):
-                # Send each file once: the model often both browser_screenshots AND send_files the
-                # same shot, and both results name it — without this it reaches the user twice.
-                try:
-                    key = str(item.path.resolve())
-                except OSError:  # pragma: no cover - resolve is best-effort
-                    key = str(item.path)
-                if key in seen:
-                    continue
-                seen.add(key)
-                media.append(item)
+            media.extend(_output_media(resp.name, resp.response))
     return media
 
 
