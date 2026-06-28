@@ -95,6 +95,18 @@ browser:
   allowed_origins: []
   # mcp backend: only load these playwright-mcp tool names; empty = all (~25-60). Trim to keep the model's tool list lean.
   tool_filter: []
+  # native backend: which browser engine to drive. 'camoufox' (default) is an anti-detect Firefox that beats many bot walls (needs its Firefox build, fetched by `gaia update` / `python -m camoufox fetch`); 'chromium' is the plain Playwright build.
+  engine: camoufox
+  # camoufox engine: human-like cursor movement (anti-detection).
+  humanize: true
+  # camoufox engine: locale, e.g. 'en-US' (empty = Camoufox default).
+  locale: ""
+  # camoufox engine: OS to spoof in the fingerprint (empty = random).
+  os: ""
+  # camoufox engine: match geolocation/timezone to the (proxy) IP.
+  geoip: false
+  # camoufox engine: skip downloading images (faster, less data).
+  block_images: false
 cron:
   # Run the cron scheduler inside the daemon (gaia serve/start).
   enabled: true

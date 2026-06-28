@@ -35,6 +35,9 @@ _REF_RE = re.compile(r"\[ref=(e\d+)\]")
 #: Close a session after this many seconds without use.
 IDLE_TIMEOUT_SECONDS = 600.0
 
+#: Keep at most this many recent console/pageerror lines per session (browser_console reads them).
+CONSOLE_CAP = 200
+
 #: A launcher opens a fresh page and returns it with a coroutine that tears it down.
 Launcher = Callable[[], Awaitable[tuple[Any, Callable[[], Awaitable[None]]]]]
 
@@ -51,10 +54,18 @@ class BrowserSession:
     close: Callable[[], Awaitable[None]]
     #: ref ids (``e1``, ``e2``, …) from the last snapshot; how click/type target.
     refs: set[str] = field(default_factory=set)
+    #: Recent console messages + uncaught JS errors (capped); browser_console reads + clears them.
+    console: list[str] = field(default_factory=list)
     last_used: float = field(default_factory=time.monotonic)
 
     def touch(self) -> None:
         self.last_used = time.monotonic()
+
+    def record_console(self, line: str) -> None:
+        """Append a console/pageerror line, dropping the oldest past :data:`CONSOLE_CAP`."""
+        self.console.append(line)
+        if len(self.console) > CONSOLE_CAP:
+            del self.console[:-CONSOLE_CAP]
 
 
 async def _playwright_launcher() -> tuple[Any, Callable[[], Awaitable[None]]]:
@@ -77,6 +88,48 @@ async def _playwright_launcher() -> tuple[Any, Callable[[], Awaitable[None]]]:
         await pw.stop()
 
     return page, close
+
+
+def _camoufox_opts(browser_cfg: Any) -> dict[str, Any]:
+    """Build AsyncCamoufox kwargs from BrowserConfig (omitting unset ones → Camoufox defaults)."""
+    opts: dict[str, Any] = {
+        "headless": getattr(browser_cfg, "headless", True),
+        "humanize": getattr(browser_cfg, "humanize", True),  # human-like cursor (stealth)
+    }
+    if geoip := getattr(browser_cfg, "geoip", False):
+        opts["geoip"] = geoip
+    if locale := getattr(browser_cfg, "locale", ""):
+        opts["locale"] = locale
+    if os_ := getattr(browser_cfg, "os", ""):
+        opts["os"] = os_
+    if getattr(browser_cfg, "block_images", False):
+        opts["block_images"] = True
+    return opts
+
+
+def make_launcher(browser_cfg: Any) -> Launcher:
+    """Pick the native launcher for ``browser_cfg.engine``: Camoufox (default) or chromium.
+
+    Camoufox is a drop-in Playwright firefox (anti-detect); it slots into the same seam so every
+    browser tool is engine-agnostic. ``camoufox`` is imported lazily (optional dep).
+    """
+    if getattr(browser_cfg, "engine", "camoufox") != "camoufox":
+        return _playwright_launcher
+    opts = _camoufox_opts(browser_cfg)
+
+    async def launch() -> tuple[Any, Callable[[], Awaitable[None]]]:
+        from camoufox.async_api import AsyncCamoufox
+
+        cam = AsyncCamoufox(**opts)  # type: ignore[no-untyped-call]  # camoufox ships no stubs
+        browser = await cam.__aenter__()
+        page = await browser.new_page()
+
+        async def close() -> None:
+            await cam.__aexit__(None, None, None)
+
+        return page, close
+
+    return launch
 
 
 class BrowserSessionManager:
@@ -119,6 +172,9 @@ class BrowserSessionManager:
             self._register_cleanup_once()
             page, close = await self._launcher()
             session = BrowserSession(page=page, close=close)
+            # Buffer console output + uncaught JS errors so browser_console can report them.
+            page.on("console", lambda m: session.record_console(f"[{m.type}] {m.text}"))
+            page.on("pageerror", lambda e: session.record_console(f"[pageerror] {e}"))
             self._sessions[agent] = session
         session.touch()
         return session

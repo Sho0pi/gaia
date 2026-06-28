@@ -66,6 +66,10 @@ llm = [
 # `uv run playwright install chromium` once to fetch the browser binary.
 browser = [
     "playwright>=1.60.0",
+    # Camoufox: an anti-detect Firefox (Playwright-compatible) for browser.engine='camoufox'.
+    # Dormant unless that engine is selected; its Firefox build is fetched via
+    # `python -m camoufox fetch` (wired into the runtime setup), not pip.
+    "camoufox[geoip]>=0.4.0",
 ]
 # External MCP (Model Context Protocol) servers, consumed via ADK's McpToolset.
 # `mcp` is the Python SDK ADK's mcp_tool imports. Lazy-imported and only touched when
@@ -145,6 +149,7 @@ module = [
     "apscheduler.*",
     "faster_whisper.*",
     "dependency_injector.*",
+    "camoufox.*",
 ]
 ignore_missing_imports = true
 
