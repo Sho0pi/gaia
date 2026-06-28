@@ -146,6 +146,13 @@ class Gaia:
         # the handler keeps the Runner (and thus this timestamp) for the session, so
         # it's approximate within a long-lived conversation — good enough for dates.
         now = datetime.now().strftime("%A, %Y-%m-%d %H:%M %Z").strip()
+
+        # The screenshot tool is named differently per backend (native browser_screenshot vs
+        # playwright-mcp's browser_take_screenshot), so the prompt must name the live one.
+        from gaia.mcp import resolve_browser_backend
+
+        backend = resolve_browser_backend(self.config.browser)
+        screenshot_tool = "browser_screenshot" if backend == "native" else "browser_take_screenshot"
         base_instruction = (
             f"Current date and time: {now}.\n"
             "You are Gaia, a personal assistant. Answer simple questions yourself, using your "
@@ -185,7 +192,7 @@ class Gaia:
             "- A file (doc, image, audio, a .md/.html/.txt, any soul deliverable): call "
             "send_file(path, caption). For several, zip them (exec) and send_file the zip.\n"
             "- To SHOW a website ('show me', 'how does it look'): serve it, then browser_navigate "
-            "+ browser_take_screenshot so the screenshot goes back. Never paste the 127.0.0.1 url; "
+            f"+ {screenshot_tool} so the screenshot goes back. Never paste the 127.0.0.1 url; "
             "share a public_url only if serve returns one. serve previews a site, never hands over "
             "a file.\n"
             "- Media a soul already produced (a screenshot/preview, a generated image/PDF) comes "
@@ -208,10 +215,9 @@ class Gaia:
         # how are you built" is answerable from config + a web_fetch, not a guess.
         from gaia import __version__
 
-        browser = self.config.browser
         browser_desc = (
-            f"native browser tools driving {browser.engine}"
-            if browser.backend == "native"
+            f"native browser tools driving {self.config.browser.engine}"
+            if backend == "native"
             else "playwright-mcp"
         )
         model_name = self.config.llm.model or self.settings.model

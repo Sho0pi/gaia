@@ -202,22 +202,22 @@ else
 fi
 
 if [ "$DO_BROWSER" -eq 1 ]; then
-	step "Setting up the browser (bun + Chromium)"
-	if ! have bun; then
-		curl -fsSL https://bun.sh/install | bash >/dev/null 2>&1 || warn "bun install failed (the playwright-mcp browser backend won't be available)"
-	fi
-	[ -d "$HOME/.bun/bin" ] && ensure_path "$HOME/.bun/bin"
-	# Two separate browsers: the native fallback uses the python Playwright's Chromium, while the
-	# default mcp backend uses playwright-mcp's OWN bundled Playwright — which pins a different
-	# Chromium revision and is installed via its `install-browser` command, NOT `playwright install`
-	# (that fetches the standalone build, the wrong revision → "chrome-for-testing is not installed").
-	"$VENV/bin/playwright" install chromium >/dev/null 2>&1 || warn "Chromium (native) install failed"
-	bunx_bin="$HOME/.bun/bin/bunx"
-	have bunx && bunx_bin=bunx
-	if command -v "$bunx_bin" >/dev/null 2>&1; then
-		"$bunx_bin" @playwright/mcp@latest install-browser chrome-for-testing >/dev/null 2>&1 \
-			|| warn "playwright-mcp browser install failed — screenshots via the mcp backend may not work"
-	fi
+	step "Setting up the browser (Camoufox)"
+	# Provision only the active backend's deps (the default native+camoufox fetches just Camoufox's
+	# Firefox, skipped if already present). Single source of truth: gaia.runtime.ensure_runtime_deps,
+	# the same path `gaia update` uses — no duplicated bun/chromium/mcp logic here. No gaia.yaml yet,
+	# so the config resolves to the defaults (native + camoufox).
+	"$VENV/bin/python" - <<-'PY' || warn "browser setup hit a snag — run 'gaia update' to retry"
+		import sys
+		from pathlib import Path
+
+		from gaia.config import ConfigSupplier, get_settings
+		from gaia.runtime import ensure_runtime_deps
+
+		cfg = ConfigSupplier(get_settings().config_path).current.browser
+		for note in ensure_runtime_deps(Path(sys.executable), cfg):  # this interpreter == the venv
+		    print(f"  {note}")
+	PY
 	ok "browser ready"
 else
 	step "Skipping the browser (--no-browser)"

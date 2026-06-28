@@ -42,10 +42,11 @@ unsure which library, delegate to `lib-researcher` subagent.
   souls persisted as JSON → reuse, don't recreate.
 - `tools/` — LLM-callable tools; `registry.py` name→callable, **on by default**,
   gated by `tools.<id>.enabled`. `fs/` sandboxed per agent. → `new-tool` skill.
-  Browser dual-backend: `browser.backend` (default `mcp`) drives Microsoft's
-  playwright-mcp via `bunx` (full tool surface, attached in `Gaia.mcp_toolsets`); set
-  `native` for built-in `browser_*` tools. Missing bun falls back to native. See
-  `BrowserConfig` in `config/schema.py` for SSRF/isolation/observability tradeoffs.
+  Browser dual-backend: `browser.backend` (default `native`) uses gaia's own `browser_*`
+  tools driving the Camoufox engine (`browser.engine`); opt into `mcp` for Microsoft's
+  playwright-mcp via `bunx` (broader surface, attached in `Gaia.mcp_toolsets`, needs bun —
+  missing bun falls back to native). See `BrowserConfig` in `config/schema.py` for
+  SSRF/isolation/observability tradeoffs.
 - `commands/` — in-chat slash commands (`/help`, `/reset`, …): one class per file,
   handled out-of-band, never reach model. → `new-command` skill.
 - `memory/` — `backend.py` builds mem0, `service.py` adapts it to ADK's

@@ -110,39 +110,40 @@ class MCPConfig(BaseModel):
 
 
 class BrowserConfig(BaseModel):
-    """How Gaia drives a browser: Microsoft's playwright-mcp (default) or the native tools.
+    """How Gaia drives a browser: gaia's own native tools (default) or Microsoft's playwright-mcp.
 
-    The default ``mcp`` backend hands the browser to Microsoft's playwright-mcp server
-    (launched via ``bunx``), exposing its full tool surface with no gaia code to keep.
-    Its tradeoffs vs ``native`` (so the choice is informed):
+    The default ``native`` backend uses gaia's built-in ``browser_*`` Playwright tools, driving the
+    Camoufox anti-detect engine (``engine``) — gaia owns the whole surface (stable tool schema, the
+    per-request SSRF guard, per-agent isolation, anti-bot stealth). ``mcp`` is an **opt-in
+    fallback** that hands the browser to Microsoft's playwright-mcp server (broader surface —
+    tabs/PDF/network — but a third-party schema that drifts, and needs bun on PATH). The tradeoffs:
 
-    * **Runtime**: launched with ``bunx @playwright/mcp`` — needs bun on PATH. When the
-      runtime is missing the backend falls back to ``native`` (with a warning) instead
-      of crashing, like the fd/rg/playwright gates.
-    * **URL safety**: ``native`` runs gaia's per-request SSRF guard (``validate_url``).
-      ``mcp`` only enforces ``allowed_origins`` coarsely at the server; empty means **no
-      restriction** (the browser can reach internal IPs). This is NOT equivalent to the
-      native guard's per-redirect private-IP blocking.
-    * **Isolation**: playwright-mcp drives ONE shared browser for the whole process; all
-      souls share its tabs/cookies (``native`` gives each agent its own page).
-      ``isolated`` keeps that profile in memory only.
-    * **Observability**: ``mcp`` tool calls are logged only by ADK's generic
-      after_tool_callback plugin, not gaia's per-tool ``done()``/``tool_used`` path.
-    * **Hot-reload**: the backend and flags are read once at startup; editing them in
-      gaia.yaml takes effect on the next restart.
+    * **Runtime**: ``native`` needs only the Python ``browser`` extra. ``mcp`` is launched with
+      ``bunx @playwright/mcp`` — needs bun on PATH; when it's missing the backend falls back to
+      ``native`` (with a warning) instead of crashing, like the fd/rg/playwright gates.
+    * **URL safety**: ``native`` runs gaia's per-request SSRF guard (``validate_url``). ``mcp`` only
+      enforces ``allowed_origins`` coarsely at the server; empty means **no restriction** (the
+      browser can reach internal IPs) — NOT equivalent to native's per-redirect private-IP blocking.
+    * **Isolation**: ``native`` gives each agent its own page. playwright-mcp drives ONE shared
+      browser for the whole process; all souls share its tabs/cookies (``isolated`` keeps that
+      profile in memory only).
+    * **Observability**: ``native`` tool calls go through gaia's per-tool ``tool_used`` logging;
+      ``mcp`` calls are only logged by ADK's generic after_tool_callback plugin.
+    * **Hot-reload**: the backend and flags are read once at startup; editing them in gaia.yaml
+      takes effect on the next restart.
     """
 
     model_config = ConfigDict(extra="allow")
 
     backend: Literal["native", "mcp"] = Field(
-        default="mcp",
-        description="Browser backend: 'mcp' (Microsoft playwright-mcp via bunx, default) "
-        "or 'native' (gaia's built-in browser_* Playwright tools). 'mcp' falls back to "
-        "'native' when the runtime isn't on PATH.",
+        default="native",
+        description="Browser backend: 'native' (default — gaia's built-in browser_* tools driving "
+        "the Camoufox engine) or 'mcp' (opt-in Microsoft playwright-mcp via bunx; needs bun on "
+        "PATH and falls back to 'native' when the runtime is missing).",
     )
     runtime: str = Field(
         default="bunx",
-        description="Executable that runs playwright-mcp (mcp backend). Default 'bunx' "
+        description="Executable that runs playwright-mcp (mcp backend only). Default 'bunx' "
         "(bun). Must be on PATH or the backend falls back to native.",
     )
     package: str = Field(
