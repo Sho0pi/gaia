@@ -1,7 +1,7 @@
 # Gaia
 
 > **Source of truth for how Gaia is built** — architecture, conventions, and the rules every coding
-> agent (and human) follows here. Vendor-neutral (`AGENTS.md`); `CLAUDE.md` just imports it.
+> agent (and human) follows here. Vendor-neutral (`AGENTS.md`); `CLAUDE.md` is a symlink to it.
 > User-facing docs: [docs.gaia-agent.com](https://docs.gaia-agent.com) (agent index at `/llms.txt`).
 
 AI agent inspired by openclaw, hermes-agent, picoclaw. **Gaia** agent answer
