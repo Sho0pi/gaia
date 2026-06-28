@@ -282,9 +282,10 @@ async def test_type_fills_and_submits() -> None:
 # --- screenshot -------------------------------------------------------------------
 
 
-async def test_screenshot_writes_png_full_page_by_default(
+async def test_screenshot_is_viewport_by_default(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # Default viewport (normal aspect) — a full-page shot is tall and chat apps crop it.
     monkeypatch.setattr("gaia.constants.AGENTS_DIR", tmp_path / "agents")
     page = _FakePage()
     shot = browser.make_browser_screenshot(_manager_with(page))
@@ -294,20 +295,20 @@ async def test_screenshot_writes_png_full_page_by_default(
     assert result["status"] == "success"
     assert Path(result["path"]).is_file()  # noqa: ASYNC240 - assertion, not hot-path I/O
     assert result["path"].endswith(".png")
-    assert page.screenshot_full_page is True  # the whole scrollable page, not just viewport
+    assert page.screenshot_full_page is False  # the visible viewport, not the whole page
 
 
-async def test_screenshot_viewport_only_when_requested(
+async def test_screenshot_full_page_when_requested(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr("gaia.constants.AGENTS_DIR", tmp_path / "agents")
     page = _FakePage()
     shot = browser.make_browser_screenshot(_manager_with(page))
 
-    result = await shot(full_page=False, tool_context=_FakeToolContext())
+    result = await shot(full_page=True, tool_context=_FakeToolContext())
 
     assert result["status"] == "success"
-    assert page.screenshot_full_page is False
+    assert page.screenshot_full_page is True
 
 
 async def test_screenshot_of_a_single_element(

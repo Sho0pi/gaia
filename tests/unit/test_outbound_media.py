@@ -110,3 +110,30 @@ async def test_tg_send_media_picks_method_by_kind() -> None:
 
     await _tg_send_media(_Bot(), "chat1", Media(Path("/tmp/x.pdf"), caption="doc"))
     assert sends == [("send_document", "chat1", Path("/tmp/x.pdf"), "doc")]
+
+
+def test_same_file_sent_once_across_screenshot_and_send_file() -> None:
+    # The model often both browser_screenshots AND send_files the same shot; dedup by path means
+    # the user gets it once, not twice.
+    from gaia.tools.browser import SCREENSHOT
+    from gaia.tools.send_file import NAME as SEND_FILE
+
+    shot = _event_with_response(SCREENSHOT, {"status": "success", "path": "/ws/shot.png"})
+    sent = _event_with_response(
+        SEND_FILE, {"status": "success", "path": "/ws/shot.png", "kind": "image"}
+    )
+    out = media_for_outputs([shot, sent])
+    assert [m.path for m in out] == [Path("/ws/shot.png")]  # once
+
+
+def test_different_files_are_all_sent() -> None:
+    # Dedup is per-path, so distinct files (a screenshot + a zip + a doc) all go through — it only
+    # collapses the literal same file, never different kinds/files.
+    from gaia.tools.browser import SCREENSHOT
+    from gaia.tools.send_file import NAME as SEND_FILE
+
+    shot = _event_with_response(SCREENSHOT, {"status": "success", "path": "/ws/a.png"})
+    zip_ = _event_with_response(SEND_FILE, {"status": "success", "path": "/ws/b.zip"})
+    doc = _event_with_response(SEND_FILE, {"status": "success", "path": "/ws/c.pdf"})
+    out = media_for_outputs([shot, zip_, doc])
+    assert [m.path for m in out] == [Path("/ws/a.png"), Path("/ws/b.zip"), Path("/ws/c.pdf")]
