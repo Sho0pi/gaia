@@ -9,7 +9,7 @@ Build-once services (transcriber, memory, mcp/skill toolsets) live in
 ``gaia.container.X()``; there are no pass-through wrappers on ``Gaia``. The
 one exception is :attr:`memory_service`, which keeps a thin property because
 its config-enabled gate has to run per-access (hot-reload aware). See
-``CLAUDE.md`` → *Service lifecycle & DI*.
+``AGENTS.md`` → *Service lifecycle & DI*.
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ class Gaia:
         )
         # The container is the single composition root; Gaia pulls the handles it exposes
         # to the rest of the code under their established names (facade). Construction of
-        # each lives in gaia.di, not here. See CLAUDE.md → Service lifecycle & DI.
+        # each lives in gaia.di, not here. See AGENTS.md → Service lifecycle & DI.
         self.skills_dir = self.container.skills_dir()
         self.souls = self.container.souls()
         self.users = self.container.users()

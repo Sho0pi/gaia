@@ -47,7 +47,7 @@ Key properties:
   a clean slate. Long-term memory is untouched.
 
 Short-term sessions need only `sessions.window_turns` / `sessions.idle_consolidate_minutes`; the
-two-tier design is per `CLAUDE.md`.
+two-tier design is per `AGENTS.md`.
 
 ---
 

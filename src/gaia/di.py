@@ -3,7 +3,7 @@
 :class:`Container` wires the lazy-singleton services every :class:`Gaia` reuses
 (transcriber, memory service, mcp/skill toolsets) via ``providers.Singleton`` —
 built on first ``.X()`` call, reused after, scoped to one ``Gaia`` instance so
-each test gets a fresh container. See ``CLAUDE.md`` → *Service lifecycle & DI*.
+each test gets a fresh container. See ``AGENTS.md`` → *Service lifecycle & DI*.
 
 ``settings`` and ``config_supplier`` are injected by ``Gaia.__init__`` (the DI
 seam). ``config`` is a ``providers.Callable``, **not** a singleton, so each

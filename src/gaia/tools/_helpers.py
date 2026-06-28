@@ -1,7 +1,7 @@
 """Shared result-dict builders for tools.
 
 Tools return ``{"status": "success"|"error", ...}`` dicts and never raise to the
-model (see CLAUDE.md). These two helpers are the single source of that shape so
+model (see AGENTS.md). These two helpers are the single source of that shape so
 every tool — fs, shell, browser, task, cron, … — agrees on the keys.
 """
 
