@@ -494,3 +494,16 @@ async def test_close_survives_a_dead_browser() -> None:
     await manager.get("a")
     await manager.close("a")  # must not raise
     assert manager._sessions == {}
+
+
+async def test_action_can_skip_snapshot() -> None:
+    # snapshot=False lets the model save tokens when it doesn't need the page back.
+    page = _FakePage()
+    manager = _manager_with(page)
+    await browser.make_browser_snapshot(manager)(tool_context=_FakeToolContext())
+
+    result = await browser.make_browser_click(manager)(
+        "e2", snapshot=False, tool_context=_FakeToolContext()
+    )
+
+    assert result["status"] == "success" and "snapshot" not in result

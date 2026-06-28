@@ -22,7 +22,12 @@ def make_browser_type(manager: BrowserSessionManager) -> Callable[..., Awaitable
     """Return the ADK ``browser_type`` tool bound to ``manager``."""
 
     async def browser_type(
-        ref: str, text: str, submit: bool = False, *, tool_context: ToolContext
+        ref: str,
+        text: str,
+        submit: bool = False,
+        snapshot: bool = True,
+        *,
+        tool_context: ToolContext,
     ) -> dict[str, Any]:
         """Type text into a field on the current page.
 
@@ -30,6 +35,8 @@ def make_browser_type(manager: BrowserSessionManager) -> Callable[..., Awaitable
             ref: element ref from the most recent browser_snapshot, like 'e2'.
             text: the text to type.
             submit: press Enter after typing (e.g. to run a search).
+            snapshot: also return the updated page snapshot (default true); pass false to
+                save tokens when you don't need the page back yet.
         """
         agent = tool_context.agent_name
 
@@ -44,6 +51,6 @@ def make_browser_type(manager: BrowserSessionManager) -> Callable[..., Awaitable
         except Exception as exc:
             return err(f"type failed: {exc}")
 
-        return await ok_with_snapshot(session)
+        return await ok_with_snapshot(session, snapshot=snapshot)
 
     return browser_type

@@ -66,7 +66,9 @@ def make_browser_navigate(
     served sites past the SSRF guard; ``None`` means no served-port allowance.
     """
 
-    async def browser_navigate(url: str, *, tool_context: ToolContext) -> dict[str, Any]:
+    async def browser_navigate(
+        url: str, snapshot: bool = True, *, tool_context: ToolContext
+    ) -> dict[str, Any]:
         """Open a web page in your browser to read and interact with it.
 
         Returns the page's snapshot (act on it with browser_click / browser_type, or
@@ -75,6 +77,8 @@ def make_browser_navigate(
         Args:
             url: an http(s) URL, or a local ``file://`` path to one of your workspace
                 deliverables (e.g. a built ``index.html``) to preview it.
+            snapshot: also return the updated page snapshot (default true); pass false to
+                save tokens when you don't need the page back yet.
         """
         cleaned = url.strip()
         agent = tool_context.agent_name
@@ -111,6 +115,6 @@ def make_browser_navigate(
             return err(f"navigation failed: {exc}")
 
         # Return the fresh snapshot so the model can act without a separate browser_snapshot (#90).
-        return await ok_with_snapshot(session, title=title)
+        return await ok_with_snapshot(session, title=title, snapshot=snapshot)
 
     return browser_navigate

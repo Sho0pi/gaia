@@ -15,8 +15,13 @@ NAME = "browser_back"
 def make_browser_back(manager: BrowserSessionManager) -> Callable[..., Awaitable[dict[str, Any]]]:
     """Return the ADK ``browser_back`` tool bound to ``manager``."""
 
-    async def browser_back(*, tool_context: ToolContext) -> dict[str, Any]:
-        """Go back to the previous page in browser history. Returns the updated page snapshot."""
+    async def browser_back(snapshot: bool = True, *, tool_context: ToolContext) -> dict[str, Any]:
+        """Go back to the previous page; returns the updated page snapshot.
+
+        Args:
+            snapshot: also return the updated page snapshot (default true); pass false to
+                save tokens when you don't need the page back yet.
+        """
         agent = tool_context.agent_name
 
         try:
@@ -25,6 +30,6 @@ def make_browser_back(manager: BrowserSessionManager) -> Callable[..., Awaitable
         except Exception as exc:
             return err(f"back failed: {exc}")
 
-        return await ok_with_snapshot(session)
+        return await ok_with_snapshot(session, snapshot=snapshot)
 
     return browser_back
