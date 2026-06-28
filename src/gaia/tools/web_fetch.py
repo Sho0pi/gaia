@@ -176,6 +176,38 @@ def httpx_fetcher(url: str, max_bytes: int) -> dict[str, str]:
         return _follow_redirects(url, send)
 
 
+#: Char caps for the non-markdown formats (markdown is left whole, as before). Raw HTML and the
+#: outline can be huge, so they're capped for a predictable token budget.
+_HTML_CHAR_CAP = 40_000
+_OUTLINE_CHAR_CAP = 8_000
+
+
+def _outline(html: str) -> str:
+    """A compact heading/link outline of the page — a token-saving, accessibility-style view.
+
+    Built straight from the raw HTML (lxml), so it works on structured/app pages where the
+    readability extractor returns nothing. Headings become ``#`` lines; links become
+    ``- "text" -> href`` lines. Not actionable (web_fetch is one-shot) — it's for orienting.
+    """
+    from lxml import html as lxml_html
+
+    try:
+        tree = lxml_html.fromstring(html)
+    except Exception:
+        return ""
+    lines: list[str] = []
+    for el in tree.iter("h1", "h2", "h3", "h4", "h5", "h6", "a"):
+        text = " ".join(el.text_content().split())
+        if not text:
+            continue
+        if el.tag == "a":
+            href = (el.get("href") or "").strip()
+            lines.append(f'- "{text[:120]}" -> {href}' if href else f'- "{text[:120]}"')
+        else:
+            lines.append(f"{'#' * int(el.tag[1])} {text[:200]}")
+    return "\n".join(lines)
+
+
 def make_web_fetch(fetcher: Fetcher) -> Callable[..., dict[str, Any]]:
     """Return the ADK web_fetch tool bound to ``fetcher``.
 
@@ -183,11 +215,16 @@ def make_web_fetch(fetcher: Fetcher) -> Callable[..., dict[str, Any]]:
     schema, so the closure's name matches :data:`NAME` and documents its args + return.
     """
 
-    def web_fetch(url: str, max_bytes: int = DEFAULT_MAX_BYTES) -> dict[str, Any]:
-        """Fetch a web page and return its readable content as markdown (nav/ads stripped).
+    def web_fetch(
+        url: str, format: str = "markdown", max_bytes: int = DEFAULT_MAX_BYTES
+    ) -> dict[str, Any]:
+        """Fetch a web page and return its content (nav/ads stripped for markdown).
 
         Args:
             url: the http(s) URL to fetch.
+            format: 'markdown' (default, the readable article), 'snapshot' (a compact
+                headings+links outline — fewer tokens, and works when 'markdown' finds no
+                article), or 'html' (raw HTML, capped — an escape hatch).
         """
         cleaned = url.strip()
 
@@ -206,11 +243,33 @@ def make_web_fetch(fetcher: Fetcher) -> Callable[..., dict[str, Any]]:
         except Exception as exc:
             return err(f"fetch failed: {exc}")
 
+        final_url = fetched["final_url"]
+        fmt = format.strip().lower()
+
+        if fmt == "html":
+            html = fetched["html"]
+            return ok(
+                url=final_url,
+                format="html",
+                html=html[:_HTML_CHAR_CAP],
+                truncated=len(html) > _HTML_CHAR_CAP,
+            )
+        if fmt == "snapshot":
+            outline = _outline(fetched["html"])
+            if not outline:
+                return err("no structure (headings/links) found on the page")
+            return ok(
+                url=final_url,
+                format="snapshot",
+                snapshot=outline[:_OUTLINE_CHAR_CAP],
+                truncated=len(outline) > _OUTLINE_CHAR_CAP,
+            )
+
         import trafilatura
 
         markdown = trafilatura.extract(fetched["html"], output_format="markdown")
         if not markdown:
-            return err("no readable content could be extracted from the page")
-        return ok(url=fetched["final_url"], markdown=markdown)
+            return err("no readable content extracted — try format='snapshot' for the outline")
+        return ok(url=final_url, format="markdown", markdown=markdown)
 
     return web_fetch
