@@ -7,7 +7,7 @@ from typing import Any
 
 from google.adk.tools.tool_context import ToolContext
 
-from gaia.tools.browser.base import BrowserSessionManager, aria_snapshot, err, parse_refs, truncate
+from gaia.tools.browser.base import BrowserSessionManager, err, snapshot_session
 
 NAME = "browser_snapshot"
 
@@ -28,13 +28,10 @@ def make_browser_snapshot(
 
         try:
             session = await manager.get(agent)
-            text = await aria_snapshot(session.page)
-            session.refs = parse_refs(text)
-            snapshot, was_truncated = truncate(text)
-            url = str(session.page.url)
+            fields = await snapshot_session(session)
         except Exception as exc:
             return err(f"snapshot failed: {exc}")
 
-        return {"status": "success", "snapshot": snapshot, "url": url, "truncated": was_truncated}
+        return {"status": "success", **fields}
 
     return browser_snapshot

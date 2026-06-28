@@ -254,3 +254,30 @@ def truncate(text: str, cap: int = SNAPSHOT_CHAR_CAP) -> tuple[str, bool]:
     if len(text) <= cap:
         return text, False
     return text[:cap], True
+
+
+async def snapshot_session(session: BrowserSession) -> dict[str, Any]:
+    """Fresh aria snapshot of the session's page; refresh its refs; return the result fields."""
+    text = await aria_snapshot(session.page)
+    session.refs = parse_refs(text)
+    snapshot, truncated = truncate(text)
+    return {"snapshot": snapshot, "truncated": truncated, "url": str(session.page.url)}
+
+
+async def ok_with_snapshot(
+    session: BrowserSession, *, snapshot: bool = True, **extra: Any
+) -> dict[str, Any]:
+    """A success result that, by default, also carries the post-action snapshot (#90).
+
+    The model almost always wants the page after an action (refs are reassigned), so folding the
+    snapshot in saves a whole ``browser_snapshot`` turn. But it's token-heavy, so the model can pass
+    ``snapshot=False`` to skip it when it doesn't need the page yet. Best-effort: if the snapshot
+    can't be taken (page mid-navigation) the action still reports success.
+    """
+    result: dict[str, Any] = {"status": "success", **extra}
+    if snapshot:
+        try:
+            result.update(await snapshot_session(session))
+        except Exception:  # pragma: no cover - the action succeeded; the snapshot is a bonus
+            pass
+    return result

@@ -7,7 +7,7 @@ from typing import Any
 
 from google.adk.tools.tool_context import ToolContext
 
-from gaia.tools.browser.base import BrowserSessionManager, err
+from gaia.tools.browser.base import BrowserSessionManager, err, ok_with_snapshot
 
 NAME = "browser_press"
 
@@ -15,11 +15,15 @@ NAME = "browser_press"
 def make_browser_press(manager: BrowserSessionManager) -> Callable[..., Awaitable[dict[str, Any]]]:
     """Return the ADK ``browser_press`` tool bound to ``manager``."""
 
-    async def browser_press(key: str, *, tool_context: ToolContext) -> dict[str, Any]:
+    async def browser_press(
+        key: str, snapshot: bool = True, *, tool_context: ToolContext
+    ) -> dict[str, Any]:
         """Press a keyboard key on the current page (submit a form, navigate a list, etc.).
 
         Args:
             key: a Playwright key name, e.g. 'Enter', 'Tab', 'Escape', 'ArrowDown', 'PageDown'.
+            snapshot: also return the updated page snapshot (default true); pass false to
+                save tokens when you don't need the page back yet.
         """
         agent = tool_context.agent_name
 
@@ -29,6 +33,6 @@ def make_browser_press(manager: BrowserSessionManager) -> Callable[..., Awaitabl
         except Exception as exc:
             return err(f"press failed: {exc}")
 
-        return {"status": "success"}
+        return await ok_with_snapshot(session, snapshot=snapshot)
 
     return browser_press

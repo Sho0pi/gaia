@@ -209,12 +209,34 @@ async def test_snapshot_returns_text_and_stores_refs() -> None:
 
 
 async def test_snapshot_truncates(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("gaia.tools.browser.snapshot.truncate", lambda t: (t[:5], True))
+    monkeypatch.setattr("gaia.tools.browser.base.truncate", lambda t: (t[:5], True))
     snap = browser.make_browser_snapshot(_manager_with(_FakePage()))
 
     result = await snap(tool_context=_FakeToolContext())
 
     assert result["truncated"] is True
+
+
+async def test_action_returns_fresh_snapshot() -> None:
+    # #90: click/type/etc fold the post-action snapshot into their result (saves a snapshot turn).
+    page = _FakePage()
+    manager = _manager_with(page)
+    await browser.make_browser_snapshot(manager)(tool_context=_FakeToolContext())
+
+    result = await browser.make_browser_click(manager)("e2", tool_context=_FakeToolContext())
+
+    assert result["status"] == "success"
+    assert "[ref=e2]" in result["snapshot"]  # the page came back with the action
+
+
+async def test_navigate_returns_snapshot_and_title() -> None:
+    page = _FakePage(title="Home")
+    result = await browser.make_browser_navigate(_manager_with(page))(
+        "https://example.com", tool_context=_FakeToolContext()
+    )
+
+    assert result["status"] == "success" and result["title"] == "Home"
+    assert "snapshot" in result  # navigate hands back the page too
 
 
 # --- click / type -----------------------------------------------------------------
@@ -472,3 +494,16 @@ async def test_close_survives_a_dead_browser() -> None:
     await manager.get("a")
     await manager.close("a")  # must not raise
     assert manager._sessions == {}
+
+
+async def test_action_can_skip_snapshot() -> None:
+    # snapshot=False lets the model save tokens when it doesn't need the page back.
+    page = _FakePage()
+    manager = _manager_with(page)
+    await browser.make_browser_snapshot(manager)(tool_context=_FakeToolContext())
+
+    result = await browser.make_browser_click(manager)(
+        "e2", snapshot=False, tool_context=_FakeToolContext()
+    )
+
+    assert result["status"] == "success" and "snapshot" not in result
