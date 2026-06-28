@@ -199,6 +199,27 @@ class Gaia:
             "run_command('grant <user> <capability>'), run_command('approve <user> <role>'), "
             "run_command('users'). If it returns an error, tell the user what it said."
         )
+        # Self-knowledge (#319): tell gaia who it is + where its own docs are, so "what do you run /
+        # how are you built" is answerable from config + a web_fetch, not a guess.
+        from gaia import __version__
+
+        browser = self.config.browser
+        browser_desc = (
+            f"native browser tools driving {browser.engine}"
+            if browser.backend == "native"
+            else "playwright-mcp"
+        )
+        model_name = self.config.llm.model or self.settings.model
+        base_instruction += (
+            "\n\n## About you\n"
+            f"You are Gaia v{__version__}, an open-source personal-agent framework. Right now you "
+            f"run on the {model_name} model and the {browser_desc} browser backend. Your own "
+            "documentation lives at https://docs.gaia-agent.com — start at "
+            "https://docs.gaia-agent.com/llms.txt (the index), then web_fetch the relevant page to "
+            "answer questions about how you work, your features, or your stack. Source: "
+            "https://github.com/Sho0pi/gaia. When asked what you are or how you're built, use "
+            "these — don't guess or say you don't know."
+        )
         # Memory guidance only when long-term memory is on — so the prompt never advertises
         # the remember/load_memory tools or a <USER_PROFILE> block that aren't attached.
         # (Gated on memory.enabled, NOT on `profile`: an empty store still has the tools.)
