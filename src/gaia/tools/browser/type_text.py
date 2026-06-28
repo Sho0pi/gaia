@@ -7,7 +7,13 @@ from typing import Any
 
 from google.adk.tools.tool_context import ToolContext
 
-from gaia.tools.browser.base import BrowserError, BrowserSessionManager, err, resolve_locator
+from gaia.tools.browser.base import (
+    BrowserError,
+    BrowserSessionManager,
+    err,
+    ok_with_snapshot,
+    resolve_locator,
+)
 
 NAME = "browser_type"
 
@@ -38,6 +44,6 @@ def make_browser_type(manager: BrowserSessionManager) -> Callable[..., Awaitable
         except Exception as exc:
             return err(f"type failed: {exc}")
 
-        return {"status": "success"}
+        return await ok_with_snapshot(session)
 
     return browser_type

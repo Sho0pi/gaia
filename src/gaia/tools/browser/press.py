@@ -7,7 +7,7 @@ from typing import Any
 
 from google.adk.tools.tool_context import ToolContext
 
-from gaia.tools.browser.base import BrowserSessionManager, err
+from gaia.tools.browser.base import BrowserSessionManager, err, ok_with_snapshot
 
 NAME = "browser_press"
 
@@ -29,6 +29,6 @@ def make_browser_press(manager: BrowserSessionManager) -> Callable[..., Awaitabl
         except Exception as exc:
             return err(f"press failed: {exc}")
 
-        return {"status": "success"}
+        return await ok_with_snapshot(session)
 
     return browser_press

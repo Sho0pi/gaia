@@ -7,7 +7,7 @@ from typing import Any
 
 from google.adk.tools.tool_context import ToolContext
 
-from gaia.tools.browser.base import BrowserSessionManager, err
+from gaia.tools.browser.base import BrowserSessionManager, err, ok_with_snapshot
 
 NAME = "browser_scroll"
 
@@ -21,7 +21,7 @@ def make_browser_scroll(manager: BrowserSessionManager) -> Callable[..., Awaitab
     async def browser_scroll(
         direction: str = "down", amount: int = 0, *, tool_context: ToolContext
     ) -> dict[str, Any]:
-        """Scroll the page to reveal more content; snapshot again afterwards.
+        """Scroll the page to reveal more content. Returns the updated page snapshot.
 
         Args:
             direction: 'down' or 'up'.
@@ -38,6 +38,6 @@ def make_browser_scroll(manager: BrowserSessionManager) -> Callable[..., Awaitab
         except Exception as exc:
             return err(f"scroll failed: {exc}")
 
-        return {"status": "success"}
+        return await ok_with_snapshot(session)
 
     return browser_scroll

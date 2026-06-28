@@ -10,7 +10,7 @@ from urllib.parse import unquote, urlparse
 from google.adk.tools.tool_context import ToolContext
 
 from gaia import constants
-from gaia.tools.browser.base import BrowserSessionManager, err
+from gaia.tools.browser.base import BrowserSessionManager, err, ok_with_snapshot
 from gaia.tools.serve.base import ServedPorts
 from gaia.tools.web_fetch import validate_url
 
@@ -69,8 +69,8 @@ def make_browser_navigate(
     async def browser_navigate(url: str, *, tool_context: ToolContext) -> dict[str, Any]:
         """Open a web page in your browser to read and interact with it.
 
-        Follow up with browser_snapshot to see the page, browser_click / browser_type
-        to interact, or browser_screenshot to capture it.
+        Returns the page's snapshot (act on it with browser_click / browser_type, or
+        browser_screenshot to capture it).
 
         Args:
             url: an http(s) URL, or a local ``file://`` path to one of your workspace
@@ -110,6 +110,7 @@ def make_browser_navigate(
         except Exception as exc:
             return err(f"navigation failed: {exc}")
 
-        return {"status": "success", "url": final_url, "title": title}
+        # Return the fresh snapshot so the model can act without a separate browser_snapshot (#90).
+        return await ok_with_snapshot(session, title=title)
 
     return browser_navigate
