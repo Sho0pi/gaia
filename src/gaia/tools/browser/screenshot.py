@@ -24,7 +24,10 @@ def make_browser_screenshot(
     async def browser_screenshot(
         full_page: bool = False, ref: str = "", *, tool_context: ToolContext
     ) -> dict[str, Any]:
-        """Capture a screenshot of the current page; saves a PNG in your workspace.
+        """Capture a screenshot of the current page and show it to the user.
+
+        The image is delivered to the user automatically — do NOT also send_file it (that
+        would send it twice).
 
         Args:
             full_page: default false = the visible viewport (a normal-aspect image, best for
