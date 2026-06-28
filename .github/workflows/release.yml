@@ -1,0 +1,41 @@
+name: Release
+# Publish a GitHub Release when a version tag is pushed. The tag must match the code version
+# (src/gaia/__init__.py); the release body is the matching CHANGELOG.md section.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Tag must match src/gaia/__init__.py
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          code="$(sed -nE 's/^__version__ = "([^"]+)".*/\1/p' src/gaia/__init__.py)"
+          if [ "$tag" != "$code" ]; then
+            echo "::error::tag $GITHUB_REF_NAME != __version__ $code — bump src/gaia/__init__.py"
+            exit 1
+          fi
+
+      - name: Release notes from CHANGELOG.md
+        run: |
+          awk -v v="$GITHUB_REF_NAME" '
+            $0 ~ "^## \\[" substr(v,2) "\\]" {grab=1; next}
+            grab && /^## \[/ {exit}
+            grab {print}
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then echo "No CHANGELOG section for $GITHUB_REF_NAME." > notes.md; fi
+
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Mark alpha/beta/rc tags as prereleases.
+          case "$GITHUB_REF_NAME" in *a*|*b*|*rc*) pre=--prerelease ;; *) pre= ;; esac
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md $pre

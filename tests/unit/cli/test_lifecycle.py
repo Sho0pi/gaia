@@ -38,13 +38,15 @@ def test_update_runs_uv_pip_upgrade(
 ) -> None:
     (constants.HOME_DIR / "venv").mkdir(parents=True)  # the venv must exist
     monkeypatch.setattr("gaia.cli._pidfile.PidFile.read_live", lambda self: None)  # daemon down
+    # No --ref → pin to the latest release (offline-safe: mock the lookup, never hit GitHub).
+    monkeypatch.setattr(lifecycle, "_latest_release_tag", lambda: "v0.1.0a1")
 
     monkeypatch.setattr("gaia.mcp._resolve_runtime", lambda _n: "/opt/bunx")  # bunx present
 
     result = runner.invoke(app, ["update"])
     assert result.exit_code == 0, result.output
     pip = next(c for c in calls if c[:3] == ["uv", "pip", "install"])
-    assert "--upgrade" in pip and pip[-1] == f"gaia[all] @ git+{lifecycle.REPO}"
+    assert "--upgrade" in pip and pip[-1] == f"gaia[all] @ git+{lifecycle.REPO}@v0.1.0a1"
     assert not any(c[-1:] == ["restart"] for c in calls)  # daemon down → no restart
     # update also repairs the runtime deps (the playwright-mcp browser) — #303 self-heal
     assert any(isinstance(c, list) and "install-browser" in c for c in calls)
@@ -103,3 +105,48 @@ def test_uninstall_purge_removes_home(
     assert result.exit_code == 0, result.output
     rm = next(c for c in calls if c[0] == "sh")
     assert str(constants.HOME_DIR) in rm[-1]  # the whole home is wiped
+
+
+# --- latest-release lookup (the install-default source) ----------------------------
+
+
+class _FakeResp:
+    """A urlopen result that's both a context manager and json.load-readable."""
+
+    def __init__(self, body: bytes) -> None:
+        self._body = body
+
+    def read(self, *_a: object) -> bytes:
+        return self._body
+
+    def __enter__(self) -> _FakeResp:
+        return self
+
+    def __exit__(self, *_a: object) -> bool:
+        return False
+
+
+def _patch_urlopen(monkeypatch: pytest.MonkeyPatch, resp: object) -> None:
+    import urllib.request
+
+    def fake(*_a: object, **_k: object) -> object:
+        if isinstance(resp, Exception):
+            raise resp
+        return resp
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake)
+
+
+def test_latest_release_tag_parses_first(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_urlopen(monkeypatch, _FakeResp(b'[{"tag_name": "v0.1.0a1"}, {"tag_name": "v0.0.9"}]'))
+    assert lifecycle._latest_release_tag() == "v0.1.0a1"  # newest first, incl. prerelease
+
+
+def test_latest_release_tag_none_when_no_releases(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_urlopen(monkeypatch, _FakeResp(b"[]"))
+    assert lifecycle._latest_release_tag() is None  # → caller falls back to master
+
+
+def test_latest_release_tag_none_on_network_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_urlopen(monkeypatch, OSError("no network"))
+    assert lifecycle._latest_release_tag() is None

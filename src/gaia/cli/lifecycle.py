@@ -41,8 +41,30 @@ RefOpt = Annotated[str | None, typer.Option("--ref", help="git ref to install (b
 ExtrasOpt = Annotated[str, typer.Option("--extras", help="Extras to install (default: all).")]
 
 
+def _latest_release_tag() -> str | None:
+    """The newest published release tag (incl. prereleases), or None. Mirrors install.sh: uses the
+    releases *list*, not ``/releases/latest`` (which skips prereleases like our alpha). Best-effort
+    over stdlib urllib (no dep) — returns None on any failure so the caller falls back to master.
+    """
+    import json
+    import urllib.request
+
+    slug = REPO.removeprefix("https://github.com/")
+    url = f"https://api.github.com/repos/{slug}/releases?per_page=1"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            data = json.load(resp)
+        return data[0]["tag_name"] if data else None
+    except Exception:
+        return None
+
+
 def update(ref: RefOpt = None, extras: ExtrasOpt = "all") -> None:
-    """Upgrade gaia in place (re-pull from git); restart the daemon if it's running."""
+    """Upgrade gaia in place (re-pull from git); restart the daemon if it's running.
+
+    With no ``--ref`` it installs the latest release (matching install.sh); pass ``--ref main`` for
+    bleeding-edge HEAD. Falls back to master if no release is found.
+    """
     from gaia.cli._pidfile import PidFile
 
     out = console()
@@ -51,6 +73,8 @@ def update(ref: RefOpt = None, extras: ExtrasOpt = "all") -> None:
         out.print(f"[red]no gaia venv at {venv}[/] — (re)install with install.sh")
         raise typer.Exit(1)
 
+    if ref is None:
+        ref = _latest_release_tag()  # default to the latest release, not master HEAD
     spec = f"gaia[{extras}] @ git+{REPO}" + (f"@{ref}" if ref else "")
     out.print(f"updating gaia from [dim]{spec}[/] …")
     try:

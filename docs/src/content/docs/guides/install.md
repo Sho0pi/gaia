@@ -19,7 +19,8 @@ That one line:
 4. links the `gaia` command into `~/.local/bin`,
 5. and, on a real terminal, walks you through **`gaia setup`** (pick a model + connectors).
 
-macOS and Linux are supported. On Windows, install under **WSL**.
+By default it installs the **latest release** (a known-good version). macOS and Linux are supported.
+On Windows, install under **WSL**.
 
 ### Flags
 
@@ -27,7 +28,7 @@ macOS and Linux are supported. On Windows, install under **WSL**.
 
 | Flag | Effect |
 |------|--------|
-| `--ref <git-ref>` | install a specific branch / tag / commit |
+| `--ref <git-ref>` | install a specific ref instead of the latest release: `--ref main` (bleeding edge), a tag, or a commit |
 | `--no-browser` | skip bun + Chromium |
 | `--no-setup` | don't run `gaia setup` at the end |
 | `--non-interactive` | no prompts (implies `--no-setup`) |
