@@ -14,8 +14,8 @@ That one line:
 1. ensures [`uv`](https://docs.astral.sh/uv/) and `git` are present (installs uv if missing),
 2. creates a **self-contained venv at `~/.gaia/venv`** and installs gaia with **every feature**
    (`gaia[all]` — browser, OpenAI, MCP, web tools, memory),
-3. sets up the browser runtime (**bun** for the default playwright-mcp backend + **Chromium** for the
-   native fallback),
+3. sets up the browser runtime (**Camoufox** — the anti-detect Firefox for the default native
+   backend; bun + playwright-mcp are only fetched if you opt into `browser.backend: mcp`),
 4. links the `gaia` command into `~/.local/bin`,
 5. and, on a real terminal, walks you through **`gaia setup`** (pick a model + connectors).
 

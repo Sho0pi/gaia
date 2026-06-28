@@ -79,9 +79,9 @@ mcp:
   # MCP servers to attach. Empty = no MCP (needs the 'mcp' dep group when set).
   servers: []
 browser:
-  # Browser backend: 'mcp' (Microsoft playwright-mcp via bunx, default) or 'native' (gaia's built-in browser_* Playwright tools). 'mcp' falls back to 'native' when the runtime isn't on PATH.
-  backend: mcp
-  # Executable that runs playwright-mcp (mcp backend). Default 'bunx' (bun). Must be on PATH or the backend falls back to native.
+  # Browser backend: 'native' (default — gaia's built-in browser_* tools driving the Camoufox engine) or 'mcp' (opt-in Microsoft playwright-mcp via bunx; needs bun on PATH and falls back to 'native' when the runtime is missing).
+  backend: native
+  # Executable that runs playwright-mcp (mcp backend only). Default 'bunx' (bun). Must be on PATH or the backend falls back to native.
   runtime: bunx
   # The playwright-mcp package spec passed to the runtime.
   package: "@playwright/mcp@latest"

@@ -90,12 +90,20 @@ def test_native_browser_registered_when_backend_native() -> None:
     assert "browser_navigate" in default_registry(config).names()
 
 
+def test_native_is_the_default_backend() -> None:
+    # #321: native (Camoufox) is the default, so a fresh config registers the native tools — no
+    # bunx, no explicit backend.
+    pytest.importorskip("playwright", reason="native browser tools need the 'browser' group")
+    assert BrowserConfig().backend == "native"
+    assert "browser_navigate" in default_registry(GaiaConfig()).names()
+
+
 def test_native_browser_skipped_when_backend_mcp_and_runtime_present(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # resolve_browser_backend reads gaia.mcp.shutil.which — pretend bunx is on PATH.
     monkeypatch.setattr("gaia.mcp.shutil.which", lambda cmd: "/usr/bin/bunx")
-    config = GaiaConfig(browser=BrowserConfig(backend="mcp"))  # the default
+    config = GaiaConfig(browser=BrowserConfig(backend="mcp"))  # mcp is opt-in (default is native)
 
     # Provided by playwright-mcp (Gaia.mcp_toolsets), not the native registry.
     assert "browser_navigate" not in default_registry(config).names()
