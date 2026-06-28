@@ -26,7 +26,7 @@ def ensure_runtime_deps(
     """Install/repair the runtime deps. Idempotent, best-effort; returns status notes to print.
 
     ``camoufox=True`` (the native ``browser.engine: camoufox``) also fetches Camoufox's Firefox
-    build — a ~200MB download, so it's only done when that engine is selected.
+    build — a ~700MB download, so it's only done when that engine is selected and not already there.
     """
     notes: list[str] = []
     if not browser:
@@ -50,7 +50,10 @@ def ensure_runtime_deps(
             notes=notes,
         )
 
-    if camoufox:  # native browser.engine='camoufox' → fetch its Firefox (arm64 may need a build)
+    # native browser.engine='camoufox' → fetch its Firefox (~700MB), but only if it's not already
+    # there: re-fetching on every `gaia update` was a big chunk of the slowdown. arm64 may need a
+    # source build.
+    if camoufox and not _camoufox_installed(venv_python):
         _run(
             [str(venv_python), "-m", "camoufox", "fetch"],
             ok="camoufox browser ready",
@@ -58,6 +61,24 @@ def ensure_runtime_deps(
             notes=notes,
         )
     return notes
+
+
+def _camoufox_installed(venv_python: Path) -> bool:
+    """True if the camoufox Firefox build is already fetched (lets us skip the ~700MB re-fetch)."""
+    try:
+        out = subprocess.run(
+            [
+                str(venv_python),
+                "-c",
+                "from camoufox.pkgman import installed_verstr; print(installed_verstr() or '')",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return False
+    return out.returncode == 0 and bool(out.stdout.strip())
 
 
 def _ensure_bun(notes: list[str]) -> str | None:

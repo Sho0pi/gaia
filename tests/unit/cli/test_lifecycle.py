@@ -47,6 +47,9 @@ def test_update_runs_uv_pip_upgrade(
     assert result.exit_code == 0, result.output
     pip = next(c for c in calls if c[:3] == ["uv", "pip", "install"])
     assert "--upgrade" in pip and pip[-1] == f"gaia[all] @ git+{lifecycle.REPO}@v0.1.0a1"
+    # Only gaia is force-reinstalled, not every dep — a bare --reinstall made a Pi update take
+    # minutes redownloading unchanged wheels.
+    assert "--reinstall-package" in pip and "gaia" in pip and "--reinstall" not in pip
     assert not any(c[-1:] == ["restart"] for c in calls)  # daemon down → no restart
     # update also repairs the runtime deps (the playwright-mcp browser) — #303 self-heal
     assert any(isinstance(c, list) and "install-browser" in c for c in calls)

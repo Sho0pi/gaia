@@ -49,3 +49,28 @@ def test_browser_false_is_a_noop(monkeypatch: pytest.MonkeyPatch) -> None:
         runtime.subprocess, "run", lambda *a, **k: pytest.fail("must not run anything")
     )
     assert runtime.ensure_runtime_deps(Path("/v/bin/python"), browser=False) == []
+
+
+def _has_camoufox_fetch(calls: list[Any]) -> bool:
+    return any(isinstance(c, list) and c[-2:] == ["camoufox", "fetch"] for c in calls)
+
+
+def test_camoufox_fetched_when_requested_and_missing(
+    monkeypatch: pytest.MonkeyPatch, calls: list[Any]
+) -> None:
+    monkeypatch.setattr("gaia.mcp._resolve_runtime", lambda _n: "/opt/bunx")
+    # the `calls` fake returns empty stdout → _camoufox_installed() reads "not installed"
+    notes = runtime.ensure_runtime_deps(Path("/v/bin/python"), camoufox=True)
+
+    assert _has_camoufox_fetch(calls) and "camoufox browser ready" in notes
+
+
+def test_camoufox_fetch_skipped_when_already_installed(
+    monkeypatch: pytest.MonkeyPatch, calls: list[Any]
+) -> None:
+    monkeypatch.setattr("gaia.mcp._resolve_runtime", lambda _n: "/opt/bunx")
+    monkeypatch.setattr(runtime, "_camoufox_installed", lambda _p: True)  # already there
+
+    runtime.ensure_runtime_deps(Path("/v/bin/python"), camoufox=True)
+
+    assert not _has_camoufox_fetch(calls)  # the ~700MB re-fetch is skipped
