@@ -20,6 +20,7 @@ import atexit
 import re
 import time
 from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -88,6 +89,15 @@ async def _playwright_launcher() -> tuple[Any, Callable[[], Awaitable[None]]]:
         await pw.stop()
 
     return page, close
+
+
+async def _is_alive(session: BrowserSession) -> bool:
+    """Cheap liveness probe: a dead browser/driver raises on any op, telling us to relaunch."""
+    try:
+        await session.page.evaluate("1")
+    except Exception:
+        return False
+    return True
 
 
 def _camoufox_opts(browser_cfg: Any) -> dict[str, Any]:
@@ -165,9 +175,17 @@ class BrowserSessionManager:
             pass
 
     async def get(self, agent: str) -> BrowserSession:
-        """Return ``agent``'s session, opening one on first use. Sweeps idle sessions."""
+        """Return ``agent``'s session, opening one on first use. Sweeps idle sessions.
+
+        A cached session whose browser has died (a crash, an OOM, a dropped driver connection —
+        Camoufox/Chromium do this on heavy pages) is dropped and relaunched, so the browser
+        self-heals on the next call instead of every later call failing "Connection closed".
+        """
         await self._sweep_idle()
         session = self._sessions.get(agent)
+        if session is not None and not await _is_alive(session):
+            await self.close(agent)
+            session = None
         if session is None:
             self._register_cleanup_once()
             page, close = await self._launcher()
@@ -180,10 +198,12 @@ class BrowserSessionManager:
         return session
 
     async def close(self, agent: str) -> None:
-        """Close and forget ``agent``'s session (no-op if none open)."""
+        """Close and forget ``agent``'s session (no-op if none open). Best-effort — closing a
+        crashed browser may itself raise, but the session is dropped regardless."""
         session = self._sessions.pop(agent, None)
         if session is not None:
-            await session.close()
+            with suppress(Exception):
+                await session.close()
 
     async def close_all(self) -> None:
         """Close every open session; called on process exit."""
