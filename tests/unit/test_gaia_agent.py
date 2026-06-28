@@ -163,3 +163,16 @@ def test_self_knowledge_in_the_instruction(tmp_path: Path, monkeypatch: pytest.M
     assert "## About you" in instruction
     assert f"Gaia v{__version__}" in instruction
     assert "docs.gaia-agent.com/llms.txt" in instruction  # the discovery index
+
+
+def test_brevity_guidance_in_the_instruction(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # #318: chat replies should default terse (phone users), and honor "be brief".
+    gaia = _gaia(tmp_path)
+    captured = _capture_root_kwargs(gaia, monkeypatch)
+    instruction = captured["instruction"]
+    assert isinstance(instruction, str)
+
+    assert "## Keep replies short" in instruction
+    assert "be brief" in instruction
