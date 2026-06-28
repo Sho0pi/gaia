@@ -172,10 +172,10 @@ class BrowserConfig(BaseModel):
         "(~25-60). Trim to keep the model's tool list lean.",
     )
     engine: Literal["chromium", "camoufox"] = Field(
-        default="chromium",
-        description="native backend: which browser engine to drive. 'chromium' (default) or "
-        "'camoufox' (an anti-detect Firefox that beats many bot walls; needs the 'camoufox' extra "
-        "and its Firefox build via `python -m camoufox fetch`).",
+        default="camoufox",
+        description="native backend: which browser engine to drive. 'camoufox' (default) is an "
+        "anti-detect Firefox that beats many bot walls (needs its Firefox build, fetched by "
+        "`gaia update` / `python -m camoufox fetch`); 'chromium' is the plain Playwright build.",
     )
     humanize: bool = Field(
         default=True, description="camoufox engine: human-like cursor movement (anti-detection)."

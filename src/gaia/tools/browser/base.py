@@ -108,12 +108,12 @@ def _camoufox_opts(browser_cfg: Any) -> dict[str, Any]:
 
 
 def make_launcher(browser_cfg: Any) -> Launcher:
-    """Pick the native launcher for ``browser_cfg.engine``: chromium (default) or Camoufox.
+    """Pick the native launcher for ``browser_cfg.engine``: Camoufox (default) or chromium.
 
     Camoufox is a drop-in Playwright firefox (anti-detect); it slots into the same seam so every
     browser tool is engine-agnostic. ``camoufox`` is imported lazily (optional dep).
     """
-    if getattr(browser_cfg, "engine", "chromium") != "camoufox":
+    if getattr(browser_cfg, "engine", "camoufox") != "camoufox":
         return _playwright_launcher
     opts = _camoufox_opts(browser_cfg)
 
