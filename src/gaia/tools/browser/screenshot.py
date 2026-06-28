@@ -22,12 +22,17 @@ def make_browser_screenshot(
     """Return the ADK ``browser_screenshot`` tool bound to ``manager``."""
 
     async def browser_screenshot(
-        full_page: bool = True, ref: str = "", *, tool_context: ToolContext
+        full_page: bool = False, ref: str = "", *, tool_context: ToolContext
     ) -> dict[str, Any]:
-        """Capture a screenshot of the current page; saves a PNG in your workspace.
+        """Capture a screenshot of the current page and show it to the user.
+
+        The image is delivered to the user automatically — do NOT also send_file it (that
+        would send it twice).
 
         Args:
-            full_page: entire scrollable page; false = visible viewport only.
+            full_page: default false = the visible viewport (a normal-aspect image, best for
+                showing the user). True = the whole scrollable page (a tall image chat apps
+                may crop) — use only when the user needs the entire page.
             ref: optional element ref from the last snapshot (e.g. 'e4') to capture
                 just that element.
         """
