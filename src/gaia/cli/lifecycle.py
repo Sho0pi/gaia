@@ -94,9 +94,12 @@ def update(ref: RefOpt = None, extras: ExtrasOpt = "all") -> None:
     # Repair the runtime deps too — `uv pip install` only touches the Python package, so a
     # playwright-mcp bump (which moves the browser revision) would otherwise leave screenshots
     # broken until the next install.sh run (#303).
+    from gaia.config import ConfigSupplier, get_settings
     from gaia.runtime import ensure_runtime_deps
 
-    for note in ensure_runtime_deps(venv / "bin" / "python"):
+    # Fetch the camoufox browser only when that native engine is selected (it's a big download).
+    engine = ConfigSupplier(get_settings().config_path).current.browser.engine
+    for note in ensure_runtime_deps(venv / "bin" / "python", camoufox=engine == "camoufox"):
         out.print(f"[dim]{note}[/]")
 
     if PidFile().read_live() is not None:  # the daemon is up → reload the new code

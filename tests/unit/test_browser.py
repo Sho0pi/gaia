@@ -43,26 +43,69 @@ class _ActionLocator:
         Path(path).write_bytes(b"\x89PNG fake")  # noqa: ASYNC240 - test fake, not real I/O
 
 
+class _FakeMouse:
+    def __init__(self) -> None:
+        self.wheel_dy: int | None = None
+
+    async def wheel(self, dx: int, dy: int) -> None:
+        self.wheel_dy = dy
+
+
+class _FakeKeyboard:
+    def __init__(self) -> None:
+        self.pressed: str | None = None
+
+    async def press(self, key: str) -> None:
+        self.pressed = key
+
+
 class _FakePage:
     """The slice of a Playwright page the browser tools call."""
 
     def __init__(
-        self, *, url: str = "https://example.com", title: str = "Example", snapshot: str = _SNAPSHOT
+        self,
+        *,
+        url: str = "https://example.com",
+        title: str = "Example",
+        snapshot: str = _SNAPSHOT,
+        eval_result: Any = None,
     ) -> None:
         self.url = url
         self._title = title
         self._snapshot = snapshot
+        self._eval_result = eval_result
         self.action_locators: dict[str, _ActionLocator] = {}
         self.goto_url: str | None = None
+        self.went_back = False
         self.screenshot_path: str | None = None
         self.screenshot_full_page: bool | None = None  # None until a page screenshot is taken
+        self.mouse = _FakeMouse()
+        self.keyboard = _FakeKeyboard()
+        self.handlers: dict[str, list[Any]] = {}  # event -> handlers (on/once)
 
     async def goto(self, url: str) -> None:
         self.goto_url = url
         self.url = url
 
+    async def go_back(self) -> None:
+        self.went_back = True
+
     async def title(self) -> str:
         return self._title
+
+    async def evaluate(self, expression: str) -> Any:
+        return self._eval_result
+
+    def on(self, event: str, handler: Any) -> None:
+        self.handlers.setdefault(event, []).append(handler)
+
+    def once(self, event: str, handler: Any) -> None:
+        self.handlers.setdefault(event, []).append(handler)
+
+    def emit(self, event: str, arg: Any) -> None:
+        """Test helper: fire a stored event handler (console/pageerror/dialog)."""
+        for handler in self.handlers.get(event, []):
+            handler(arg)
 
     def locator(self, selector: str) -> Any:
         if selector == "body":
@@ -271,3 +314,115 @@ async def test_close_all_tears_sessions_down() -> None:
 
     assert page.closed is True  # type: ignore[attr-defined]
     assert manager._sessions == {}
+
+
+# --- scroll / press / back --------------------------------------------------------
+
+
+async def test_scroll_down_then_up() -> None:
+    page = _FakePage()
+    scroll = browser.make_browser_scroll(_manager_with(page))
+
+    assert (await scroll(tool_context=_FakeToolContext()))["status"] == "success"
+    assert page.mouse.wheel_dy and page.mouse.wheel_dy > 0  # default down
+
+    await scroll(direction="up", amount=300, tool_context=_FakeToolContext())
+    assert page.mouse.wheel_dy == -300
+
+
+async def test_press_sends_key() -> None:
+    page = _FakePage()
+    press = browser.make_browser_press(_manager_with(page))
+
+    result = await press("Enter", tool_context=_FakeToolContext())
+
+    assert result["status"] == "success" and page.keyboard.pressed == "Enter"
+
+
+async def test_back_goes_back() -> None:
+    page = _FakePage()
+    back = browser.make_browser_back(_manager_with(page))
+
+    result = await back(tool_context=_FakeToolContext())
+
+    assert result["status"] == "success" and page.went_back is True
+
+
+# --- get_images / evaluate --------------------------------------------------------
+
+
+async def test_get_images_lists_them() -> None:
+    imgs = [{"src": "https://x/a.png", "alt": "A"}, {"src": "https://x/b.png", "alt": ""}]
+    page = _FakePage(eval_result=imgs)
+    get_images = browser.make_browser_get_images(_manager_with(page))
+
+    result = await get_images(tool_context=_FakeToolContext())
+
+    assert result["status"] == "success" and result["count"] == 2 and result["images"] == imgs
+
+
+async def test_evaluate_returns_result() -> None:
+    page = _FakePage(eval_result="Example Domain")
+    evaluate = browser.make_browser_evaluate(_manager_with(page))
+
+    result = await evaluate("document.title", tool_context=_FakeToolContext())
+
+    assert result["status"] == "success" and result["result"] == "Example Domain"
+
+
+# --- console / dialog -------------------------------------------------------------
+
+
+async def test_console_returns_and_clears_buffer() -> None:
+    from types import SimpleNamespace
+
+    page = _FakePage()
+    manager = _manager_with(page)
+    await manager.get("tester")  # creates the session + wires the console listener
+    page.emit("console", SimpleNamespace(type="error", text="boom"))
+    page.emit("pageerror", "ReferenceError: x")
+
+    console = browser.make_browser_console(manager)
+    result = await console(tool_context=_FakeToolContext())
+
+    assert result["status"] == "success" and result["count"] == 2
+    assert "[error] boom" in result["messages"]
+    assert "[pageerror] ReferenceError: x" in result["messages"]
+    # buffer cleared
+    assert (await console(tool_context=_FakeToolContext()))["count"] == 0
+
+
+async def test_dialog_arms_one_shot_handler() -> None:
+    page = _FakePage()
+    manager = _manager_with(page)
+    await manager.get("tester")
+    dialog = browser.make_browser_dialog(manager)
+
+    result = await dialog(action="accept", tool_context=_FakeToolContext())
+
+    assert result["status"] == "success" and result["armed"] == "accept"
+    assert page.handlers.get("dialog")  # a handler is registered for the next dialog
+
+
+# --- engine launcher --------------------------------------------------------------
+
+
+def test_make_launcher_chromium_is_default() -> None:
+    from types import SimpleNamespace
+
+    from gaia.tools.browser.base import _playwright_launcher, make_launcher
+
+    cfg = SimpleNamespace(engine="chromium")
+    assert browser.make_launcher(cfg) is _playwright_launcher
+    # an unknown engine also falls back to chromium
+    assert make_launcher(SimpleNamespace(engine="other")) is _playwright_launcher
+
+
+def test_make_launcher_camoufox_builds_a_distinct_launcher() -> None:
+    from types import SimpleNamespace
+
+    from gaia.tools.browser.base import _playwright_launcher
+
+    cfg = SimpleNamespace(engine="camoufox", headless=True, humanize=True)
+    launcher = browser.make_launcher(cfg)
+    assert launcher is not _playwright_launcher  # a camoufox closure, not the chromium default

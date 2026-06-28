@@ -20,8 +20,14 @@ from pathlib import Path
 _MCP_BROWSER = "chrome-for-testing"
 
 
-def ensure_runtime_deps(venv_python: Path, *, browser: bool = True) -> list[str]:
-    """Install/repair the runtime deps. Idempotent, best-effort; returns status notes to print."""
+def ensure_runtime_deps(
+    venv_python: Path, *, browser: bool = True, camoufox: bool = False
+) -> list[str]:
+    """Install/repair the runtime deps. Idempotent, best-effort; returns status notes to print.
+
+    ``camoufox=True`` (the native ``browser.engine: camoufox``) also fetches Camoufox's Firefox
+    build — a ~200MB download, so it's only done when that engine is selected.
+    """
     notes: list[str] = []
     if not browser:
         return notes
@@ -41,6 +47,14 @@ def ensure_runtime_deps(venv_python: Path, *, browser: bool = True) -> list[str]
             [str(playwright), "install", "chromium"],
             ok="native chromium ready",
             fail="native chromium install failed",
+            notes=notes,
+        )
+
+    if camoufox:  # native browser.engine='camoufox' → fetch its Firefox (arm64 may need a build)
+        _run(
+            [str(venv_python), "-m", "camoufox", "fetch"],
+            ok="camoufox browser ready",
+            fail="camoufox fetch failed (arm64 may need a source build — see the browser docs)",
             notes=notes,
         )
     return notes

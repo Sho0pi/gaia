@@ -147,6 +147,13 @@ _BROWSER_TOOLS = (
     (browser.CLICK, browser.make_browser_click),
     (browser.TYPE, browser.make_browser_type),
     (browser.SCREENSHOT, browser.make_browser_screenshot),
+    (browser.SCROLL, browser.make_browser_scroll),
+    (browser.PRESS, browser.make_browser_press),
+    (browser.BACK, browser.make_browser_back),
+    (browser.GET_IMAGES, browser.make_browser_get_images),
+    (browser.CONSOLE, browser.make_browser_console),
+    (browser.DIALOG, browser.make_browser_dialog),
+    (browser.EVALUATE, browser.make_browser_evaluate),
 )
 
 
@@ -179,8 +186,9 @@ def _register_browser_tools(
         )
         return
     # One manager per registry, shared by the browser tools (each closure captures it);
-    # it closes its sessions on exit. No module-level singleton.
-    manager = browser.BrowserSessionManager()
+    # it closes its sessions on exit. No module-level singleton. The launcher picks the engine
+    # (chromium, or Camoufox anti-detect Firefox) from browser.engine.
+    manager = browser.BrowserSessionManager(launcher=browser.make_launcher(browser_cfg))
     registry.register_closeable(manager.close_all)  # closed by Gaia.close on the live loop
     for name, make in _BROWSER_TOOLS:
         if not _is_enabled(config, name):

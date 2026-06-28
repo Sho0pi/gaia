@@ -171,6 +171,27 @@ class BrowserConfig(BaseModel):
         description="mcp backend: only load these playwright-mcp tool names; empty = all "
         "(~25-60). Trim to keep the model's tool list lean.",
     )
+    engine: Literal["chromium", "camoufox"] = Field(
+        default="chromium",
+        description="native backend: which browser engine to drive. 'chromium' (default) or "
+        "'camoufox' (an anti-detect Firefox that beats many bot walls; needs the 'camoufox' extra "
+        "and its Firefox build via `python -m camoufox fetch`).",
+    )
+    humanize: bool = Field(
+        default=True, description="camoufox engine: human-like cursor movement (anti-detection)."
+    )
+    locale: str = Field(
+        default="", description="camoufox engine: locale, e.g. 'en-US' (empty = Camoufox default)."
+    )
+    os: Literal["", "windows", "macos", "linux"] = Field(
+        default="", description="camoufox engine: OS to spoof in the fingerprint (empty = random)."
+    )
+    geoip: bool = Field(
+        default=False, description="camoufox engine: match geolocation/timezone to the (proxy) IP."
+    )
+    block_images: bool = Field(
+        default=False, description="camoufox engine: skip downloading images (faster, less data)."
+    )
 
 
 class CronDeliver(BaseModel):
