@@ -67,6 +67,15 @@ fetch_static() {
 	return 1
 }
 
+# latest_release_tag: print the newest published release tag, empty on failure. Uses the releases
+# LIST (not /releases/latest, which skips prereleases like our alpha) and greps the first tag_name —
+# no jq, same spirit as fetch_static.
+latest_release_tag() {
+	curl -fsSL -H 'Accept: application/vnd.github+json' \
+		"https://api.github.com/repos/${REPO#https://github.com/}/releases?per_page=1" 2>/dev/null \
+		| grep -m1 '"tag_name"' | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/'
+}
+
 logo() {
 	[ -n "$GLOW" ] || return 0
 	printf '%b\n' \
@@ -139,6 +148,17 @@ fi
 have uv || die "uv is not on PATH after install"
 have git || die "git is required (macOS: xcode-select --install; Linux: install git)"
 ok "uv $(uv --version 2>/dev/null | awk '{print $2}')"
+
+# Default to the latest release so a fresh install gets a known-good version, not master HEAD.
+# --ref (incl. 'main') overrides; fall back to master when there's no release yet / no network.
+if [ -z "$REF" ]; then
+	REF=$(latest_release_tag)
+	if [ -n "$REF" ]; then
+		ok "latest release: $REF"
+	else
+		warn "no release found — installing from master"
+	fi
+fi
 
 step "Installing gaia + all features (this pulls a fair bit — give it a minute)"
 spec="gaia[all] @ git+$REPO"

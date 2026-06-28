@@ -20,7 +20,8 @@ curl -fsSL https://gaia-agent.com/install.sh | bash
 ```
 
 One line: sets up a self-contained gaia in `~/.gaia/venv` (every feature included), links the `gaia`
-command, and walks you through `gaia setup`. macOS + Linux (Windows: use WSL).
+command, and walks you through `gaia setup`. Installs the **latest release**; add `--ref main` for the
+bleeding edge. macOS + Linux (Windows: use WSL).
 
 ```bash
 gaia                # chat in your terminal
