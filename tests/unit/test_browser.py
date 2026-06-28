@@ -82,6 +82,7 @@ class _FakePage:
         self.mouse = _FakeMouse()
         self.keyboard = _FakeKeyboard()
         self.handlers: dict[str, list[Any]] = {}  # event -> handlers (on/once)
+        self.alive = True  # set False to simulate a crashed browser (evaluate raises)
 
     async def goto(self, url: str) -> None:
         self.goto_url = url
@@ -94,6 +95,8 @@ class _FakePage:
         return self._title
 
     async def evaluate(self, expression: str) -> Any:
+        if not self.alive:
+            raise RuntimeError("Connection closed while reading from the driver")
         return self._eval_result
 
     def on(self, event: str, handler: Any) -> None:
@@ -426,3 +429,46 @@ def test_make_launcher_camoufox_builds_a_distinct_launcher() -> None:
     cfg = SimpleNamespace(engine="camoufox", headless=True, humanize=True)
     launcher = browser.make_launcher(cfg)
     assert launcher is not _playwright_launcher  # a camoufox closure, not the chromium default
+
+
+# --- recovery: a crashed browser self-heals -------------------------------------
+
+
+async def test_dead_browser_session_is_relaunched() -> None:
+    # Camoufox/Chromium can die mid-session; the next get() must relaunch, not reuse the dead page.
+    launched: list[_FakePage] = []
+
+    async def launcher() -> tuple[Any, Any]:
+        page = _FakePage()
+        launched.append(page)
+
+        async def close() -> None:
+            page.closed = True  # type: ignore[attr-defined]
+
+        return page, close
+
+    manager = BrowserSessionManager(launcher)
+    s1 = await manager.get("a")  # launch #1
+    s1.page.alive = False  # the browser crashes (its driver connection dies)
+
+    s2 = await manager.get("a")  # liveness probe fails → drop + relaunch
+
+    assert len(launched) == 2  # a fresh browser was launched
+    assert s2.page is not s1.page  # not the dead one
+    assert s1.page.closed is True  # the dead session was closed
+
+
+async def test_close_survives_a_dead_browser() -> None:
+    # Closing a crashed browser must not raise out of the manager.
+    async def launcher() -> tuple[Any, Any]:
+        page = _FakePage()
+
+        async def close() -> None:
+            raise RuntimeError("Connection closed while reading from the driver")
+
+        return page, close
+
+    manager = BrowserSessionManager(launcher)
+    await manager.get("a")
+    await manager.close("a")  # must not raise
+    assert manager._sessions == {}
