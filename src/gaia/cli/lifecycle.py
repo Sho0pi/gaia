@@ -79,7 +79,21 @@ def update(ref: RefOpt = None, extras: ExtrasOpt = "all") -> None:
     out.print(f"updating gaia from [dim]{spec}[/] …")
     try:
         subprocess.run(
-            ["uv", "pip", "install", "--python", str(venv), "--upgrade", "--reinstall", spec],
+            # --reinstall-package gaia, not --reinstall: gaia's version is static, so it must be
+            # force-reinstalled to pick up new git code — but reinstalling EVERY dep too made an
+            # update take many minutes on a Pi (recompiling/redownloading dozens of unchanged
+            # wheels). --upgrade still bumps a dep when the new gaia needs it.
+            [
+                "uv",
+                "pip",
+                "install",
+                "--python",
+                str(venv),
+                "--upgrade",
+                "--reinstall-package",
+                "gaia",
+                spec,
+            ],
             check=True,
         )
     except (subprocess.CalledProcessError, FileNotFoundError) as exc:
