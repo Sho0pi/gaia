@@ -65,7 +65,7 @@ class BrowserSession:
         """Append a console/pageerror line, dropping the oldest past :data:`CONSOLE_CAP`."""
         self.console.append(line)
         if len(self.console) > CONSOLE_CAP:
-            del self.console[: -CONSOLE_CAP]
+            del self.console[:-CONSOLE_CAP]
 
 
 async def _playwright_launcher() -> tuple[Any, Callable[[], Awaitable[None]]]:
