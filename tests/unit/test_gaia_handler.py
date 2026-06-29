@@ -20,6 +20,12 @@ from gaia.connectors.base import Inbound, InboundMedia
 from gaia.core.handler import GaiaHandler
 
 
+@pytest.fixture(autouse=True)
+def _no_coalesce_delay(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Zero the coalesce debounce so the per-turn tests don't each wait the real window."""
+    monkeypatch.setattr("gaia.core.handler._COALESCE_SECONDS", 0)
+
+
 def _event(*texts: str, final: bool = True) -> SimpleNamespace:
     """Fake ADK event carrying one Part per text (empty string -> a text-less part)."""
     parts = [SimpleNamespace(text=t or None) for t in texts]
@@ -586,3 +592,113 @@ async def test_completed_delegate_delivers_media_not_paused() -> None:
     assert not any(
         isinstance(s, str) and "lost the question" in s for s in sent
     )  # not the fail-safe
+
+
+# --- turn serialization + coalescing (#315) ---------------------------------------
+
+
+async def test_concurrent_messages_are_serialized_not_overlapped() -> None:
+    import asyncio
+
+    active = 0
+    overlap = False
+    gate = asyncio.Event()
+
+    class _SlowRunner:
+        async def run_async(self, **_kwargs: Any) -> Any:
+            nonlocal active, overlap
+            active += 1
+            if active > 1:
+                overlap = True  # two turns ran at once → the bug
+            await gate.wait()  # hold the turn open
+            active -= 1
+            yield _event("ok")
+
+    handler = GaiaHandler(SimpleNamespace(memory_service=None))
+    handler._runner = _SlowRunner()
+
+    async def send(_x: Any) -> None: ...
+
+    t1 = asyncio.create_task(handler(Inbound(text="one"), send))
+    await asyncio.sleep(0.05)  # let t1 take the lock + enter run_async
+    t2 = asyncio.create_task(handler(Inbound(text="two"), send))
+    await asyncio.sleep(0.05)
+    gate.set()  # release both
+    await asyncio.gather(t1, t2)
+
+    assert overlap is False  # never two run_async on the session at once
+
+
+async def test_rapid_messages_coalesce_into_one_turn(monkeypatch: pytest.MonkeyPatch) -> None:
+    import asyncio
+
+    # A small but non-zero window so the second message lands inside it.
+    monkeypatch.setattr("gaia.core.handler._COALESCE_SECONDS", 0.1)
+    seen: list[str] = []
+
+    class _CapturingRunner:
+        async def run_async(self, **kwargs: Any) -> Any:
+            seen.append(kwargs["new_message"].parts[0].text)
+            yield _event("ok")
+
+    handler = GaiaHandler(SimpleNamespace(memory_service=None))
+    handler._runner = _CapturingRunner()
+
+    async def send(_x: Any) -> None: ...
+
+    t1 = asyncio.create_task(handler(Inbound(text="check flights"), send))
+    await asyncio.sleep(0.02)  # within the window
+    t2 = asyncio.create_task(handler(Inbound(text="SIN to TLV"), send))
+    await asyncio.gather(t1, t2)
+
+    assert seen == ["check flights\nSIN to TLV"]  # one turn, merged text
+
+
+async def test_idle_consolidation_waits_for_an_active_turn() -> None:
+    import asyncio
+
+    order: list[str] = []
+    gate = asyncio.Event()
+
+    class _SlowRunner:
+        async def run_async(self, **_kwargs: Any) -> Any:
+            order.append("turn-start")
+            await gate.wait()
+            order.append("turn-end")
+            yield _event("ok")
+
+    consolidated: list[Any] = []
+    session = SimpleNamespace(events=[object()], user_id="u", id="s")
+
+    async def add_session_to_memory(s: Any) -> None:
+        order.append("consolidate")
+        consolidated.append(s)
+
+    async def get_session(**_k: Any) -> Any:
+        return session
+
+    async def delete_session(**_k: Any) -> None: ...
+
+    gaia = SimpleNamespace(
+        memory_service=SimpleNamespace(add_session_to_memory=add_session_to_memory),
+        session_service=SimpleNamespace(get_session=get_session, delete_session=delete_session),
+        config=SimpleNamespace(
+            memory=SimpleNamespace(auto_ingest=True),
+            sessions=SimpleNamespace(idle_consolidate_minutes=999),  # re-armed timer won't fire
+        ),
+    )
+    handler = GaiaHandler(gaia)
+    handler._runner = _SlowRunner()
+
+    async def send(_x: Any) -> None: ...
+
+    turn = asyncio.create_task(handler(Inbound(text="hi"), send))
+    await asyncio.sleep(0.05)  # turn is mid-run, holding the lock
+    idle = asyncio.create_task(handler._idle_consolidate(0))  # fires immediately, must wait
+    await asyncio.sleep(0.05)
+    gate.set()
+    await asyncio.gather(turn, idle)
+    handler._cancel_idle()  # the finished turn re-armed a long timer; don't leave it pending
+
+    # consolidation ran only after the turn finished (never interleaved)
+    assert order == ["turn-start", "turn-end", "consolidate"]

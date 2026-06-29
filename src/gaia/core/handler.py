@@ -28,6 +28,19 @@ from gaia.logs import log_event
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from gaia.core.agent import Gaia
 
+#: Debounce window for coalescing a rapid burst of messages (double-texting) into one turn. The
+#: cost is ~this much added latency to every normal message; small on purpose.
+_COALESCE_SECONDS = 1.0
+
+
+def _merge_inbounds(batch: list[Inbound]) -> Inbound:
+    """Merge a coalesced burst of messages into one turn: joined text + concatenated media."""
+    if len(batch) == 1:
+        return batch[0]
+    text = "\n".join(i.text for i in batch if i.text.strip())
+    media = tuple(m for i in batch for m in i.media)
+    return Inbound(text=text, media=media, is_group=any(i.is_group for i in batch))
+
 
 def _friendly_error(exc: Exception) -> str:
     """A short, user-facing message for a failed turn (rate limit / outage / network / other)."""
@@ -79,6 +92,13 @@ class GaiaHandler:
         # A question the model asked via ``ask_user`` that this conversation is paused on;
         # the user's next message is its answer, fed back to resume the run (see _resume).
         self._pending: Pending | None = None
+        # Serialize everything that touches the durable session — turns, commands, idle
+        # consolidation. Concurrent inbound messages would otherwise run two run_async on the same
+        # session and trip ADK's optimistic-concurrency check (#315). One daemon = one loop, so a
+        # lock is enough. ``_inbox`` coalesces a rapid burst (double-texting) into one turn.
+        self._lock = asyncio.Lock()
+        self._inbox: list[Inbound] = []
+        self._inbox_send: Send | None = None
 
     async def _profile_block(self) -> str | None:
         """The user's distilled profile to bake into the prompt, or None.
@@ -142,8 +162,6 @@ class GaiaHandler:
         return self._runner
 
     async def __call__(self, inbound: Inbound, send: Send) -> None:
-        from google.genai import types
-
         log_event(
             "message_in",
             user=self._user_id,
@@ -152,17 +170,35 @@ class GaiaHandler:
             media=len(inbound.media) or None,
         )
 
-        # A slash command is handled out-of-band: it never reaches the model or the
-        # memory ingest path. Media-only messages are never commands. Checked before the
-        # resume branch so /reset (which clears _pending) still escapes a pending question.
-        if await self._maybe_run_command(inbound.text, send):
-            return
+        # Commands + ask_user answers are discrete (never coalesced) but still serialized under the
+        # lock so they can't race a turn / the idle consolidation on the durable session.
+        if inbound.text.strip().startswith("/") or self._pending is not None:
+            async with self._lock:
+                # A slash command is handled out-of-band (never reaches the model/memory). Checked
+                # before resume so /reset (which clears _pending) still escapes a pending question.
+                if await self._maybe_run_command(inbound.text, send):
+                    return
+                if self._pending is not None:
+                    await self._resume(inbound, send)
+                    return
+            # Wasn't a real command and nothing pending → fall through as a normal message.
 
-        # The conversation is paused on an ask_user question: this message is the answer,
-        # so resume the same run with it instead of starting a fresh turn.
-        if self._pending is not None:
-            await self._resume(inbound, send)
-            return
+        # Normal message: coalesce a rapid burst into one turn. Append BEFORE taking the lock so a
+        # sibling arriving during the debounce window lands in the same batch; the lock then
+        # serializes turns (concurrent run_async on one durable session is what crashed, #315).
+        self._inbox.append(inbound)
+        self._inbox_send = send
+        async with self._lock:
+            if not self._inbox:  # a prior holder already drained my message into its turn
+                return
+            await asyncio.sleep(_COALESCE_SECONDS)  # let a rapid burst land (siblings append/block)
+            batch, self._inbox = self._inbox, []
+            reply_to = self._inbox_send if self._inbox_send is not None else send
+            await self._run_turn(_merge_inbounds(batch), reply_to)
+
+    async def _run_turn(self, inbound: Inbound, send: Send) -> None:
+        """Run one model turn for ``inbound`` (text + attachments). Caller holds ``self._lock``."""
+        from google.genai import types
 
         # Build the model turn: the text part (if any) plus an image part per attachment, so
         # the model sees the picture this turn and it stays in the session for follow-ups.
@@ -563,8 +599,10 @@ class GaiaHandler:
             await asyncio.sleep(delay)
         except asyncio.CancelledError:
             return  # a new turn / reset refreshed or cancelled the timer
-        await self.flush()  # consolidate the whole conversation…
-        await self._clear_session()  # …then start fresh (human-like)
+        # Under the lock so consolidation never races a turn on the same durable session (#315).
+        async with self._lock:
+            await self.flush()  # consolidate the whole conversation…
+            await self._clear_session()  # …then start fresh (human-like)
 
     def _cancel_idle(self) -> None:
         if self._idle_task is not None and not self._idle_task.done():
