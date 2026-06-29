@@ -325,7 +325,8 @@ def default_registry(
     # importable, so a default install just doesn't see the tool (the prompt tells the user to
     # `pip install 'gaia[media]'` when they want it).
     if importlib.util.find_spec("yt_dlp") is not None and _is_enabled(config, DOWNLOAD_MEDIA):
-        registry.register(DOWNLOAD_MEDIA, make_download_media())
+        browser_cfg = config.browser if config is not None else None
+        registry.register(DOWNLOAD_MEDIA, make_download_media(browser_cfg))
 
     if _is_enabled(config, CRON):
         registry.register(CRON, make_cron())
