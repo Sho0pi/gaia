@@ -9,7 +9,6 @@ Exit codes: 0 ok · 1 runtime error · 2 usage (click default) · 3 daemon state
 
 from __future__ import annotations
 
-import importlib.metadata
 import os
 from pathlib import Path
 from typing import Annotated
@@ -27,18 +26,11 @@ app = typer.Typer(
 )
 
 
-def _version() -> str:
-    try:
-        return importlib.metadata.version("gaia")
-    except importlib.metadata.PackageNotFoundError:  # running from an uninstalled tree
-        from gaia import __version__
-
-        return __version__
-
-
 def _version_callback(value: bool) -> None:
     if value:
-        typer.echo(f"gaia {_version()}")
+        from gaia import version
+
+        typer.echo(f"gaia {version()}")
         raise typer.Exit()
 
 
@@ -171,7 +163,7 @@ def version(ctx: typer.Context) -> None:
 
     info = {
         "name": "gaia",
-        "version": _version(),
+        "version": gaia.version(),
         "python": platform.python_version(),
         "location": str(Path(gaia.__file__).resolve().parent),
     }
