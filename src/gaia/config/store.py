@@ -6,23 +6,15 @@ last read — "mtime-gated". The file is otherwise not touched, so reads are che
 effect: edit ``gaia.yaml`` and the next ``.current`` sees the new value, no process
 restart. Callers that pull config per use (e.g. once per message) get hot reload for
 free.
-
-A ``subscribe(cb)`` hook is provided for the few consumers that must *react* to a
-change rather than poll. It is not wired to any reactive consumer yet — that
-lifecycle work is a follow-up (issue #10).
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 
 import yaml
 
 from gaia.config.schema import GaiaConfig
-
-# Called with the freshly-loaded config whenever the file is (re)read.
-Subscriber = Callable[[GaiaConfig], None]
 
 
 class ConfigSupplier:
@@ -30,7 +22,6 @@ class ConfigSupplier:
 
     def __init__(self, path: Path) -> None:
         self._path = Path(path)
-        self._subs: list[Subscriber] = []
         self._mtime: float | None = None
         self._config: GaiaConfig = self._reload()
 
@@ -40,13 +31,7 @@ class ConfigSupplier:
         mtime = self._stat_mtime()
         if mtime != self._mtime:
             self._config = self._reload()
-            for cb in self._subs:
-                cb(self._config)
         return self._config
-
-    def subscribe(self, cb: Subscriber) -> None:
-        """Register ``cb`` to be called with the new config on every reload."""
-        self._subs.append(cb)
 
     def _stat_mtime(self) -> float | None:
         """Modification time of the config file, or ``None`` when it is absent."""
