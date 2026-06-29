@@ -54,14 +54,22 @@ def _text_of(content: types.Content | None) -> str:
 
 
 def _events_to_messages(events: Sequence[Event]) -> list[dict[str, str]]:
-    """Map ADK events to mem0 ``{role, content}`` messages, dropping empty turns."""
+    """Map ADK events to mem0 ``{role, content}`` messages, dropping empty turns.
+
+    Only human (``user``) and assistant (``model``) turns are fed to mem0. Any other role
+    (tool / system / unknown) is dropped rather than relabelled ``user`` — relabelling fed
+    tool output to the extractor as if the human said it, exactly the noise backend.py fights.
+    """
     messages: list[dict[str, str]] = []
     for event in events:
         text = _text_of(event.content)
         if not text:
             continue
         role = event.content.role if event.content else None
-        messages.append({"role": _ROLE_MAP.get(role or "", "user"), "content": text})
+        mem_role = _ROLE_MAP.get(role or "")
+        if mem_role is None:
+            continue
+        messages.append({"role": mem_role, "content": text})
     return messages
 
 
