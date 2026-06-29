@@ -193,6 +193,13 @@ class BrowserConfig(BaseModel):
     block_images: bool = Field(
         default=False, description="camoufox engine: skip downloading images (faster, less data)."
     )
+    viewport: str = Field(
+        default="1280x1600",
+        description="native backend: browser viewport as 'WxH'. Default 1280x1600 — a desktop "
+        "width (Firefox can't emulate mobile, so a narrow viewport renders desktop CSS squished) "
+        "at a 4:5 portrait so screenshots fit a chat preview without cropping. Empty = engine "
+        "default.",
+    )
 
 
 class CronDeliver(BaseModel):
