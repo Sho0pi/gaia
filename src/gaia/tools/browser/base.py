@@ -39,6 +39,10 @@ IDLE_TIMEOUT_SECONDS = 600.0
 #: Keep at most this many recent console/pageerror lines per session (browser_console reads them).
 CONSOLE_CAP = 200
 
+#: Render screenshots at 2x device pixels (retina) so text is crisp, not a blurry downscale — the
+#: lesson from hermes-agent's browser (low-DPI viewport shots read as "corrupted/low-resolution").
+DEVICE_SCALE = 2
+
 #: A launcher opens a fresh page and returns it with a coroutine that tears it down.
 Launcher = Callable[[], Awaitable[tuple[Any, Callable[[], Awaitable[None]]]]]
 
@@ -120,7 +124,8 @@ def _chromium_launcher(viewport: tuple[int, int] | None) -> Launcher:
         browser = await pw.chromium.launch(headless=True)
         if viewport:
             context = await browser.new_context(
-                viewport={"width": viewport[0], "height": viewport[1]}
+                viewport={"width": viewport[0], "height": viewport[1]},
+                device_scale_factor=DEVICE_SCALE,
             )
         else:
             context = await browser.new_context()
@@ -170,12 +175,18 @@ def make_launcher(browser_cfg: Any) -> Launcher:
         from camoufox.async_api import AsyncCamoufox
 
         cam = AsyncCamoufox(**opts)  # type: ignore[no-untyped-call]  # camoufox ships no stubs
-        browser = await cam.__aenter__()
-        page = await browser.new_page()
+        # camoufox patches new_page to accept viewport/device_scale_factor (Playwright's stub
+        # doesn't); type as Any so mypy doesn't check against the stock BrowserContext signature.
+        browser: Any = await cam.__aenter__()
         if viewport:
-            # `window` (above) sizes the OS window for the fingerprint; this sizes the actual
-            # render viewport so screenshots come out at the configured WxH.
-            await page.set_viewport_size({"width": viewport[0], "height": viewport[1]})
+            # `window` (in opts) sizes the OS window for the fingerprint; the viewport sizes the
+            # actual render area + device_scale_factor renders at 2x so the screenshot is crisp.
+            page = await browser.new_page(
+                viewport={"width": viewport[0], "height": viewport[1]},
+                device_scale_factor=DEVICE_SCALE,
+            )
+        else:
+            page = await browser.new_page()
 
         async def close() -> None:
             await cam.__aexit__(None, None, None)

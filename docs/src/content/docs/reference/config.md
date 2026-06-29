@@ -107,8 +107,8 @@ browser:
   geoip: false
   # camoufox engine: skip downloading images (faster, less data).
   block_images: false
-  # native backend: browser viewport as 'WxH'. Phone-portrait by default so pages render mobile and screenshots suit a phone screen (a wide desktop shot gets cropped in chat previews). Set e.g. '1280x800' for a desktop view. Empty = the engine default.
-  viewport: 412x915
+  # native backend: browser viewport as 'WxH'. Phone-portrait 9:16 by default so pages render mobile and screenshots fit a chat preview without cropping (rendered at 2x for crispness). Set e.g. '1280x800' for a desktop view. Empty = the engine default.
+  viewport: 412x732
 cron:
   # Run the cron scheduler inside the daemon (gaia serve/start).
   enabled: true
