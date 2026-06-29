@@ -1376,6 +1376,7 @@ all = [
     { name = "mcp" },
     { name = "playwright" },
     { name = "trafilatura" },
+    { name = "yt-dlp" },
 ]
 browser = [
     { name = "camoufox", extra = ["geoip"] },
@@ -1453,6 +1454,7 @@ requires-dist = [
     { name = "trafilatura", marker = "extra == 'all'", specifier = ">=2.1.0" },
     { name = "trafilatura", marker = "extra == 'tools'", specifier = ">=2.1.0" },
     { name = "typer", specifier = ">=0.26.7" },
+    { name = "yt-dlp", marker = "extra == 'all'", specifier = ">=2025.1.15" },
     { name = "yt-dlp", marker = "extra == 'media'", specifier = ">=2025.1.15" },
 ]
 provides-extras = ["all", "browser", "llm", "mcp", "media", "memory", "tools", "voice"]

@@ -281,9 +281,17 @@ class Gaia:
         from gaia.tools.command import make_run_command
         from gaia.tools.message import make_message_user
         from gaia.tools.permission import make_manage_permission
+        from gaia.tools.registry import _is_enabled
+        from gaia.tools.save_skill import NAME as SAVE_SKILL
         from gaia.tools.save_skill import make_save_skill
         from gaia.tools.send_file import make_send_file
         from gaia.tools.task import make_task_plan
+
+        # save_skill is on by default (root-only "learn & grow"); tools.save_skill.enabled=false
+        # turns it off, like any registry tool.
+        save_skill = (
+            [make_save_skill(self.skills_dir)] if _is_enabled(self.config, SAVE_SKILL) else []
+        )
 
         # delegate_to_soul and message_user are attached to the root only — souls (built
         # from self.tools) never receive them, so a soul can neither spawn souls nor text
@@ -309,7 +317,7 @@ class Gaia:
                 make_message_user(self.users, self.connectors, lambda: self.memory_service),
                 make_manage_permission(self),
                 make_send_file(),
-                make_save_skill(self.skills_dir),
+                *save_skill,
                 make_task_plan(self.tasks, max_tasks=self.config.missions.max_tasks),
                 *self.container.mcp_toolsets(),
                 *self.container.skill_toolsets(),

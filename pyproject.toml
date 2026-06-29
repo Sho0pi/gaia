@@ -87,7 +87,8 @@ mcp = [
     "mcp>=1.28.0",
 ]
 # Media download: yt-dlp powers the `download_media` tool (Instagram reels, TikTok, YouTube, …).
-# Opt-in (NOT in `all`): pure-python, lazy-imported; the tool only registers when this is installed.
+# In `all` (pure-python, lazy-imported); the tool only registers when this is installed, so a
+# minimal install can still drop it by skipping this extra.
 media = [
     "yt-dlp>=2025.1.15",
 ]
@@ -99,7 +100,7 @@ voice = [
     "faster-whisper>=1.2.1",
 ]
 # Everything — what the installer pulls (`gaia[all]`) so every feature works out of the box.
-all = ["gaia[tools,memory,llm,browser,mcp,voice]"]
+all = ["gaia[tools,memory,llm,browser,mcp,voice,media]"]
 
 [dependency-groups]
 dev = [
