@@ -31,10 +31,22 @@ class SkillCommand(Command):
         if sub == "search":
             return await _search(ctx, rest)
         if sub == "install":
-            return _install(skills_dir, rest)
+            return _install(ctx, skills_dir, rest)
         if sub in ("remove", "uninstall", "rm"):
-            return _remove(skills_dir, rest)
+            return _remove(ctx, skills_dir, rest)
         return "Usage: /skill <list|show|search|install|remove> [args]"
+
+
+def _refresh_toolset(ctx: CommandContext) -> None:
+    """Drop the cached skills toolset so the next agent build re-scans the skills dir.
+
+    The skills toolset is a build-once singleton that snapshots the skills at startup, so a
+    freshly installed/removed skill is invisible to running agents until it's rebuilt. Resetting
+    the provider makes the next agent build (a ``/reset``, or the next soul delegation) re-scan."""
+    import contextlib
+
+    with contextlib.suppress(Exception):  # best-effort; a refresh hiccup must not fail the command
+        ctx.gaia.container.skill_toolsets.reset()
 
 
 def _list(skills_dir: object) -> str:
@@ -62,7 +74,7 @@ def _show(skills_dir: object, skill_id: str) -> str:
     return f"{skill.frontmatter.name}: {skill.frontmatter.description}\n\n{skill.instructions}"
 
 
-def _install(skills_dir: object, source: str) -> str:
+def _install(ctx: CommandContext, skills_dir: object, source: str) -> str:
     from gaia.skills import install_skill
 
     if not source:
@@ -74,10 +86,11 @@ def _install(skills_dir: object, source: str) -> str:
     from gaia.state import commit_change
 
     commit_change(f"skill: installed {', '.join(ids)}", f"source: {source}")
-    return f"Installed: {', '.join(ids)}. Ready to use right away."
+    _refresh_toolset(ctx)
+    return f"Installed: {', '.join(ids)}. Run /reset to start using it."
 
 
-def _remove(skills_dir: object, rest: str) -> str:
+def _remove(ctx: CommandContext, skills_dir: object, rest: str) -> str:
     from gaia.skills import remove_skills
 
     patterns = rest.split()
@@ -89,7 +102,8 @@ def _remove(skills_dir: object, rest: str) -> str:
     from gaia.state import commit_change
 
     commit_change(f"skill: removed {', '.join(removed)}")
-    return f"Removed {len(removed)} skill(s): {', '.join(removed)}."
+    _refresh_toolset(ctx)
+    return f"Removed {len(removed)} skill(s): {', '.join(removed)}. Run /reset to apply."
 
 
 async def _search(ctx: CommandContext, query: str) -> str:

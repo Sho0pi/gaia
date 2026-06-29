@@ -50,6 +50,37 @@ def test_install_claude_plugin_layout(tmp_path: Path) -> None:
     assert (skills / "ui-ux-pro-max" / "SKILL.md").is_file()
 
 
+async def test_install_command_refreshes_toolset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Installing via /skill must drop the cached skills toolset singleton (built once at startup),
+    # else a freshly installed skill stays invisible to running agents until a restart.
+    from types import SimpleNamespace
+
+    from gaia.commands.base import CommandContext
+
+    src = _skill_folder(tmp_path / "src", "summarize")
+    skills = tmp_path / "skills"
+    monkeypatch.setattr("gaia.skills.resolve_skills_dir", lambda config: skills)
+    reset_calls: list[int] = []
+    container = SimpleNamespace(skill_toolsets=SimpleNamespace(reset=lambda: reset_calls.append(1)))
+    ctx = CommandContext(
+        args=f"install {src}",
+        gaia=SimpleNamespace(config=None, container=container),  # type: ignore[arg-type]
+        handler=SimpleNamespace(),  # type: ignore[arg-type]
+        registry=SimpleNamespace(),  # type: ignore[arg-type]
+        user_id="u",
+        session_id="s",
+        role="user",
+    )
+
+    out = await SkillCommand().run(ctx)
+
+    assert "Installed" in out and "/reset" in out  # honest message, not "ready right away"
+    assert reset_calls == [1]  # toolset singleton was refreshed
+    assert (skills / "summarize" / "SKILL.md").is_file()
+
+
 def test_install_rename_single(tmp_path: Path) -> None:
     src = _skill_folder(tmp_path / "src", "summarize")
     skills = tmp_path / "skills"
