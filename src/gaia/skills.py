@@ -230,11 +230,19 @@ def _looks_like_git(source: str) -> bool:
 
 
 def _skill_dirs_under(root: Path) -> list[Path]:
-    """The skill folders under ``root``: ``root`` itself if it holds a SKILL.md, else its
-    immediate children that do."""
+    """The skill folders under ``root``: ``root`` itself if it holds a SKILL.md, else the
+    SKILL.md-holding children of ``root`` or of a standard skills dir inside it.
+
+    Besides ``root``'s immediate children, also looks under ``.claude/skills`` and ``skills`` —
+    the layout a Claude-plugin / skills-pack repo uses (``.claude/skills/<name>/SKILL.md``)."""
     if (root / "SKILL.md").is_file():
         return [root]
-    return sorted(d for d in root.iterdir() if d.is_dir() and (d / "SKILL.md").is_file())
+    for base in (root, root / ".claude" / "skills", root / "skills"):
+        if base.is_dir():
+            found = sorted(d for d in base.iterdir() if d.is_dir() and (d / "SKILL.md").is_file())
+            if found:
+                return found
+    return []
 
 
 def _install_one(src: Path, skills_dir: Path, *, dest_id: str, force: bool) -> str:
