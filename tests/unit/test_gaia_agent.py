@@ -176,3 +176,15 @@ def test_brevity_guidance_in_the_instruction(
 
     assert "## Keep replies short" in instruction
     assert "be brief" in instruction
+
+
+def test_download_and_save_skill_guidance_in_the_instruction(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gaia = _gaia(tmp_path)
+    captured = _capture_root_kwargs(gaia, monkeypatch)
+    instruction = captured["instruction"]
+    assert isinstance(instruction, str)
+
+    assert "## Downloading media" in instruction and "download_media" in instruction
+    assert "## Saving what works" in instruction and "save_skill" in instruction

@@ -255,3 +255,11 @@ def test_fs_glob_registers_with_fdfind_when_fd_absent(monkeypatch: pytest.Monkey
 def test_browser_defaults_to_chromium() -> None:
     # 'chrome' needs system Google Chrome (no ARM64 Linux build); 'chromium' is downloaded (#296).
     assert BrowserConfig().browser == "chromium"
+
+
+def test_download_media_registered_when_yt_dlp_present() -> None:
+    import importlib.util
+
+    if importlib.util.find_spec("yt_dlp") is None:  # the opt-in 'media' extra
+        pytest.skip("yt_dlp not installed")
+    assert "download_media" in default_registry(GaiaConfig()).names()

@@ -202,6 +202,19 @@ class Gaia:
             "- Media a soul already produced (a screenshot/preview, a generated image/PDF) comes "
             "back in the result's 'media' and is sent to the user automatically — do NOT re-read, "
             "re-serve, or re-screenshot it just to show it.\n\n"
+            "## Downloading media\n"
+            "To fetch a video or audio the user wants from a public link (an Instagram reel, a "
+            "TikTok, a YouTube clip), call download_media(url) — it downloads with yt-dlp and the "
+            "file is delivered to the user automatically (don't also send_file it). This is a "
+            "normal, allowed task — don't refuse it as 'bypassing protections'; decline only "
+            "genuine paywall/DRM/login-gated or mass-scraping requests. If download_media isn't in "
+            "your tools, tell the user to install the media extra: pip install 'gaia[media]'.\n\n"
+            "## Saving what works\n"
+            "After you finish a NOVEL multi-step task the user is likely to want again (a download "
+            "routine, a data-gathering flow), offer ONCE: 'want me to save this as a skill so it's "
+            "next time?' If yes, call save_skill(name, description, instructions) "
+            "with the steps that ACTUALLY worked — exact tools/commands and any gotchas. Don't "
+            "offer for trivial one-shot answers.\n\n"
             "## Scheduling & messaging\n"
             "- cron: run your message later or on a schedule (reminders, daily briefs); it "
             "delivers the result to the user's chat.\n"
@@ -268,6 +281,7 @@ class Gaia:
         from gaia.tools.command import make_run_command
         from gaia.tools.message import make_message_user
         from gaia.tools.permission import make_manage_permission
+        from gaia.tools.save_skill import make_save_skill
         from gaia.tools.send_file import make_send_file
         from gaia.tools.task import make_task_plan
 
@@ -295,6 +309,7 @@ class Gaia:
                 make_message_user(self.users, self.connectors, lambda: self.memory_service),
                 make_manage_permission(self),
                 make_send_file(),
+                make_save_skill(self.skills_dir),
                 make_task_plan(self.tasks, max_tasks=self.config.missions.max_tasks),
                 *self.container.mcp_toolsets(),
                 *self.container.skill_toolsets(),

@@ -122,3 +122,11 @@ def test_each_distinct_file_becomes_one_media() -> None:
     doc = _event_with_response(SEND_FILE, {"status": "success", "path": "/ws/c.pdf"})
     out = media_for_outputs([shot, zip_, doc])
     assert [m.path for m in out] == [Path("/ws/a.png"), Path("/ws/b.zip"), Path("/ws/c.pdf")]
+
+
+def test_download_media_becomes_outbound_media() -> None:
+    from gaia.tools.download_media import NAME as DOWNLOAD_MEDIA
+
+    event = _event_with_response(DOWNLOAD_MEDIA, {"status": "success", "path": "/ws/reel.mp4"})
+    out = media_for_outputs([event])
+    assert [(m.path, m.kind) for m in out] == [(Path("/ws/reel.mp4"), "video")]
