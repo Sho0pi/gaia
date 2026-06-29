@@ -65,7 +65,12 @@ llm = [
 # model. Lazy-imported, so gaia imports without it. After installing the extra, run
 # `uv run playwright install chromium` once to fetch the browser binary.
 browser = [
-    "playwright>=1.60.0",
+    # Pinned <1.60: Playwright 1.60.0's Firefox driver reads `pageError.location.url` without a
+    # null-check (microsoft/playwright#39767), and Camoufox's Firefox fires page errors with no
+    # location — so any JS-heavy site crashes the driver ("Connection closed while reading from the
+    # driver"). Camoufox 0.4.11 (latest) doesn't pin Playwright, so it pulled the broken 1.60.0.
+    # Until camoufox#617 ships a fix, hold Playwright at the last good 1.59.x. See docs/browser.
+    "playwright>=1.55,<1.60",
     # Camoufox: an anti-detect Firefox (Playwright-compatible) for browser.engine='camoufox'.
     # Dormant unless that engine is selected; its Firefox build is fetched via
     # `python -m camoufox fetch` (wired into the runtime setup), not pip.
