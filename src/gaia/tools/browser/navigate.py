@@ -101,9 +101,12 @@ def make_browser_navigate(
             session = await manager.get(agent)
             await session.page.goto(cleaned)
             final_url = str(session.page.url)
-            # Re-validate after redirects: the landing host may differ from the input. A
-            # local file or one of our served loopback ports is fine; else apply the guard.
-            if final_url.lower().startswith("file:") or _served_loopback(final_url, served):
+            # Re-validate after redirects with the SAME dispatch as the input: a file: redirect
+            # must still resolve under the agents workspace (not trusted just for its scheme), a
+            # served loopback port is fine, else the SSRF guard.
+            if final_url.lower().startswith("file:"):
+                redirected = _local_workspace_file(final_url)
+            elif _served_loopback(final_url, served):
                 redirected = None
             else:
                 redirected = validate_url(final_url)
