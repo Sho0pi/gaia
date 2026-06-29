@@ -100,18 +100,32 @@ async def _is_alive(session: BrowserSession) -> bool:
     return True
 
 
-async def settle_page(page: Any) -> None:
-    """Best-effort wait for a page to finish rendering before we read/screenshot it.
+#: Hard cap on the wait for a page to paint before a screenshot — a safety net, not the common path.
+SETTLE_TIMEOUT_SECONDS = 5.0
 
-    ``page.goto`` resolves on 'load', but heavy SPAs (booking, google flights) paint their content
-    via JS *after* that — capturing immediately gives a blank/half-rendered shot. Wait for the
-    network to go idle (bounded: many sites poll forever, so cap it), then a short settle for paint.
+
+async def settle_page(page: Any) -> None:
+    """Briefly wait for the page to have painted *content* before we screenshot it.
+
+    ``page.goto`` resolves on 'load', but heavy SPAs (booking, google flights) paint via JS after —
+    capturing immediately gives a blank shot. So poll for real content (text or media) and return
+    the instant it's there: an already-loaded page (the usual case — the model has been interacting)
+    is essentially free. This replaces a ``networkidle`` wait, which a polling SPA never satisfies —
+    it burnt the full timeout on *every* screenshot, making them feel like they never arrive.
     """
-    try:
-        await page.wait_for_load_state("networkidle", timeout=8000)
-    except Exception:
-        pass  # never went idle within the cap — screenshot whatever has painted
-    await asyncio.sleep(0.5)
+    deadline = time.monotonic() + SETTLE_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        try:
+            painted = await page.evaluate(
+                "() => !!document.body && (document.body.innerText.trim().length > 50"
+                " || document.body.querySelectorAll('img,svg,canvas,video').length > 0)"
+            )
+        except Exception:
+            return  # mid-navigation / page busy — just capture whatever has painted
+        if painted:
+            break
+        await asyncio.sleep(0.2)
+    await asyncio.sleep(0.3)  # one short beat for the final paint
 
 
 def _parse_viewport(browser_cfg: Any) -> tuple[int, int] | None:
