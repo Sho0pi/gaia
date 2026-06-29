@@ -559,3 +559,43 @@ async def test_settle_page_caps_when_never_ready(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(base, "SETTLE_TIMEOUT_SECONDS", 0.3)  # keep the test quick
     page = _FakePage(eval_result=False)  # never reports content
     await base.settle_page(page)  # returns after the cap instead of hanging
+
+
+# --- headless='virtual' (Xvfb stealth) --------------------------------------------
+
+
+def test_camoufox_headless_virtual_when_linux_and_xvfb(monkeypatch: pytest.MonkeyPatch) -> None:
+    from gaia.config.schema import BrowserConfig
+    from gaia.tools.browser import base
+
+    monkeypatch.setattr(base.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(base.shutil, "which", lambda name: "/usr/bin/Xvfb")
+    assert base._camoufox_headless(BrowserConfig(headless="virtual")) == "virtual"
+
+
+def test_camoufox_headless_virtual_falls_back_without_xvfb(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from gaia.config.schema import BrowserConfig
+    from gaia.tools.browser import base
+
+    monkeypatch.setattr(base.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(base.shutil, "which", lambda name: None)  # no Xvfb
+    assert base._camoufox_headless(BrowserConfig(headless="virtual")) is True
+
+
+def test_camoufox_headless_virtual_falls_back_off_linux(monkeypatch: pytest.MonkeyPatch) -> None:
+    from gaia.config.schema import BrowserConfig
+    from gaia.tools.browser import base
+
+    monkeypatch.setattr(base.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(base.shutil, "which", lambda name: "/usr/bin/Xvfb")
+    assert base._camoufox_headless(BrowserConfig(headless="virtual")) is True
+
+
+def test_camoufox_headless_bool_passthrough() -> None:
+    from gaia.config.schema import BrowserConfig
+    from gaia.tools.browser.base import _camoufox_headless
+
+    assert _camoufox_headless(BrowserConfig(headless=True)) is True
+    assert _camoufox_headless(BrowserConfig(headless=False)) is False
