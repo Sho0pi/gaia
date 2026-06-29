@@ -85,7 +85,7 @@ browser:
   runtime: bunx
   # The playwright-mcp package spec passed to the runtime.
   package: "@playwright/mcp@latest"
-  # mcp backend: run the browser headless.
+  # Run the browser headless: true/false, or 'virtual' (camoufox engine, Linux + Xvfb) to run a real browser on a virtual display — stronger anti-detection than headless; falls back to headless if Xvfb/Linux is missing. `sudo apt install xvfb` to enable.
   headless: true
   # mcp backend: keep the browser profile in memory (no on-disk profile).
   isolated: true
