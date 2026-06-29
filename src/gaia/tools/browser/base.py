@@ -100,12 +100,50 @@ async def _is_alive(session: BrowserSession) -> bool:
     return True
 
 
+def _parse_viewport(browser_cfg: Any) -> tuple[int, int] | None:
+    """Parse ``browser.viewport`` ('WxH') to ``(w, h)``; ``None`` if unset/malformed."""
+    raw = str(getattr(browser_cfg, "viewport", "") or "").lower()
+    try:
+        w, h = raw.split("x")
+        return int(w), int(h)
+    except ValueError:
+        return None
+
+
+def _chromium_launcher(viewport: tuple[int, int] | None) -> Launcher:
+    """A chromium launcher bound to ``viewport`` (None = the engine default)."""
+
+    async def launch() -> tuple[Any, Callable[[], Awaitable[None]]]:
+        from playwright.async_api import async_playwright
+
+        pw = await async_playwright().start()
+        browser = await pw.chromium.launch(headless=True)
+        if viewport:
+            context = await browser.new_context(
+                viewport={"width": viewport[0], "height": viewport[1]}
+            )
+        else:
+            context = await browser.new_context()
+        page = await context.new_page()
+
+        async def close() -> None:
+            await context.close()
+            await browser.close()
+            await pw.stop()
+
+        return page, close
+
+    return launch
+
+
 def _camoufox_opts(browser_cfg: Any) -> dict[str, Any]:
     """Build AsyncCamoufox kwargs from BrowserConfig (omitting unset ones → Camoufox defaults)."""
     opts: dict[str, Any] = {
         "headless": getattr(browser_cfg, "headless", True),
         "humanize": getattr(browser_cfg, "humanize", True),  # human-like cursor (stealth)
     }
+    if viewport := _parse_viewport(browser_cfg):
+        opts["window"] = viewport  # outer window size → also drives a consistent fingerprint
     if geoip := getattr(browser_cfg, "geoip", False):
         opts["geoip"] = geoip
     if locale := getattr(browser_cfg, "locale", ""):
@@ -123,8 +161,9 @@ def make_launcher(browser_cfg: Any) -> Launcher:
     Camoufox is a drop-in Playwright firefox (anti-detect); it slots into the same seam so every
     browser tool is engine-agnostic. ``camoufox`` is imported lazily (optional dep).
     """
+    viewport = _parse_viewport(browser_cfg)
     if getattr(browser_cfg, "engine", "camoufox") != "camoufox":
-        return _playwright_launcher
+        return _chromium_launcher(viewport)
     opts = _camoufox_opts(browser_cfg)
 
     async def launch() -> tuple[Any, Callable[[], Awaitable[None]]]:
@@ -133,6 +172,10 @@ def make_launcher(browser_cfg: Any) -> Launcher:
         cam = AsyncCamoufox(**opts)  # type: ignore[no-untyped-call]  # camoufox ships no stubs
         browser = await cam.__aenter__()
         page = await browser.new_page()
+        if viewport:
+            # `window` (above) sizes the OS window for the fingerprint; this sizes the actual
+            # render viewport so screenshots come out at the configured WxH.
+            await page.set_viewport_size({"width": viewport[0], "height": viewport[1]})
 
         async def close() -> None:
             await cam.__aexit__(None, None, None)

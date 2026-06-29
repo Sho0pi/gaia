@@ -433,25 +433,24 @@ async def test_dialog_arms_one_shot_handler() -> None:
 # --- engine launcher --------------------------------------------------------------
 
 
-def test_make_launcher_chromium_is_default() -> None:
+def test_make_launcher_chromium() -> None:
     from types import SimpleNamespace
 
-    from gaia.tools.browser.base import _playwright_launcher, make_launcher
+    from gaia.tools.browser.base import make_launcher
 
-    cfg = SimpleNamespace(engine="chromium")
-    assert browser.make_launcher(cfg) is _playwright_launcher
+    assert callable(make_launcher(SimpleNamespace(engine="chromium", viewport="1280x800")))
     # an unknown engine also falls back to chromium
-    assert make_launcher(SimpleNamespace(engine="other")) is _playwright_launcher
+    assert callable(make_launcher(SimpleNamespace(engine="other", viewport="")))
 
 
 def test_make_launcher_camoufox_builds_a_distinct_launcher() -> None:
     from types import SimpleNamespace
 
-    from gaia.tools.browser.base import _playwright_launcher
-
-    cfg = SimpleNamespace(engine="camoufox", headless=True, humanize=True)
-    launcher = browser.make_launcher(cfg)
-    assert launcher is not _playwright_launcher  # a camoufox closure, not the chromium default
+    chromium = browser.make_launcher(SimpleNamespace(engine="chromium", viewport=""))
+    camoufox = browser.make_launcher(
+        SimpleNamespace(engine="camoufox", headless=True, humanize=True, viewport="412x915")
+    )
+    assert callable(camoufox) and camoufox is not chromium
 
 
 # --- recovery: a crashed browser self-heals -------------------------------------
@@ -508,3 +507,27 @@ async def test_action_can_skip_snapshot() -> None:
     )
 
     assert result["status"] == "success" and "snapshot" not in result
+
+
+# --- viewport (phone-portrait default) --------------------------------------------
+
+
+def test_parse_viewport() -> None:
+    from types import SimpleNamespace
+
+    from gaia.tools.browser.base import _parse_viewport
+
+    assert _parse_viewport(SimpleNamespace(viewport="412x915")) == (412, 915)
+    assert _parse_viewport(SimpleNamespace(viewport="1280x800")) == (1280, 800)
+    assert _parse_viewport(SimpleNamespace(viewport="")) is None  # unset = engine default
+    assert _parse_viewport(SimpleNamespace(viewport="garbage")) is None
+
+
+def test_default_viewport_is_phone_portrait() -> None:
+    from gaia.config.schema import BrowserConfig
+    from gaia.tools.browser.base import _camoufox_opts, _parse_viewport
+
+    cfg = BrowserConfig()  # default
+    w, h = _parse_viewport(cfg)  # type: ignore[misc]
+    assert w < h  # portrait, so chat previews don't crop it
+    assert _camoufox_opts(cfg)["window"] == (w, h)  # camoufox gets a consistent window
