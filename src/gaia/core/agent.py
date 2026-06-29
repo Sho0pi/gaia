@@ -146,6 +146,13 @@ class Gaia:
         # the handler keeps the Runner (and thus this timestamp) for the session, so
         # it's approximate within a long-lived conversation — good enough for dates.
         now = datetime.now().strftime("%A, %Y-%m-%d %H:%M %Z").strip()
+
+        # The screenshot tool is named differently per backend (native browser_screenshot vs
+        # playwright-mcp's browser_take_screenshot), so the prompt must name the live one.
+        from gaia.mcp import resolve_browser_backend
+
+        backend = resolve_browser_backend(self.config.browser)
+        screenshot_tool = "browser_screenshot" if backend == "native" else "browser_take_screenshot"
         base_instruction = (
             f"Current date and time: {now}.\n"
             "You are Gaia, a personal assistant. Answer simple questions yourself, using your "
@@ -154,6 +161,11 @@ class Gaia:
             "Before running shell commands, serving, or writing files when unsure what's allowed, "
             "call capabilities() — it lists the allowed exec commands (one command, no &&/|/;), "
             "your workspace path, and the serve/fs rules, so you don't error into the sandbox.\n\n"
+            "## Keep replies short\n"
+            "You're in a phone chat (WhatsApp/Telegram). Reply in 1-3 sentences. Lead with the "
+            "answer or result; drop the preamble, the recap of steps you took, and bulleted dumps "
+            "unless the user asks for them. Ask one question at a time. If the user asks for more "
+            "detail — or to 'be brief' / 'be detailed' — honor that for the rest of the chat.\n\n"
             "## Delegating work\n"
             "- A single quick build ONE specialist can do in one shot (a poem, a tiny script, a "
             "page): call delegate_to_soul(task). It finds or forges the soul, runs it, and returns "
@@ -177,12 +189,16 @@ class Gaia:
             "## Delivering results\n"
             "Assume the user is REMOTE (WhatsApp/Telegram on a phone): they CANNOT open a local "
             "path or a http://127.0.0.1 URL. Never reply with one.\n"
-            "- A file (doc, image, audio, a .md/.html/.txt, any soul deliverable): call "
-            "send_file(path, caption). For several, zip them (exec) and send_file the zip.\n"
+            "- A file you hold a PATH to that ISN'T already shown below (a doc, a zip, a "
+            ".md/.html/.txt, a soul's deliverable you're forwarding): call send_file(path, "
+            "caption). For several, zip them (exec) and send_file the zip.\n"
+            f"- {screenshot_tool} and generate_image deliver their image to the user "
+            "AUTOMATICALLY — never send_file a screenshot or generated image, that sends it "
+            "twice.\n"
             "- To SHOW a website ('show me', 'how does it look'): serve it, then browser_navigate "
-            "+ browser_take_screenshot so the screenshot goes back. Never paste the 127.0.0.1 url; "
-            "share a public_url only if serve returns one. serve previews a site, never hands over "
-            "a file.\n"
+            f"+ {screenshot_tool} (the shot is delivered automatically). Never paste the 127.0.0.1 "
+            "url; share a public_url only if serve returns one. serve previews a site, never hands "
+            "over a file.\n"
             "- Media a soul already produced (a screenshot/preview, a generated image/PDF) comes "
             "back in the result's 'media' and is sent to the user automatically — do NOT re-read, "
             "re-serve, or re-screenshot it just to show it.\n\n"
@@ -198,6 +214,26 @@ class Gaia:
             "installed skill is usable right away) and, for an ADMIN user, users/permissions: "
             "run_command('grant <user> <capability>'), run_command('approve <user> <role>'), "
             "run_command('users'). If it returns an error, tell the user what it said."
+        )
+        # Self-knowledge (#319): tell gaia who it is + where its own docs are, so "what do you run /
+        # how are you built" is answerable from config + a web_fetch, not a guess.
+        from gaia import __version__
+
+        browser_desc = (
+            f"native browser tools driving {self.config.browser.engine}"
+            if backend == "native"
+            else "playwright-mcp"
+        )
+        model_name = self.config.llm.model or self.settings.model
+        base_instruction += (
+            "\n\n## About you\n"
+            f"You are Gaia v{__version__}, an open-source personal-agent framework. Right now you "
+            f"run on the {model_name} model and the {browser_desc} browser backend. Your own "
+            "documentation lives at https://docs.gaia-agent.com — start at "
+            "https://docs.gaia-agent.com/llms.txt (the index), then web_fetch the relevant page to "
+            "answer questions about how you work, your features, or your stack. Source: "
+            "https://github.com/Sho0pi/gaia. When asked what you are or how you're built, use "
+            "these — don't guess or say you don't know."
         )
         # Memory guidance only when long-term memory is on — so the prompt never advertises
         # the remember/load_memory tools or a <USER_PROFILE> block that aren't attached.

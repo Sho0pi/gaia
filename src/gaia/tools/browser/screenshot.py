@@ -10,7 +10,13 @@ from typing import Any
 from google.adk.tools.tool_context import ToolContext
 
 from gaia import constants
-from gaia.tools.browser.base import BrowserError, BrowserSessionManager, err, resolve_locator
+from gaia.tools.browser.base import (
+    BrowserError,
+    BrowserSessionManager,
+    err,
+    resolve_locator,
+    settle_page,
+)
 from gaia.tools.fs.base import sandbox_for
 
 NAME = "browser_screenshot"
@@ -22,12 +28,17 @@ def make_browser_screenshot(
     """Return the ADK ``browser_screenshot`` tool bound to ``manager``."""
 
     async def browser_screenshot(
-        full_page: bool = True, ref: str = "", *, tool_context: ToolContext
+        full_page: bool = False, ref: str = "", *, tool_context: ToolContext
     ) -> dict[str, Any]:
-        """Capture a screenshot of the current page; saves a PNG in your workspace.
+        """Capture a screenshot of the current page and show it to the user.
+
+        The image is delivered to the user automatically — do NOT also send_file it (that
+        would send it twice).
 
         Args:
-            full_page: entire scrollable page; false = visible viewport only.
+            full_page: default false = the visible viewport (a normal-aspect image, best for
+                showing the user). True = the whole scrollable page (a tall image chat apps
+                may crop) — use only when the user needs the entire page.
             ref: optional element ref from the last snapshot (e.g. 'e4') to capture
                 just that element.
         """
@@ -43,6 +54,7 @@ def make_browser_screenshot(
                 locator = resolve_locator(session, ref.strip())
                 await locator.screenshot(path=str(target))
             else:
+                await settle_page(session.page)  # let heavy SPAs finish painting (no blank shot)
                 await session.page.screenshot(path=str(target), full_page=full_page)
             url = str(session.page.url)
         except BrowserError as exc:

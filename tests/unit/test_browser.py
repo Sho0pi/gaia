@@ -43,26 +43,72 @@ class _ActionLocator:
         Path(path).write_bytes(b"\x89PNG fake")  # noqa: ASYNC240 - test fake, not real I/O
 
 
+class _FakeMouse:
+    def __init__(self) -> None:
+        self.wheel_dy: int | None = None
+
+    async def wheel(self, dx: int, dy: int) -> None:
+        self.wheel_dy = dy
+
+
+class _FakeKeyboard:
+    def __init__(self) -> None:
+        self.pressed: str | None = None
+
+    async def press(self, key: str) -> None:
+        self.pressed = key
+
+
 class _FakePage:
     """The slice of a Playwright page the browser tools call."""
 
     def __init__(
-        self, *, url: str = "https://example.com", title: str = "Example", snapshot: str = _SNAPSHOT
+        self,
+        *,
+        url: str = "https://example.com",
+        title: str = "Example",
+        snapshot: str = _SNAPSHOT,
+        eval_result: Any = None,
     ) -> None:
         self.url = url
         self._title = title
         self._snapshot = snapshot
+        self._eval_result = eval_result
         self.action_locators: dict[str, _ActionLocator] = {}
         self.goto_url: str | None = None
+        self.went_back = False
         self.screenshot_path: str | None = None
         self.screenshot_full_page: bool | None = None  # None until a page screenshot is taken
+        self.mouse = _FakeMouse()
+        self.keyboard = _FakeKeyboard()
+        self.handlers: dict[str, list[Any]] = {}  # event -> handlers (on/once)
+        self.alive = True  # set False to simulate a crashed browser (evaluate raises)
 
     async def goto(self, url: str) -> None:
         self.goto_url = url
         self.url = url
 
+    async def go_back(self) -> None:
+        self.went_back = True
+
     async def title(self) -> str:
         return self._title
+
+    async def evaluate(self, expression: str) -> Any:
+        if not self.alive:
+            raise RuntimeError("Connection closed while reading from the driver")
+        return self._eval_result
+
+    def on(self, event: str, handler: Any) -> None:
+        self.handlers.setdefault(event, []).append(handler)
+
+    def once(self, event: str, handler: Any) -> None:
+        self.handlers.setdefault(event, []).append(handler)
+
+    def emit(self, event: str, arg: Any) -> None:
+        """Test helper: fire a stored event handler (console/pageerror/dialog)."""
+        for handler in self.handlers.get(event, []):
+            handler(arg)
 
     def locator(self, selector: str) -> Any:
         if selector == "body":
@@ -163,12 +209,34 @@ async def test_snapshot_returns_text_and_stores_refs() -> None:
 
 
 async def test_snapshot_truncates(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("gaia.tools.browser.snapshot.truncate", lambda t: (t[:5], True))
+    monkeypatch.setattr("gaia.tools.browser.base.truncate", lambda t: (t[:5], True))
     snap = browser.make_browser_snapshot(_manager_with(_FakePage()))
 
     result = await snap(tool_context=_FakeToolContext())
 
     assert result["truncated"] is True
+
+
+async def test_action_returns_fresh_snapshot() -> None:
+    # #90: click/type/etc fold the post-action snapshot into their result (saves a snapshot turn).
+    page = _FakePage()
+    manager = _manager_with(page)
+    await browser.make_browser_snapshot(manager)(tool_context=_FakeToolContext())
+
+    result = await browser.make_browser_click(manager)("e2", tool_context=_FakeToolContext())
+
+    assert result["status"] == "success"
+    assert "[ref=e2]" in result["snapshot"]  # the page came back with the action
+
+
+async def test_navigate_returns_snapshot_and_title() -> None:
+    page = _FakePage(title="Home")
+    result = await browser.make_browser_navigate(_manager_with(page))(
+        "https://example.com", tool_context=_FakeToolContext()
+    )
+
+    assert result["status"] == "success" and result["title"] == "Home"
+    assert "snapshot" in result  # navigate hands back the page too
 
 
 # --- click / type -----------------------------------------------------------------
@@ -214,9 +282,10 @@ async def test_type_fills_and_submits() -> None:
 # --- screenshot -------------------------------------------------------------------
 
 
-async def test_screenshot_writes_png_full_page_by_default(
+async def test_screenshot_is_viewport_by_default(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # Default viewport (normal aspect) — a full-page shot is tall and chat apps crop it.
     monkeypatch.setattr("gaia.constants.AGENTS_DIR", tmp_path / "agents")
     page = _FakePage()
     shot = browser.make_browser_screenshot(_manager_with(page))
@@ -226,20 +295,20 @@ async def test_screenshot_writes_png_full_page_by_default(
     assert result["status"] == "success"
     assert Path(result["path"]).is_file()  # noqa: ASYNC240 - assertion, not hot-path I/O
     assert result["path"].endswith(".png")
-    assert page.screenshot_full_page is True  # the whole scrollable page, not just viewport
+    assert page.screenshot_full_page is False  # the visible viewport, not the whole page
 
 
-async def test_screenshot_viewport_only_when_requested(
+async def test_screenshot_full_page_when_requested(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr("gaia.constants.AGENTS_DIR", tmp_path / "agents")
     page = _FakePage()
     shot = browser.make_browser_screenshot(_manager_with(page))
 
-    result = await shot(full_page=False, tool_context=_FakeToolContext())
+    result = await shot(full_page=True, tool_context=_FakeToolContext())
 
     assert result["status"] == "success"
-    assert page.screenshot_full_page is False
+    assert page.screenshot_full_page is True
 
 
 async def test_screenshot_of_a_single_element(
@@ -271,3 +340,194 @@ async def test_close_all_tears_sessions_down() -> None:
 
     assert page.closed is True  # type: ignore[attr-defined]
     assert manager._sessions == {}
+
+
+# --- scroll / press / back --------------------------------------------------------
+
+
+async def test_scroll_down_then_up() -> None:
+    page = _FakePage()
+    scroll = browser.make_browser_scroll(_manager_with(page))
+
+    assert (await scroll(tool_context=_FakeToolContext()))["status"] == "success"
+    assert page.mouse.wheel_dy and page.mouse.wheel_dy > 0  # default down
+
+    await scroll(direction="up", amount=300, tool_context=_FakeToolContext())
+    assert page.mouse.wheel_dy == -300
+
+
+async def test_press_sends_key() -> None:
+    page = _FakePage()
+    press = browser.make_browser_press(_manager_with(page))
+
+    result = await press("Enter", tool_context=_FakeToolContext())
+
+    assert result["status"] == "success" and page.keyboard.pressed == "Enter"
+
+
+async def test_back_goes_back() -> None:
+    page = _FakePage()
+    back = browser.make_browser_back(_manager_with(page))
+
+    result = await back(tool_context=_FakeToolContext())
+
+    assert result["status"] == "success" and page.went_back is True
+
+
+# --- get_images / evaluate --------------------------------------------------------
+
+
+async def test_get_images_lists_them() -> None:
+    imgs = [{"src": "https://x/a.png", "alt": "A"}, {"src": "https://x/b.png", "alt": ""}]
+    page = _FakePage(eval_result=imgs)
+    get_images = browser.make_browser_get_images(_manager_with(page))
+
+    result = await get_images(tool_context=_FakeToolContext())
+
+    assert result["status"] == "success" and result["count"] == 2 and result["images"] == imgs
+
+
+async def test_evaluate_returns_result() -> None:
+    page = _FakePage(eval_result="Example Domain")
+    evaluate = browser.make_browser_evaluate(_manager_with(page))
+
+    result = await evaluate("document.title", tool_context=_FakeToolContext())
+
+    assert result["status"] == "success" and result["result"] == "Example Domain"
+
+
+# --- console / dialog -------------------------------------------------------------
+
+
+async def test_console_returns_and_clears_buffer() -> None:
+    from types import SimpleNamespace
+
+    page = _FakePage()
+    manager = _manager_with(page)
+    await manager.get("tester")  # creates the session + wires the console listener
+    page.emit("console", SimpleNamespace(type="error", text="boom"))
+    page.emit("pageerror", "ReferenceError: x")
+
+    console = browser.make_browser_console(manager)
+    result = await console(tool_context=_FakeToolContext())
+
+    assert result["status"] == "success" and result["count"] == 2
+    assert "[error] boom" in result["messages"]
+    assert "[pageerror] ReferenceError: x" in result["messages"]
+    # buffer cleared
+    assert (await console(tool_context=_FakeToolContext()))["count"] == 0
+
+
+async def test_dialog_arms_one_shot_handler() -> None:
+    page = _FakePage()
+    manager = _manager_with(page)
+    await manager.get("tester")
+    dialog = browser.make_browser_dialog(manager)
+
+    result = await dialog(action="accept", tool_context=_FakeToolContext())
+
+    assert result["status"] == "success" and result["armed"] == "accept"
+    assert page.handlers.get("dialog")  # a handler is registered for the next dialog
+
+
+# --- engine launcher --------------------------------------------------------------
+
+
+def test_make_launcher_chromium() -> None:
+    from types import SimpleNamespace
+
+    from gaia.tools.browser.base import make_launcher
+
+    assert callable(make_launcher(SimpleNamespace(engine="chromium", viewport="1280x800")))
+    # an unknown engine also falls back to chromium
+    assert callable(make_launcher(SimpleNamespace(engine="other", viewport="")))
+
+
+def test_make_launcher_camoufox_builds_a_distinct_launcher() -> None:
+    from types import SimpleNamespace
+
+    chromium = browser.make_launcher(SimpleNamespace(engine="chromium", viewport=""))
+    camoufox = browser.make_launcher(
+        SimpleNamespace(engine="camoufox", headless=True, humanize=True, viewport="412x915")
+    )
+    assert callable(camoufox) and camoufox is not chromium
+
+
+# --- recovery: a crashed browser self-heals -------------------------------------
+
+
+async def test_dead_browser_session_is_relaunched() -> None:
+    # Camoufox/Chromium can die mid-session; the next get() must relaunch, not reuse the dead page.
+    launched: list[_FakePage] = []
+
+    async def launcher() -> tuple[Any, Any]:
+        page = _FakePage()
+        launched.append(page)
+
+        async def close() -> None:
+            page.closed = True  # type: ignore[attr-defined]
+
+        return page, close
+
+    manager = BrowserSessionManager(launcher)
+    s1 = await manager.get("a")  # launch #1
+    s1.page.alive = False  # the browser crashes (its driver connection dies)
+
+    s2 = await manager.get("a")  # liveness probe fails → drop + relaunch
+
+    assert len(launched) == 2  # a fresh browser was launched
+    assert s2.page is not s1.page  # not the dead one
+    assert s1.page.closed is True  # the dead session was closed
+
+
+async def test_close_survives_a_dead_browser() -> None:
+    # Closing a crashed browser must not raise out of the manager.
+    async def launcher() -> tuple[Any, Any]:
+        page = _FakePage()
+
+        async def close() -> None:
+            raise RuntimeError("Connection closed while reading from the driver")
+
+        return page, close
+
+    manager = BrowserSessionManager(launcher)
+    await manager.get("a")
+    await manager.close("a")  # must not raise
+    assert manager._sessions == {}
+
+
+async def test_action_can_skip_snapshot() -> None:
+    # snapshot=False lets the model save tokens when it doesn't need the page back.
+    page = _FakePage()
+    manager = _manager_with(page)
+    await browser.make_browser_snapshot(manager)(tool_context=_FakeToolContext())
+
+    result = await browser.make_browser_click(manager)(
+        "e2", snapshot=False, tool_context=_FakeToolContext()
+    )
+
+    assert result["status"] == "success" and "snapshot" not in result
+
+
+# --- viewport (phone-portrait default) --------------------------------------------
+
+
+def test_parse_viewport() -> None:
+    from types import SimpleNamespace
+
+    from gaia.tools.browser.base import _parse_viewport
+
+    assert _parse_viewport(SimpleNamespace(viewport="412x915")) == (412, 915)
+    assert _parse_viewport(SimpleNamespace(viewport="1280x800")) == (1280, 800)
+    assert _parse_viewport(SimpleNamespace(viewport="")) is None  # unset = engine default
+    assert _parse_viewport(SimpleNamespace(viewport="garbage")) is None
+
+
+def test_default_viewport_is_portrait() -> None:
+    from gaia.config.schema import BrowserConfig
+    from gaia.tools.browser.base import _camoufox_opts, _parse_viewport
+
+    cfg = BrowserConfig()  # default
+    w, h = _parse_viewport(cfg)  # type: ignore[misc]
+    assert w < h  # portrait, so chat previews don't crop it
+    assert _camoufox_opts(cfg)["window"] == (w, h)  # camoufox gets a consistent window

@@ -1,0 +1,38 @@
+"""The ``browser_press`` tool: press a keyboard key on the current page."""
+
+from __future__ import annotations
+
+from collections.abc import Awaitable, Callable
+from typing import Any
+
+from google.adk.tools.tool_context import ToolContext
+
+from gaia.tools.browser.base import BrowserSessionManager, err, ok_with_snapshot
+
+NAME = "browser_press"
+
+
+def make_browser_press(manager: BrowserSessionManager) -> Callable[..., Awaitable[dict[str, Any]]]:
+    """Return the ADK ``browser_press`` tool bound to ``manager``."""
+
+    async def browser_press(
+        key: str, snapshot: bool = True, *, tool_context: ToolContext
+    ) -> dict[str, Any]:
+        """Press a keyboard key on the current page (submit a form, navigate a list, etc.).
+
+        Args:
+            key: a Playwright key name, e.g. 'Enter', 'Tab', 'Escape', 'ArrowDown', 'PageDown'.
+            snapshot: also return the updated page snapshot (default true); pass false to
+                save tokens when you don't need the page back yet.
+        """
+        agent = tool_context.agent_name
+
+        try:
+            session = await manager.get(agent)
+            await session.page.keyboard.press(key.strip())
+        except Exception as exc:
+            return err(f"press failed: {exc}")
+
+        return await ok_with_snapshot(session, snapshot=snapshot)
+
+    return browser_press

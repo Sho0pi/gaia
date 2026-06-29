@@ -20,6 +20,7 @@ import atexit
 import re
 import time
 from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -34,6 +35,9 @@ _REF_RE = re.compile(r"\[ref=(e\d+)\]")
 
 #: Close a session after this many seconds without use.
 IDLE_TIMEOUT_SECONDS = 600.0
+
+#: Keep at most this many recent console/pageerror lines per session (browser_console reads them).
+CONSOLE_CAP = 200
 
 #: A launcher opens a fresh page and returns it with a coroutine that tears it down.
 Launcher = Callable[[], Awaitable[tuple[Any, Callable[[], Awaitable[None]]]]]
@@ -51,10 +55,18 @@ class BrowserSession:
     close: Callable[[], Awaitable[None]]
     #: ref ids (``e1``, ``e2``, …) from the last snapshot; how click/type target.
     refs: set[str] = field(default_factory=set)
+    #: Recent console messages + uncaught JS errors (capped); browser_console reads + clears them.
+    console: list[str] = field(default_factory=list)
     last_used: float = field(default_factory=time.monotonic)
 
     def touch(self) -> None:
         self.last_used = time.monotonic()
+
+    def record_console(self, line: str) -> None:
+        """Append a console/pageerror line, dropping the oldest past :data:`CONSOLE_CAP`."""
+        self.console.append(line)
+        if len(self.console) > CONSOLE_CAP:
+            del self.console[:-CONSOLE_CAP]
 
 
 async def _playwright_launcher() -> tuple[Any, Callable[[], Awaitable[None]]]:
@@ -77,6 +89,117 @@ async def _playwright_launcher() -> tuple[Any, Callable[[], Awaitable[None]]]:
         await pw.stop()
 
     return page, close
+
+
+async def _is_alive(session: BrowserSession) -> bool:
+    """Cheap liveness probe: a dead browser/driver raises on any op, telling us to relaunch."""
+    try:
+        await session.page.evaluate("1")
+    except Exception:
+        return False
+    return True
+
+
+async def settle_page(page: Any) -> None:
+    """Best-effort wait for a page to finish rendering before we read/screenshot it.
+
+    ``page.goto`` resolves on 'load', but heavy SPAs (booking, google flights) paint their content
+    via JS *after* that — capturing immediately gives a blank/half-rendered shot. Wait for the
+    network to go idle (bounded: many sites poll forever, so cap it), then a short settle for paint.
+    """
+    try:
+        await page.wait_for_load_state("networkidle", timeout=8000)
+    except Exception:
+        pass  # never went idle within the cap — screenshot whatever has painted
+    await asyncio.sleep(0.5)
+
+
+def _parse_viewport(browser_cfg: Any) -> tuple[int, int] | None:
+    """Parse ``browser.viewport`` ('WxH') to ``(w, h)``; ``None`` if unset/malformed."""
+    raw = str(getattr(browser_cfg, "viewport", "") or "").lower()
+    try:
+        w, h = raw.split("x")
+        return int(w), int(h)
+    except ValueError:
+        return None
+
+
+def _chromium_launcher(viewport: tuple[int, int] | None) -> Launcher:
+    """A chromium launcher bound to ``viewport`` (None = the engine default)."""
+
+    async def launch() -> tuple[Any, Callable[[], Awaitable[None]]]:
+        from playwright.async_api import async_playwright
+
+        pw = await async_playwright().start()
+        browser = await pw.chromium.launch(headless=True)
+        if viewport:
+            context = await browser.new_context(
+                viewport={"width": viewport[0], "height": viewport[1]}
+            )
+        else:
+            context = await browser.new_context()
+        page = await context.new_page()
+
+        async def close() -> None:
+            await context.close()
+            await browser.close()
+            await pw.stop()
+
+        return page, close
+
+    return launch
+
+
+def _camoufox_opts(browser_cfg: Any) -> dict[str, Any]:
+    """Build AsyncCamoufox kwargs from BrowserConfig (omitting unset ones → Camoufox defaults)."""
+    opts: dict[str, Any] = {
+        "headless": getattr(browser_cfg, "headless", True),
+        "humanize": getattr(browser_cfg, "humanize", True),  # human-like cursor (stealth)
+    }
+    if viewport := _parse_viewport(browser_cfg):
+        opts["window"] = viewport  # outer window size → also drives a consistent fingerprint
+    if geoip := getattr(browser_cfg, "geoip", False):
+        opts["geoip"] = geoip
+    if locale := getattr(browser_cfg, "locale", ""):
+        opts["locale"] = locale
+    if os_ := getattr(browser_cfg, "os", ""):
+        opts["os"] = os_
+    if getattr(browser_cfg, "block_images", False):
+        opts["block_images"] = True
+    return opts
+
+
+def make_launcher(browser_cfg: Any) -> Launcher:
+    """Pick the native launcher for ``browser_cfg.engine``: Camoufox (default) or chromium.
+
+    Camoufox is a drop-in Playwright firefox (anti-detect); it slots into the same seam so every
+    browser tool is engine-agnostic. ``camoufox`` is imported lazily (optional dep).
+    """
+    viewport = _parse_viewport(browser_cfg)
+    if getattr(browser_cfg, "engine", "camoufox") != "camoufox":
+        return _chromium_launcher(viewport)
+    opts = _camoufox_opts(browser_cfg)
+
+    async def launch() -> tuple[Any, Callable[[], Awaitable[None]]]:
+        from camoufox.async_api import AsyncCamoufox
+
+        cam = AsyncCamoufox(**opts)  # type: ignore[no-untyped-call]  # camoufox ships no stubs
+        # camoufox patches new_page to accept a viewport (Playwright's BrowserContext stub doesn't);
+        # type as Any so mypy doesn't check against the stock signature.
+        browser: Any = await cam.__aenter__()
+        if viewport:
+            # `window` (in opts) sizes the OS window for the fingerprint; the viewport sizes the
+            # actual render area, so the screenshot comes out at the configured WxH.
+            page = await browser.new_page(viewport={"width": viewport[0], "height": viewport[1]})
+        else:
+            page = await browser.new_page()
+
+        async def close() -> None:
+            await cam.__aexit__(None, None, None)
+
+        return page, close
+
+    return launch
 
 
 class BrowserSessionManager:
@@ -112,22 +235,35 @@ class BrowserSessionManager:
             pass
 
     async def get(self, agent: str) -> BrowserSession:
-        """Return ``agent``'s session, opening one on first use. Sweeps idle sessions."""
+        """Return ``agent``'s session, opening one on first use. Sweeps idle sessions.
+
+        A cached session whose browser has died (a crash, an OOM, a dropped driver connection —
+        Camoufox/Chromium do this on heavy pages) is dropped and relaunched, so the browser
+        self-heals on the next call instead of every later call failing "Connection closed".
+        """
         await self._sweep_idle()
         session = self._sessions.get(agent)
+        if session is not None and not await _is_alive(session):
+            await self.close(agent)
+            session = None
         if session is None:
             self._register_cleanup_once()
             page, close = await self._launcher()
             session = BrowserSession(page=page, close=close)
+            # Buffer console output + uncaught JS errors so browser_console can report them.
+            page.on("console", lambda m: session.record_console(f"[{m.type}] {m.text}"))
+            page.on("pageerror", lambda e: session.record_console(f"[pageerror] {e}"))
             self._sessions[agent] = session
         session.touch()
         return session
 
     async def close(self, agent: str) -> None:
-        """Close and forget ``agent``'s session (no-op if none open)."""
+        """Close and forget ``agent``'s session (no-op if none open). Best-effort — closing a
+        crashed browser may itself raise, but the session is dropped regardless."""
         session = self._sessions.pop(agent, None)
         if session is not None:
-            await session.close()
+            with suppress(Exception):
+                await session.close()
 
     async def close_all(self) -> None:
         """Close every open session; called on process exit."""
@@ -178,3 +314,30 @@ def truncate(text: str, cap: int = SNAPSHOT_CHAR_CAP) -> tuple[str, bool]:
     if len(text) <= cap:
         return text, False
     return text[:cap], True
+
+
+async def snapshot_session(session: BrowserSession) -> dict[str, Any]:
+    """Fresh aria snapshot of the session's page; refresh its refs; return the result fields."""
+    text = await aria_snapshot(session.page)
+    session.refs = parse_refs(text)
+    snapshot, truncated = truncate(text)
+    return {"snapshot": snapshot, "truncated": truncated, "url": str(session.page.url)}
+
+
+async def ok_with_snapshot(
+    session: BrowserSession, *, snapshot: bool = True, **extra: Any
+) -> dict[str, Any]:
+    """A success result that, by default, also carries the post-action snapshot (#90).
+
+    The model almost always wants the page after an action (refs are reassigned), so folding the
+    snapshot in saves a whole ``browser_snapshot`` turn. But it's token-heavy, so the model can pass
+    ``snapshot=False`` to skip it when it doesn't need the page yet. Best-effort: if the snapshot
+    can't be taken (page mid-navigation) the action still reports success.
+    """
+    result: dict[str, Any] = {"status": "success", **extra}
+    if snapshot:
+        try:
+            result.update(await snapshot_session(session))
+        except Exception:  # pragma: no cover - the action succeeded; the snapshot is a bonus
+            pass
+    return result

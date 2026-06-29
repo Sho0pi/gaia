@@ -240,3 +240,45 @@ def test_httpx_fetcher_sends_user_agent(monkeypatch: pytest.MonkeyPatch) -> None
     ua = captured["headers"].get("User-Agent", "")
     assert ua.startswith("gaia/")
     assert "Accept" in captured["headers"]
+
+
+# --- format param (#88) ------------------------------------------------------------
+
+_STRUCTURED = """
+<html><body>
+<h1>Shop</h1>
+<a href="/cart">Cart</a>
+<h2>Deals</h2>
+<a href="https://x.test/p/1">Widget</a>
+<a>no href</a>
+</body></html>
+"""
+
+
+def test_format_snapshot_returns_heading_link_outline() -> None:
+    out = make_web_fetch(_FakeFetcher(_STRUCTURED))("https://example.com", format="snapshot")
+    assert out["status"] == "success" and out["format"] == "snapshot"
+    snap = out["snapshot"]
+    assert "# Shop" in snap and "## Deals" in snap
+    assert '- "Cart" -> /cart' in snap
+    assert '- "Widget" -> https://x.test/p/1' in snap
+    assert '- "no href"' in snap  # link without href still listed, no arrow
+
+
+def test_format_snapshot_errors_when_no_structure() -> None:
+    # An empty page (no headings/links) → snapshot has nothing to show, errors cleanly.
+    out = make_web_fetch(_FakeFetcher("<html><body></body></html>"))(
+        "https://example.com", format="snapshot"
+    )
+    assert out["status"] == "error"
+
+
+def test_format_html_returns_raw_html() -> None:
+    out = make_web_fetch(_FakeFetcher(_STRUCTURED))("https://example.com", format="html")
+    assert out["status"] == "success" and out["format"] == "html"
+    assert "<h1>Shop</h1>" in out["html"] and out["truncated"] is False
+
+
+def test_format_defaults_to_markdown() -> None:
+    out = make_web_fetch(_FakeFetcher(_ARTICLE))("https://example.com")
+    assert out["status"] == "success" and out["format"] == "markdown" and "markdown" in out

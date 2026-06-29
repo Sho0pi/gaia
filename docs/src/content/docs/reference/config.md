@@ -79,9 +79,9 @@ mcp:
   # MCP servers to attach. Empty = no MCP (needs the 'mcp' dep group when set).
   servers: []
 browser:
-  # Browser backend: 'mcp' (Microsoft playwright-mcp via bunx, default) or 'native' (gaia's built-in browser_* Playwright tools). 'mcp' falls back to 'native' when the runtime isn't on PATH.
-  backend: mcp
-  # Executable that runs playwright-mcp (mcp backend). Default 'bunx' (bun). Must be on PATH or the backend falls back to native.
+  # Browser backend: 'native' (default — gaia's built-in browser_* tools driving the Camoufox engine) or 'mcp' (opt-in Microsoft playwright-mcp via bunx; needs bun on PATH and falls back to 'native' when the runtime is missing).
+  backend: native
+  # Executable that runs playwright-mcp (mcp backend only). Default 'bunx' (bun). Must be on PATH or the backend falls back to native.
   runtime: bunx
   # The playwright-mcp package spec passed to the runtime.
   package: "@playwright/mcp@latest"
@@ -95,6 +95,20 @@ browser:
   allowed_origins: []
   # mcp backend: only load these playwright-mcp tool names; empty = all (~25-60). Trim to keep the model's tool list lean.
   tool_filter: []
+  # native backend: which browser engine to drive. 'camoufox' (default) is an anti-detect Firefox that beats many bot walls (needs its Firefox build, fetched by `gaia update` / `python -m camoufox fetch`); 'chromium' is the plain Playwright build.
+  engine: camoufox
+  # camoufox engine: human-like cursor movement (anti-detection).
+  humanize: true
+  # camoufox engine: locale, e.g. 'en-US' (empty = Camoufox default).
+  locale: ""
+  # camoufox engine: OS to spoof in the fingerprint (empty = random).
+  os: ""
+  # camoufox engine: match geolocation/timezone to the (proxy) IP.
+  geoip: false
+  # camoufox engine: skip downloading images (faster, less data).
+  block_images: false
+  # native backend: browser viewport as 'WxH'. Default 1280x1600 — a desktop width (Firefox can't emulate mobile, so a narrow viewport renders desktop CSS squished) at a 4:5 portrait so screenshots fit a chat preview without cropping. Empty = engine default.
+  viewport: 1280x1600
 cron:
   # Run the cron scheduler inside the daemon (gaia serve/start).
   enabled: true
