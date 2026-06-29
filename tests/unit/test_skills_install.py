@@ -38,6 +38,18 @@ def test_install_folder_of_skills(tmp_path: Path) -> None:
     assert sorted(install_skill(skills, str(pack))) == ["alpha", "beta"]
 
 
+def test_install_claude_plugin_layout(tmp_path: Path) -> None:
+    # A skills-pack repo nests them under .claude/skills/<name>/SKILL.md, not at the root.
+    repo = tmp_path / "repo"
+    (repo / "README.md").parent.mkdir(parents=True)
+    (repo / "README.md").write_text("# a repo")
+    _skill_folder(repo / ".claude" / "skills", "ui-ux-pro-max")
+    _skill_folder(repo / ".claude" / "skills", "banner-design")
+    skills = tmp_path / "skills"
+    assert sorted(install_skill(skills, str(repo))) == ["banner-design", "ui-ux-pro-max"]
+    assert (skills / "ui-ux-pro-max" / "SKILL.md").is_file()
+
+
 def test_install_rename_single(tmp_path: Path) -> None:
     src = _skill_folder(tmp_path / "src", "summarize")
     skills = tmp_path / "skills"
