@@ -139,6 +139,16 @@ def _manager_with(page: _FakePage) -> BrowserSessionManager:
     return BrowserSessionManager(launcher)
 
 
+@pytest.fixture(autouse=True)
+def _instant_settle(monkeypatch: pytest.MonkeyPatch) -> None:
+    # settle_page polls the real page for content; no-op it so the fake-page screenshot tests don't
+    # spin for the timeout. Its own behavior is covered by the test_settle_page_* tests directly.
+    async def _noop(_page: Any) -> None:
+        return None
+
+    monkeypatch.setattr("gaia.tools.browser.screenshot.settle_page", _noop)
+
+
 # --- pure helpers -----------------------------------------------------------------
 
 
@@ -531,3 +541,21 @@ def test_default_viewport_is_portrait() -> None:
     w, h = _parse_viewport(cfg)  # type: ignore[misc]
     assert w < h  # portrait, so chat previews don't crop it
     assert _camoufox_opts(cfg)["window"] == (w, h)  # camoufox gets a consistent window
+
+
+# --- settle_page (content-readiness wait) -----------------------------------------
+
+
+async def test_settle_page_returns_fast_when_content_present() -> None:
+    from gaia.tools.browser.base import settle_page
+
+    page = _FakePage(eval_result=True)  # body reports content immediately
+    await settle_page(page)  # returns promptly, no spinning
+
+
+async def test_settle_page_caps_when_never_ready(monkeypatch: pytest.MonkeyPatch) -> None:
+    import gaia.tools.browser.base as base
+
+    monkeypatch.setattr(base, "SETTLE_TIMEOUT_SECONDS", 0.3)  # keep the test quick
+    page = _FakePage(eval_result=False)  # never reports content
+    await base.settle_page(page)  # returns after the cap instead of hanging
