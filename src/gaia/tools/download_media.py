@@ -154,17 +154,38 @@ async def _resolve_via_downloader(url: str, workspace: Path, browser_cfg: Any) -
 
 
 def _fetch_file(media_url: str, workspace: Path) -> Path:
-    """Download ``media_url`` (a CDN mp4) into ``workspace`` with a browser-like Referer."""
-    import urllib.request
+    """Download ``media_url`` (a CDN mp4) into ``workspace`` with a browser-like Referer.
 
-    req = urllib.request.Request(
-        media_url,
-        headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.instagram.com/"},
-    )
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        data = resp.read(_MAX_BYTES + 1)
-    if len(data) > _MAX_BYTES:
-        raise ValueError("media is over the 100MB cap")
+    Redirects are followed manually (``follow_redirects=False``) so the SSRF guard
+    (``validate_url``) runs on **every** hop — a CDN 302 to an internal address can't slip
+    through, the same protection ``web_fetch`` maintains."""
+    import httpx
+
+    from gaia.tools.web_fetch import MAX_REDIRECTS, _resolve_location, validate_url
+
+    headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://www.instagram.com/"}
+    current = media_url
+    data = b""
+    with httpx.Client(follow_redirects=False, timeout=60.0, headers=headers) as client:
+        for _ in range(MAX_REDIRECTS + 1):
+            error = validate_url(current)  # re-check each hop, not just the first
+            if error is not None:
+                raise ValueError(f"blocked media URL: {error}")
+            with client.stream("GET", current) as resp:
+                if resp.status_code in (301, 302, 303, 307, 308):
+                    location = resp.headers.get("location")
+                    if not location:
+                        raise ValueError("redirect without a location")
+                    current = _resolve_location(current, location)
+                    continue
+                resp.raise_for_status()
+                for chunk in resp.iter_bytes():
+                    data += chunk
+                    if len(data) > _MAX_BYTES:
+                        raise ValueError("media is over the 100MB cap")
+                break
+        else:
+            raise ValueError("too many redirects")
     if len(data) < 1024:
         raise ValueError("resolved media was empty")
     target = workspace / f"video-{int(time.time() * 1000)}.mp4"
