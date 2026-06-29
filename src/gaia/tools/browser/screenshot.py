@@ -10,7 +10,13 @@ from typing import Any
 from google.adk.tools.tool_context import ToolContext
 
 from gaia import constants
-from gaia.tools.browser.base import BrowserError, BrowserSessionManager, err, resolve_locator
+from gaia.tools.browser.base import (
+    BrowserError,
+    BrowserSessionManager,
+    err,
+    resolve_locator,
+    settle_page,
+)
 from gaia.tools.fs.base import sandbox_for
 
 NAME = "browser_screenshot"
@@ -48,6 +54,7 @@ def make_browser_screenshot(
                 locator = resolve_locator(session, ref.strip())
                 await locator.screenshot(path=str(target))
             else:
+                await settle_page(session.page)  # let heavy SPAs finish painting (no blank shot)
                 await session.page.screenshot(path=str(target), full_page=full_page)
             url = str(session.page.url)
         except BrowserError as exc:

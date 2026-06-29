@@ -523,7 +523,7 @@ def test_parse_viewport() -> None:
     assert _parse_viewport(SimpleNamespace(viewport="garbage")) is None
 
 
-def test_default_viewport_is_phone_portrait() -> None:
+def test_default_viewport_is_portrait() -> None:
     from gaia.config.schema import BrowserConfig
     from gaia.tools.browser.base import _camoufox_opts, _parse_viewport
 

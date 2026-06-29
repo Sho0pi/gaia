@@ -39,10 +39,6 @@ IDLE_TIMEOUT_SECONDS = 600.0
 #: Keep at most this many recent console/pageerror lines per session (browser_console reads them).
 CONSOLE_CAP = 200
 
-#: Render screenshots at 2x device pixels (retina) so text is crisp, not a blurry downscale — the
-#: lesson from hermes-agent's browser (low-DPI viewport shots read as "corrupted/low-resolution").
-DEVICE_SCALE = 2
-
 #: A launcher opens a fresh page and returns it with a coroutine that tears it down.
 Launcher = Callable[[], Awaitable[tuple[Any, Callable[[], Awaitable[None]]]]]
 
@@ -104,6 +100,20 @@ async def _is_alive(session: BrowserSession) -> bool:
     return True
 
 
+async def settle_page(page: Any) -> None:
+    """Best-effort wait for a page to finish rendering before we read/screenshot it.
+
+    ``page.goto`` resolves on 'load', but heavy SPAs (booking, google flights) paint their content
+    via JS *after* that — capturing immediately gives a blank/half-rendered shot. Wait for the
+    network to go idle (bounded: many sites poll forever, so cap it), then a short settle for paint.
+    """
+    try:
+        await page.wait_for_load_state("networkidle", timeout=8000)
+    except Exception:
+        pass  # never went idle within the cap — screenshot whatever has painted
+    await asyncio.sleep(0.5)
+
+
 def _parse_viewport(browser_cfg: Any) -> tuple[int, int] | None:
     """Parse ``browser.viewport`` ('WxH') to ``(w, h)``; ``None`` if unset/malformed."""
     raw = str(getattr(browser_cfg, "viewport", "") or "").lower()
@@ -124,8 +134,7 @@ def _chromium_launcher(viewport: tuple[int, int] | None) -> Launcher:
         browser = await pw.chromium.launch(headless=True)
         if viewport:
             context = await browser.new_context(
-                viewport={"width": viewport[0], "height": viewport[1]},
-                device_scale_factor=DEVICE_SCALE,
+                viewport={"width": viewport[0], "height": viewport[1]}
             )
         else:
             context = await browser.new_context()
@@ -175,16 +184,13 @@ def make_launcher(browser_cfg: Any) -> Launcher:
         from camoufox.async_api import AsyncCamoufox
 
         cam = AsyncCamoufox(**opts)  # type: ignore[no-untyped-call]  # camoufox ships no stubs
-        # camoufox patches new_page to accept viewport/device_scale_factor (Playwright's stub
-        # doesn't); type as Any so mypy doesn't check against the stock BrowserContext signature.
+        # camoufox patches new_page to accept a viewport (Playwright's BrowserContext stub doesn't);
+        # type as Any so mypy doesn't check against the stock signature.
         browser: Any = await cam.__aenter__()
         if viewport:
             # `window` (in opts) sizes the OS window for the fingerprint; the viewport sizes the
-            # actual render area + device_scale_factor renders at 2x so the screenshot is crisp.
-            page = await browser.new_page(
-                viewport={"width": viewport[0], "height": viewport[1]},
-                device_scale_factor=DEVICE_SCALE,
-            )
+            # actual render area, so the screenshot comes out at the configured WxH.
+            page = await browser.new_page(viewport={"width": viewport[0], "height": viewport[1]})
         else:
             page = await browser.new_page()
 
