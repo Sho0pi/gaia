@@ -8,7 +8,11 @@ caller who holds it. Reuses the same ``skills.py`` primitives as the ``gaia skil
 
 from __future__ import annotations
 
+import logging
+
 from gaia.commands.base import Command, CommandContext
+
+logger = logging.getLogger(__name__)
 
 
 class SkillCommand(Command):
@@ -43,10 +47,12 @@ def _refresh_toolset(ctx: CommandContext) -> None:
     The skills toolset is a build-once singleton that snapshots the skills at startup, so a
     freshly installed/removed skill is invisible to running agents until it's rebuilt. Resetting
     the provider makes the next agent build (a ``/reset``, or the next soul delegation) re-scan."""
-    import contextlib
-
-    with contextlib.suppress(Exception):  # best-effort; a refresh hiccup must not fail the command
+    try:
         ctx.gaia.container.skill_toolsets.reset()
+    except Exception:
+        # Best-effort (never fail the command), but log it — a broken reset otherwise hides behind
+        # the "Run /reset" message and looks like a deliberate manual step.
+        logger.warning("could not refresh the skills toolset after a skill change", exc_info=True)
 
 
 def _list(skills_dir: object) -> str:
