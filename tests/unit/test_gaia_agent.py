@@ -53,6 +53,22 @@ def test_root_agent_attaches_all_registered_tools(
     assert expected <= names
 
 
+def _root_tool_names(gaia: Gaia, monkeypatch: pytest.MonkeyPatch) -> set[object]:
+    tools = _capture_root_kwargs(gaia, monkeypatch)["tools"]
+    return {getattr(t, "__name__", None) or getattr(t, "name", t) for t in tools}  # type: ignore[union-attr]
+
+
+def test_save_skill_on_by_default_and_gated_by_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert "save_skill" in _root_tool_names(_gaia(tmp_path), monkeypatch)  # default on
+
+    off = tmp_path / "off.yaml"
+    off.write_text("tools:\n  save_skill:\n    enabled: false\n")
+    gaia = Gaia(Settings(agent_registry_dir=tmp_path / "reg2", config_path=off))
+    assert "save_skill" not in _root_tool_names(gaia, monkeypatch)
+
+
 def test_profile_is_baked_into_the_instruction(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -176,3 +192,15 @@ def test_brevity_guidance_in_the_instruction(
 
     assert "## Keep replies short" in instruction
     assert "be brief" in instruction
+
+
+def test_download_and_save_skill_guidance_in_the_instruction(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gaia = _gaia(tmp_path)
+    captured = _capture_root_kwargs(gaia, monkeypatch)
+    instruction = captured["instruction"]
+    assert isinstance(instruction, str)
+
+    assert "## Downloading media" in instruction and "download_media" in instruction
+    assert "## Saving what works" in instruction and "save_skill" in instruction

@@ -22,6 +22,8 @@ from gaia.tools.ask_user import NAME as ASK_USER
 from gaia.tools.ask_user import make_ask_user
 from gaia.tools.cron import NAME as CRON
 from gaia.tools.cron import make_cron
+from gaia.tools.download_media import NAME as DOWNLOAD_MEDIA
+from gaia.tools.download_media import make_download_media
 from gaia.tools.remember import NAME as REMEMBER
 from gaia.tools.remember import make_remember
 from gaia.tools.set_communication_style import NAME as SET_STYLE
@@ -318,6 +320,13 @@ def default_registry(
 
     if _is_enabled(config, WEB_FETCH):
         registry.register(WEB_FETCH, make_web_fetch(httpx_fetcher))
+
+    # download_media (yt-dlp) is opt-in via the 'media' extra — only attach it when yt_dlp is
+    # importable, so a default install just doesn't see the tool (the prompt tells the user to
+    # `pip install 'gaia[media]'` when they want it).
+    if importlib.util.find_spec("yt_dlp") is not None and _is_enabled(config, DOWNLOAD_MEDIA):
+        browser_cfg = config.browser if config is not None else None
+        registry.register(DOWNLOAD_MEDIA, make_download_media(browser_cfg))
 
     if _is_enabled(config, CRON):
         registry.register(CRON, make_cron())

@@ -51,13 +51,15 @@ GROUPS: dict[str, frozenset[str]] = {
     "tasks": frozenset({"task_create", "task_list", "task_get", "task_update", "task_complete"}),
     "serve": frozenset({"serve", "serve_stop", "serve_list"}),
     "images": frozenset({"generate_image"}),
+    "media": frozenset({"download_media"}),  # download a video/audio from a link
     "cron": frozenset({"cron"}),
     "ask": frozenset({"ask_user"}),  # pause the run to ask the human (a choice / a credential)
     "core": frozenset({"capabilities"}),  # read-only: which commands/workspace/serve rules apply
     # admin right: the user-management commands + the set_communication_style tool (changing
     # Gaia's global voice is an admin action, so only admins' agents get that tool).
     MANAGE_USERS: frozenset({"set_communication_style"}),
-    "skills": frozenset(),  # command right: install/manage skills (the /skill command)
+    # install/manage skills: the /skill command + the save_skill tool ("learn & grow").
+    "skills": frozenset({"save_skill"}),
 }
 
 #: Tool-name prefix -> the capability that governs every tool with that prefix. Lets a
@@ -70,6 +72,17 @@ GROUP_PREFIXES: dict[str, str] = {"browser_": "browser"}
 #: dropped at dispatch anyway; this keeps them tool-less if that ever changes.
 DEFAULT_ROLE_CAPS: dict[Role, list[str]] = {
     "guest": [],
-    "user": ["web", "memory", "browser", "tasks", "serve", "skills", "ask", "core", "images"],
+    "user": [
+        "web",
+        "memory",
+        "browser",
+        "tasks",
+        "serve",
+        "skills",
+        "ask",
+        "core",
+        "images",
+        "media",
+    ],
     "admin": [ALL],
 }

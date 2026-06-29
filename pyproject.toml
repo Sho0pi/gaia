@@ -86,6 +86,12 @@ browser = [
 mcp = [
     "mcp>=1.28.0",
 ]
+# Media download: yt-dlp powers the `download_media` tool (Instagram reels, TikTok, YouTube, …).
+# In `all` (pure-python, lazy-imported); the tool only registers when this is installed, so a
+# minimal install can still drop it by skipping this extra.
+media = [
+    "yt-dlp>=2025.1.15",
+]
 # Inbound voice messages: local speech-to-text via faster-whisper (CTranslate2
 # Whisper, CPU int8 — Pi-viable). Decodes WhatsApp's ogg/opus through its bundled
 # PyAV, so no ffmpeg binary is needed. Model weights download from Hugging Face on
@@ -94,7 +100,7 @@ voice = [
     "faster-whisper>=1.2.1",
 ]
 # Everything — what the installer pulls (`gaia[all]`) so every feature works out of the box.
-all = ["gaia[tools,memory,llm,browser,mcp,voice]"]
+all = ["gaia[tools,memory,llm,browser,mcp,voice,media]"]
 
 [dependency-groups]
 dev = [
@@ -156,6 +162,7 @@ module = [
     "faster_whisper.*",
     "dependency_injector.*",
     "camoufox.*",
+    "yt_dlp.*",
 ]
 ignore_missing_imports = true
 
