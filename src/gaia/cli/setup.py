@@ -483,7 +483,9 @@ def browser(ctx: typer.Context, backend: BackendOpt = None, headless: HeadlessOp
 
     hl = headless
     if hl is None and backend is None:  # interactive run: ask (default = the current value)
-        hl = typer.confirm("Run the browser headless (no visible window)?", default=live.headless)
+        hl = typer.confirm(
+            "Run the browser headless (no visible window)?", default=bool(live.headless)
+        )
     if hl is not None:
         set_config_value(cfg, "browser.headless", hl)
     out.print(

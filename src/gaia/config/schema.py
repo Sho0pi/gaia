@@ -150,7 +150,12 @@ class BrowserConfig(BaseModel):
         default="@playwright/mcp@latest",
         description="The playwright-mcp package spec passed to the runtime.",
     )
-    headless: bool = Field(default=True, description="mcp backend: run the browser headless.")
+    headless: bool | Literal["virtual"] = Field(
+        default=True,
+        description="Run the browser headless: true/false, or 'virtual' (camoufox engine, Linux + "
+        "Xvfb) to run a real browser on a virtual display — stronger anti-detection than headless; "
+        "falls back to headless if Xvfb/Linux is missing. `sudo apt install xvfb` to enable.",
+    )
     isolated: bool = Field(
         default=True,
         description="mcp backend: keep the browser profile in memory (no on-disk profile).",

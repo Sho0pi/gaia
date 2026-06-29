@@ -17,7 +17,10 @@ from __future__ import annotations
 
 import asyncio
 import atexit
+import logging
+import platform
 import re
+import shutil
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
@@ -25,6 +28,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from gaia.tools._helpers import err as err  # re-export for gaia.tools.browser.* importers
+
+logger = logging.getLogger(__name__)
 
 #: Snapshot text is capped before it goes to the model (deterministic token budget).
 SNAPSHOT_CHAR_CAP = 8000
@@ -164,10 +169,29 @@ def _chromium_launcher(viewport: tuple[int, int] | None) -> Launcher:
     return launch
 
 
+def _camoufox_headless(browser_cfg: Any) -> bool | str:
+    """Resolve ``browser.headless`` for Camoufox: ``'virtual'`` only when Linux + Xvfb are present.
+
+    ``headless='virtual'`` runs a real headed Firefox on an Xvfb display (stronger anti-detection
+    than headless). Linux-only and needs Xvfb installed; otherwise we warn once and fall back to
+    plain headless so nothing crashes.
+    """
+    headless = getattr(browser_cfg, "headless", True)
+    if headless == "virtual":
+        if platform.system() == "Linux" and shutil.which("Xvfb"):
+            return "virtual"
+        logger.warning(
+            "browser.headless='virtual' but Xvfb is unavailable (need Linux + `apt install xvfb`); "
+            "falling back to headless"
+        )
+        return True
+    return bool(headless)
+
+
 def _camoufox_opts(browser_cfg: Any) -> dict[str, Any]:
     """Build AsyncCamoufox kwargs from BrowserConfig (omitting unset ones → Camoufox defaults)."""
     opts: dict[str, Any] = {
-        "headless": getattr(browser_cfg, "headless", True),
+        "headless": _camoufox_headless(browser_cfg),
         "humanize": getattr(browser_cfg, "humanize", True),  # human-like cursor (stealth)
     }
     if viewport := _parse_viewport(browser_cfg):
