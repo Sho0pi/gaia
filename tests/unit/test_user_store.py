@@ -90,3 +90,22 @@ def test_write_is_atomic_json(tmp_path: Path) -> None:
     data = json.loads(path.read_text())
     assert data[0]["id"] == "op" and data[0]["role"] == "admin"
     assert not path.with_suffix(".json.tmp").exists()  # tmp cleaned up by rename
+
+
+def test_concurrent_registers_dont_lose_writes(tmp_path: Path) -> None:
+    # The store is a shared singleton hit from connector threads; without locking the
+    # read-modify-write, racing first-contact registers drop updates (last _write wins).
+    import threading
+
+    store = UserStore(tmp_path / "users.json")
+
+    def reg(i: int) -> None:
+        store.register("telegram", str(i), f"u{i}", "user")
+
+    threads = [threading.Thread(target=reg, args=(i,)) for i in range(20)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(store.list()) == 20  # every register persisted, none lost

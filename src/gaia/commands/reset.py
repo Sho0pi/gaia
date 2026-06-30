@@ -8,7 +8,6 @@ from gaia.commands.base import Command, CommandContext
 class ResetCommand(Command):
     name = "reset"
     aliases = ("clear", "new")
-    summary = "Start fresh: clear this conversation (keeps long-term memory)."
 
     async def run(self, ctx: CommandContext) -> str:
         # Consolidate the conversation into long-term memory first, then delete the durable

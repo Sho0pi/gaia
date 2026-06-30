@@ -7,7 +7,6 @@ from gaia.commands.base import Command, CommandContext
 
 class MemoryCommand(Command):
     name = "memory"
-    summary = "List what Gaia remembers about you long-term."
 
     async def run(self, ctx: CommandContext) -> str:
         service = ctx.gaia.memory_service

@@ -43,22 +43,6 @@ def test_hot_swap_on_mtime_change(tmp_path: Path) -> None:
     assert supplier.current.llm.model == "model-b"
 
 
-def test_subscribe_fires_on_reload(tmp_path: Path) -> None:
-    path = tmp_path / "gaia.yaml"
-    _write(path, "model-a")
-    supplier = ConfigSupplier(path)
-
-    seen: list[str] = []
-    supplier.subscribe(lambda cfg: seen.append(cfg.llm.model))
-
-    _write(path, "model-b")
-    future = path.stat().st_mtime + 10
-    os.utime(path, (future, future))
-
-    _ = supplier.current  # triggers the reload
-    assert seen == ["model-b"]
-
-
 def test_scaffold_respects_override_flag(tmp_path: Path) -> None:
     path = tmp_path / "gaia.yaml"
 

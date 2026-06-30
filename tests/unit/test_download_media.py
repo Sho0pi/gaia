@@ -83,3 +83,50 @@ async def test_blocks_ssrf_before_anything(monkeypatch: pytest.MonkeyPatch, tmp_
     res = await dm.make_download_media()("http://localhost/x", tool_context=_Ctx())
 
     assert res["status"] == "error" and not touched  # guarded before any work
+
+
+def test_fetch_file_blocks_redirect_to_internal(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The resolved CDN URL 302-redirects to a link-local address — must be re-validated and
+    # blocked, not blindly followed (SSRF).
+    import httpx
+
+    monkeypatch.setattr(
+        "gaia.tools.web_fetch._resolve_ips",
+        lambda host: ["93.184.216.34"] if host == "cdn.example.com" else [host],
+    )
+
+    class _Resp:
+        def __init__(self, status: int, headers: dict[str, str]) -> None:
+            self.status_code, self.headers = status, headers
+
+        def __enter__(self) -> _Resp:
+            return self
+
+        def __exit__(self, *a: object) -> bool:
+            return False
+
+        def iter_bytes(self):  # type: ignore[no-untyped-def]
+            yield b""
+
+        def raise_for_status(self) -> None:
+            pass
+
+    class _Client:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def __enter__(self) -> _Client:
+            return self
+
+        def __exit__(self, *a: object) -> bool:
+            return False
+
+        def stream(self, _method: str, _url: str) -> _Resp:
+            return _Resp(302, {"location": "http://169.254.169.254/evil"})
+
+    monkeypatch.setattr(httpx, "Client", _Client)
+
+    with pytest.raises(ValueError, match="blocked media URL"):
+        dm._fetch_file("http://cdn.example.com/v.mp4", tmp_path)

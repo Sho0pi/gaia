@@ -8,7 +8,6 @@ from gaia.commands.base import Command, CommandContext
 class StatusCommand(Command):
     name = "status"
     aliases = ("stats",)
-    summary = "Show model, memory settings, and registered counts."
 
     async def run(self, ctx: CommandContext) -> str:
         cfg = ctx.gaia.config

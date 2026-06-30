@@ -14,8 +14,6 @@ from gaia.missions import CLOSED, TaskStatus, TaskStore
 
 class TaskCommand(Command):
     name = "task"
-    summary = "List your open missions/tasks. Usage: /task [approve|reject|answer <id> …]."
-    usage = "[approve|reject <id> | answer <id> <text>]"
 
     async def run(self, ctx: CommandContext) -> str:
         store = ctx.gaia.tasks  # the DI-shared board the dispatcher polls

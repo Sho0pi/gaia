@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from gaia.cron.store import CronJob, CronStore
+from gaia.logs import log_error
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -146,9 +147,9 @@ class CronScheduler:
         logger.info("cron job %s (%s) firing", job.id, job.name or job.message[:40])
         try:
             await self._runner(job)
-        except Exception:
+        except Exception as exc:
             # A failing turn must never kill the scheduler loop; next fire tries again.
-            logger.exception("cron job %s failed", job.id)
+            log_error("cron_job", exc, job=job.id, name=job.name or job.message[:40])
         finally:
             self._store.mark_ran(job.id)  # one-shots are deleted here
             if job.delete_after_run:

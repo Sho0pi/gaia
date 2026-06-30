@@ -8,8 +8,6 @@ from gaia.communication import STYLES, current_style, set_style
 
 class StyleCommand(Command):
     name = "style"
-    summary = "Show or set Gaia's voice (/style <human|caveman|ai>)."
-    usage = "[human|caveman|ai]"
     #: Changes global config (gaia.yaml), so it's gated like the other admin commands.
     capability = "manage_users"
 

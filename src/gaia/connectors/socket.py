@@ -22,6 +22,7 @@ from gaia.connectors.socket_protocol import (
     reply_frame,
     require_text,
 )
+from gaia.logs import log_error
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +108,7 @@ class SocketConnector:
         try:
             await self._dispatch("local", "operator", Inbound(text=text), send)
         except Exception as exc:
-            logger.exception("daemon socket dispatch failed")
+            log_error("socket_dispatch", exc)
             writer.write(encode_frame(error_frame(str(exc))))
             await writer.drain()
         finally:

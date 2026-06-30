@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -32,11 +33,9 @@ from gaia.tools.fs.base import _safe_dir, current_agent, current_project, is_den
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from gaia.core.agent import Gaia
+    from gaia.souls.projects import ProjectStore
 
 logger = logging.getLogger(__name__)
-
-#: How long a soul may run before the run is abandoned (seconds).
-SOUL_TIMEOUT = 300.0
 
 #: Cap on the number of workspace files reported back.
 MAX_FILES = 500
@@ -337,14 +336,94 @@ def resolve_spec(gaia: Gaia, decision: SoulDecision) -> tuple[Any, bool] | None:
     return None
 
 
-def _project_slug(project: str, task: str) -> str:
-    """The project dir slug for a run: the caller's name, else a fresh unique one.
+def _existing_projects(agents_dir: Path, soul_key: str) -> list[tuple[str, str]]:
+    """Each project under a soul's workspace as ``(slug, description)`` (``_``-dirs excluded).
 
-    A named project lets the model continue an existing one (reuse the same slug) or start a
-    new one. Omitted -> a unique slug derived from the task, so two unnamed runs of the same
-    soul still get separate dirs instead of overwriting each other.
+    The description is the project's ``PROJECT.md`` frontmatter (``""`` if none) — frontmatter
+    only, never the body. ``read_project_description`` does the cheap parse.
     """
-    return _safe_dir(project) if project else f"{_safe_dir(task)[:24]}-{uuid4().hex[:6]}"
+    from gaia.souls.projects import read_project_description
+
+    base = agents_dir / _safe_dir(soul_key) / "workspace"
+    if not base.is_dir():
+        return []
+    return sorted(
+        (p.name, read_project_description(p))
+        for p in base.iterdir()
+        if p.is_dir() and not p.name.startswith("_")
+    )
+
+
+#: Short, common words that carry no project identity — ignored when matching task↔project.
+_PROJECT_STOPWORDS = frozenset(
+    "the and for with this that you your our build make create fix update edit add new app site "
+    "project change extend work redo please can now also into from get put".split()
+)
+
+
+def _keywords(text: str) -> set[str]:
+    """Significant lowercase words (len ≥ 3, non-stopword) of ``text`` — the matching vocabulary."""
+    return {
+        w
+        for w in re.findall(r"[a-z0-9]+", text.lower())
+        if len(w) >= 3 and w not in _PROJECT_STOPWORDS
+    }
+
+
+def _best_match(text: str, existing: list[tuple[str, str]]) -> str | None:
+    """The existing project whose slug+description best overlaps ``text``'s keywords (≥2 shared).
+
+    This is the semantic-ish reuse: a paraphrased/invented name (``hsk1-flashcards``) or a task that
+    names an app ("the hsk flashcards login") lands on the matching project instead of forking. The
+    ≥2 threshold avoids reusing on a single incidental shared word.
+    """
+    want = _keywords(text)
+    if not want:
+        return None
+    best, best_score = None, 0
+    for slug, desc in existing:
+        score = len(want & _keywords(f"{slug} {desc}"))
+        if score > best_score:
+            best, best_score = slug, score
+    return best if best_score >= 2 else None
+
+
+def _project_description(task: str) -> str:
+    """A one-line seed description for a new project, from its task (the soul refines it)."""
+    return " ".join(task.split())[:160]
+
+
+def resolve_project(
+    project: str,
+    task: str,
+    user_id: str,
+    soul_key: str,
+    existing: list[tuple[str, str]],
+    store: ProjectStore,
+) -> str:
+    """Pick the project dir for a run, routing by *meaning* so one app doesn't fork — and a
+    different task cleanly *switches* projects.
+
+    * named project: reuse the slug if it exists; else match it+the task against existing
+      descriptions (an invented name for an existing app reuses it); else start it new.
+    * omitted: if the task clearly describes an existing project, use it (continue OR switch); else
+      continue the ``(user, soul)`` last project; else a fresh slug.
+
+    The chosen project is remembered as current for ``(user, soul)`` (survives ``/reset``/restart).
+    """
+    slugs = {s for s, _ in existing}
+    if project:
+        slug = _safe_dir(project)
+        chosen = slug if slug in slugs else (_best_match(f"{project} {task}", existing) or slug)
+    else:
+        match = _best_match(task, existing)
+        if match is not None:
+            chosen = match
+        else:
+            last = store.get(user_id, soul_key)
+            chosen = last if last in slugs else f"{_safe_dir(task)[:24]}-{uuid4().hex[:6]}"
+    store.set(user_id, soul_key, chosen)
+    return chosen
 
 
 async def execute_decision(
@@ -381,14 +460,33 @@ async def execute_decision(
     soul = gaia.factory.create_or_reuse(
         spec, effort=gaia.config.llm.effort, extra_tools=[make_consult_soul(gaia)]
     )
-    # Scope the whole run to the project dir: set the contextvar *before* resolving the
-    # workspace, so the upload-copy, snapshot, the soul's own fs/exec tools, and the diff all
-    # target workspace/<project>. Reset on exit so the caller (root Gaia) isn't left scoped.
-    slug = _project_slug(project, task)
+    # Resolve the project dir, converging on an existing one so one app doesn't fork into a new
+    # workspace every turn (see resolve_project). Scope the whole run to it: set the contextvar
+    # *before* resolving the workspace, so the upload-copy, snapshot, the soul's own fs/exec tools,
+    # and the diff all target workspace/<project>. Reset on exit so the root Gaia isn't left scoped.
+    existing = _existing_projects(constants.AGENTS_DIR, spec.key)
+    slug = resolve_project(project, task, user_id, spec.key, existing, gaia.projects)
+    is_new = slug not in {s for s, _ in existing}
+    if not is_new:  # continuing — point the soul at PROJECT.md, edit don't rebuild
+        task = (
+            f"{task}\n\n[You are CONTINUING the existing project '{slug}'. It has a PROJECT.md "
+            f"(its description + rules) — fs_read it before editing, keep it updated, and edit the "
+            f"existing files; do NOT rebuild it from scratch.]"
+        )
+    else:  # new project — the soul OWNS its PROJECT.md (you author it, like a skill)
+        task = (
+            f"{task}\n\n[This is a NEW project '{slug}'. A starter PROJECT.md is in your "
+            f"workspace — refine its frontmatter `description` and write the project's key "
+            f"details, decisions, and rules in the body; keep PROJECT.md updated as it evolves.]"
+        )
     token = current_project.set(slug)
     agent_token = current_agent.set(spec.key)  # so logs during this run are tagged with the soul
     try:
         primary = sandbox_for(constants.AGENTS_DIR, spec.key).primary
+        if is_new:  # seed PROJECT.md before the baseline snapshot so it isn't a "deliverable"
+            from gaia.souls.projects import write_project_md
+
+            write_project_md(primary, slug, _project_description(task))
         # Bring the user's attachments into the workspace *before* the baseline snapshot, so
         # the copies aren't reported back as the soul's own deliverables.
         attached = _attach_uploads(primary)
