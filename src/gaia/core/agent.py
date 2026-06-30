@@ -53,6 +53,7 @@ class Gaia:
         self.skills_dir = self.container.skills_dir()
         self.souls = self.container.souls()
         self.users = self.container.users()
+        self.projects = self.container.projects()  # each (user, soul)'s current project slug
         self.tasks = self.container.tasks()  # the shared missions board (TaskStore)
         self.tools = self.container.tools()
         self.soul_sessions = self.container.soul_sessions()  # warm per-(soul, project) sessions
@@ -177,9 +178,11 @@ class Gaia:
             "status=error, tell the user what failed (the error message) — do not silently retry "
             "or improvise a different tool.\n"
             "- To CHANGE or extend a soul's project (dark mode, add a page) — and ONLY when the "
-            "user asks for it: call delegate_to_soul again with the SAME project slug. Never "
-            "write into a soul's workspace yourself (reading it via fs_read to verify or summarize "
-            "is fine).\n"
+            "user asks for it: call delegate_to_soul again with the SAME short project slug (the "
+            "previous result tells you which project it is), or omit project to continue the last "
+            "one — never a new name or a sentence, or you fork a fresh copy and lose the edits. "
+            "Use a new project slug only for a genuinely new app. Never write into a soul's "
+            "workspace yourself (reading it via fs_read to verify or summarize is fine).\n"
             "- A MULTI-STEP or MULTI-ROLE mission, especially when one step needs another's output "
             "(a trainer writes the program, then a designer builds the site from it): call "
             "task_plan with the whole plan as JSON (refs + depends_on). It tracks each step, runs "
