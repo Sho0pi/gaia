@@ -20,21 +20,9 @@ from gaia.tools._helpers import err, ok
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from gaia.core.agent import Gaia
-    from gaia.users import User, UserStore
 
 #: Tool id / ADK tool name (matches the closure name).
 NAME = "manage_permission"
-
-
-def _resolve_user(store: UserStore, ref: str) -> User | None:
-    """Resolve ``ref`` (canonical id, display name, or ``channel:sender``) to a user."""
-    user = store.get(ref)
-    if user is None:
-        user = next((u for u in store.list() if u.name.lower() == ref.lower()), None)
-    if user is None and ":" in ref:
-        ch, _, sender = ref.partition(":")
-        user = store.resolve(ch, sender)
-    return user
 
 
 def make_manage_permission(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any]]]:
@@ -70,7 +58,7 @@ def make_manage_permission(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any]
         if not cap:
             return err("capability must not be empty")
 
-        target = _resolve_user(gaia.users, user.strip())
+        target = gaia.users.resolve_ref(user.strip())
         if target is None:
             return err(f"no user matching {user.strip()!r}")
 

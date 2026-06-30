@@ -54,14 +54,26 @@ def _text_of(content: types.Content | None) -> str:
 
 
 def _events_to_messages(events: Sequence[Event]) -> list[dict[str, str]]:
-    """Map ADK events to mem0 ``{role, content}`` messages, dropping empty turns."""
+    """Map ADK events to mem0 ``{role, content}`` messages, dropping empty turns.
+
+    ADK only emits two content roles (verified in ``adk.flows.llm_flows.contents`` and against real
+    session events): ``user`` (human turns; also tool *responses*, text-less) and ``model``
+    (assistant turns; also tool *calls*, text-less). So the text-bearing turns are always
+    ``user``/``model`` — the empty-text guard already drops the text-less call/response events. We
+    map those two and **drop any other role** rather than the old ``get(role, "user")`` default that
+    would mislabel a future/synthetic ``tool``/``system`` event as something the human said — the
+    assistant-action-log noise ``backend.py`` fights.
+    """
     messages: list[dict[str, str]] = []
     for event in events:
         text = _text_of(event.content)
         if not text:
             continue
         role = event.content.role if event.content else None
-        messages.append({"role": _ROLE_MAP.get(role or "", "user"), "content": text})
+        mem_role = _ROLE_MAP.get(role or "")
+        if mem_role is None:
+            continue
+        messages.append({"role": mem_role, "content": text})
     return messages
 
 

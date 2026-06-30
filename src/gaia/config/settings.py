@@ -60,6 +60,12 @@ class Settings(BaseSettings):
         validation_alias=f"{constants.ENV_PREFIX}USERS_FILE",
     )
 
+    # Each (user, soul)'s current project slug (the soul project store).
+    projects_file: Path = Field(
+        default_factory=lambda: constants.PROJECTS_FILE,
+        validation_alias=f"{constants.ENV_PREFIX}PROJECTS_FILE",
+    )
+
     # Connector credentials.
     # For the self-monitoring loop's GitHub issue filing (PAT with `repo`/`issues` scope).
     github_token: str | None = Field(default=None, validation_alias="GITHUB_TOKEN")
