@@ -442,8 +442,8 @@ class WhatsAppWebConnector:
                         poll = await client.build_poll_vote_creation(
                             reply.text, list(reply.options), 1
                         )
-                        # A poll goes via send_message, so it must target the DELIVERABLE jid (a DM's
-                        # @lid Chat drops it silently); reply_message dodges this for text.
+                        # A poll goes via send_message → target the DELIVERABLE jid (a DM's @lid
+                        # Chat drops it silently); reply_message dodges this for text.
                         deliverable = _deliverable_chat(source)
                         await client.send_message(_build_chat_jid(deliverable), poll)
                         self._polls[deliverable] = reply.options
