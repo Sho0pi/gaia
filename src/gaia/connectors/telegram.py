@@ -124,11 +124,17 @@ class TelegramConnector:
                 return
             await query.answer()  # stop the button's loading spinner
             message: Any = query.message  # MaybeInaccessibleMessage; chat_id is present in practice
-            options = self._choices.get(message.chat_id, ())
+            options = self._choices.pop(message.chat_id, ())  # consume → a stale re-tap won't re-fire
             try:
                 label = options[int(query.data)]
             except (ValueError, IndexError):
                 return
+            # Replace the keyboard with the chosen option, so it can't be re-tapped and the pick is
+            # visible (the standard Telegram inline-keyboard pattern). Best-effort.
+            try:
+                await query.edit_message_text(f"{message.text}\n\n✅ {label}")
+            except Exception:
+                pass
             await self._run_turn(context, message, query.from_user, f"[Selected: {label}]")
 
         # TEXT keeps slash-commands (/help, /reset, …) flowing (the handler dispatches them); the
