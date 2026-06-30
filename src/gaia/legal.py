@@ -38,17 +38,6 @@ def accepted_path() -> Path:
     return constants.HOME_DIR / "accepted.json"
 
 
-def _gaia_version() -> str:
-    import importlib.metadata
-
-    try:
-        return importlib.metadata.version("gaia")
-    except importlib.metadata.PackageNotFoundError:  # uninstalled tree
-        from gaia import __version__
-
-        return __version__
-
-
 def is_accepted() -> bool:
     """True if a recorded acceptance covers the current ``ACCEPTANCE_VERSION``."""
     try:
@@ -60,6 +49,8 @@ def is_accepted() -> bool:
 
 def record_acceptance() -> None:
     """Write the acceptance record (owner-only)."""
+    from gaia import version as gaia_version
+
     path = accepted_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -67,7 +58,7 @@ def record_acceptance() -> None:
             {
                 "version": ACCEPTANCE_VERSION,
                 "accepted_at": datetime.now(UTC).isoformat(timespec="seconds"),
-                "gaia_version": _gaia_version(),
+                "gaia_version": gaia_version(),
             }
         )
     )
