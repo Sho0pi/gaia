@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/banner.svg" alt="Gaia - agents that build agents" width="100%">
+<img src="assets/banner.svg" alt="Gaia - your everyday AI agent" width="100%">
 
 <!-- ⭐ Highest-converting thing you can add here: a real demo GIF. Record a 10-20s WhatsApp or
      terminal chat (ask -> soul forged -> memory recall), save it as assets/demo.gif, and uncomment
@@ -12,6 +12,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/Sho0pi/gaia/ci.yml?branch=master&style=flat&logo=githubactions&logoColor=white&label=CI&labelColor=0F172A)](https://github.com/Sho0pi/gaia/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/Sho0pi/gaia?style=flat&logo=opensourceinitiative&logoColor=white&label=license&labelColor=0F172A&color=0F172A)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-0F172A?style=flat&logo=python&logoColor=white)](https://www.python.org/)
+[![Star on GitHub](https://img.shields.io/github/stars/Sho0pi/gaia?style=flat&logo=github&logoColor=white&label=star&labelColor=0F172A&color=0F172A)](https://github.com/Sho0pi/gaia)
 
 ### Other agents do the task themselves. Gaia forges a specialist to do it - and never forgets a thing.
 
@@ -19,21 +20,14 @@
 curl -fsSL https://gaia-agent.com/install.sh | bash
 ```
 
-<p>
-  <a href="https://github.com/Sho0pi/gaia">⭐ Star on GitHub</a> &nbsp;·&nbsp;
-  <a href="https://docs.gaia-agent.com/getting-started/">Get started</a> &nbsp;·&nbsp;
-  <a href="https://docs.gaia-agent.com">Docs</a> &nbsp;·&nbsp;
-  <a href="https://gaia-agent.com">gaia-agent.com</a>
-</p>
-
 </div>
 
 ---
 
-Gaia is a new kind of AI agent. Hand it a task and it grabs the right **soul** - a specialist
-subagent - for the job, or its **soul smith** forges a new one on the fly and keeps it for next time,
-so it gets sharper the more you use it. It remembers you across channels, runs long jobs in the
-background, and you talk to it on WhatsApp, Telegram, or your terminal.
+Gaia is your everyday AI agent - for anything, on WhatsApp, Telegram, or your terminal. Hand it a
+task and it grabs the right **soul** (a specialist subagent) for the job, or its **soul smith** forges
+a new one on the fly and keeps it for next time, so it gets sharper the more you use it. It remembers
+you across channels (it never asks twice) and runs long jobs in the background.
 
 ## Why Gaia is different
 
