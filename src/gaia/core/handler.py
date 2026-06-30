@@ -56,6 +56,18 @@ def _friendly_error(exc: Exception) -> str:
     return "Sorry — something went wrong handling that. Please try again."
 
 
+def _is_superseded_turn(exc: BaseException) -> bool:
+    """True for the stale-session ValueError a turn raises when a newer message superseded it.
+
+    Turns are serialized + coalesced (#315), but a burst arriving mid-turn cancels the in-flight
+    turn; its final event then can't be appended (the session already advanced), which ADK raises
+    as a ``ValueError`` ("session has been modified in storage since it was loaded"). That's
+    expected — the newer turn replies — so it must NOT log an error or apologize. Matched on ADK's
+    message (its ``_STALE_SESSION_ERROR_MESSAGE`` is private, so we don't import it).
+    """
+    return isinstance(exc, ValueError) and "modified in storage since it was loaded" in str(exc)
+
+
 class GaiaHandler:
     """Runs inbound text through Gaia's ADK root agent and returns the reply text.
 
@@ -277,9 +289,16 @@ class GaiaHandler:
         try:
             run = await resume_soul(self._gaia, pending.soul, answer)
         except Exception as exc:
+            self._gaia.soul_sessions.unpin(pending.soul.warm_key)
+            if _is_superseded_turn(
+                exc
+            ):  # a newer message cancelled this resume — newer turn replies
+                logging.getLogger(constants.LOGGER_NAME).debug(
+                    "resumed turn superseded by a newer message"
+                )
+                return
             # log_event(exc=) writes the traceback to system.log AND the structured event.
             log_event("turn_error", user=self._user_id, exc=exc)
-            self._gaia.soul_sessions.unpin(pending.soul.warm_key)
             await send(_friendly_error(exc))
             return
 
@@ -380,6 +399,11 @@ class GaiaHandler:
                 ):
                     texts.extend(self._event_texts(event))
         except Exception as exc:
+            if _is_superseded_turn(exc):
+                # A newer message cancelled this turn; the newer turn replies. Don't log an error
+                # or apologize for a double-text — just drop the stale-session append.
+                logging.getLogger(constants.LOGGER_NAME).debug("turn superseded by a newer message")
+                return
             # A model error (rate limit, outage) or tool fault must not surface as a raw
             # traceback to the user. log_event(exc=) records the traceback (system.log) + the
             # structured event; we send a short apology and end the turn.
