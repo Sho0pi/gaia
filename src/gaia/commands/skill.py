@@ -8,11 +8,8 @@ caller who holds it. Reuses the same ``skills.py`` primitives as the ``gaia skil
 
 from __future__ import annotations
 
-import logging
-
 from gaia.commands.base import Command, CommandContext
-
-logger = logging.getLogger(__name__)
+from gaia.logs import log_error
 
 
 class SkillCommand(Command):
@@ -50,9 +47,10 @@ def _refresh_toolset(ctx: CommandContext) -> None:
     try:
         ctx.gaia.container.skill_toolsets.reset()
     except Exception as exc:
-        # Best-effort (never fail the command), but log it WITH the exception — a broken reset
-        # otherwise hides behind the "Run /reset" message and looks like a deliberate manual step.
-        logger.warning("could not refresh the skills toolset after a skill change: %s", exc)
+        # Best-effort (never fail the command) but log it as a structured error — one call writes
+        # the traceback to system.log AND an event the self-monitor sees, so a broken reset doesn't
+        # hide behind the "Run /reset" message and look like a deliberate manual step.
+        log_error("skill_toolset_refresh", exc)
 
 
 def _list(skills_dir: object) -> str:
