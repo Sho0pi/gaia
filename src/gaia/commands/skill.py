@@ -49,10 +49,10 @@ def _refresh_toolset(ctx: CommandContext) -> None:
     the provider makes the next agent build (a ``/reset``, or the next soul delegation) re-scan."""
     try:
         ctx.gaia.container.skill_toolsets.reset()
-    except Exception:
-        # Best-effort (never fail the command), but log it — a broken reset otherwise hides behind
-        # the "Run /reset" message and looks like a deliberate manual step.
-        logger.warning("could not refresh the skills toolset after a skill change", exc_info=True)
+    except Exception as exc:
+        # Best-effort (never fail the command), but log it WITH the exception — a broken reset
+        # otherwise hides behind the "Run /reset" message and looks like a deliberate manual step.
+        logger.warning("could not refresh the skills toolset after a skill change: %s", exc)
 
 
 def _list(skills_dir: object) -> str:
