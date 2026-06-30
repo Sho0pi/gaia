@@ -47,7 +47,7 @@ gaia start            # run in the background
 gaia status           # check it's up
 ```
 
-Then DM gaia — your first message makes you admin. See [Guides → Connectors](/guides/connectors/).
+Then DM gaia — your first message makes you admin. See [Guides → Connectors](/connectors/).
 
 ## From source
 

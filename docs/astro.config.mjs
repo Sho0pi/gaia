@@ -26,6 +26,8 @@ export default defineConfig({
 			],
 			sidebar: [
 				{ label: 'Getting started', slug: 'getting-started' },
+				{ label: 'Connectors', items: [{ autogenerate: { directory: 'connectors' } }] },
+				{ label: 'Tools', items: [{ autogenerate: { directory: 'tools' } }] },
 				{ label: 'Concepts', items: [{ autogenerate: { directory: 'concepts' } }] },
 				{ label: 'Guides', items: [{ autogenerate: { directory: 'guides' } }] },
 				{ label: 'Reference', items: [{ autogenerate: { directory: 'reference' } }] },
