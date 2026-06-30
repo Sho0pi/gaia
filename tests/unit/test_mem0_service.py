@@ -165,3 +165,23 @@ async def test_aclose_is_idempotent() -> None:
     service = Mem0MemoryService(_FakeMem0())
     await service.aclose()
     await service.aclose()  # second call is a no-op, never raises
+
+
+def test_unmapped_roles_are_dropped_not_relabeled() -> None:
+    # Only user/model turns go to mem0; tool/system/unknown roles are dropped, never relabeled
+    # "user" (which would feed tool output to the extractor as if the human said it).
+    from gaia.memory.service import _events_to_messages
+
+    msgs = _events_to_messages(
+        [
+            _event("hi", "user"),
+            _event("ran a tool", "tool"),
+            _event("done", "model"),
+            _event("sys note", "system"),
+        ]
+    )
+
+    assert msgs == [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "done"},
+    ]
