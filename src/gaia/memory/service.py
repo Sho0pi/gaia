@@ -60,7 +60,7 @@ def _events_to_messages(events: Sequence[Event]) -> list[dict[str, str]]:
     session events): ``user`` (human turns; also tool *responses*, text-less) and ``model``
     (assistant turns; also tool *calls*, text-less). So the text-bearing turns are always
     ``user``/``model`` — the empty-text guard already drops the text-less call/response events. We
-    map those two and **drop any other role** rather than the old ``get(role, "user")`` default, which
+    map those two and **drop any other role** rather than the old ``get(role, "user")`` default that
     would mislabel a future/synthetic ``tool``/``system`` event as something the human said — the
     assistant-action-log noise ``backend.py`` fights.
     """
