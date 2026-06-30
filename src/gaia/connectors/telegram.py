@@ -124,7 +124,7 @@ class TelegramConnector:
                 return
             await query.answer()  # stop the button's loading spinner
             message: Any = query.message  # MaybeInaccessibleMessage; chat_id is present in practice
-            options = self._choices.pop(message.chat_id, ())  # consume → a stale re-tap won't re-fire
+            options = self._choices.pop(message.chat_id, ())  # consume; re-tap can't re-fire
             try:
                 label = options[int(query.data)]
             except (ValueError, IndexError):
