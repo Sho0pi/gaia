@@ -367,9 +367,9 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
                 )
 
         if "telegram" in selected:
-            # The token lives in env (GAIA_TELEGRAM_BOT_TOKEN → settings), never in gaia.yaml; the
-            # yaml field is only an optional override, so fall back to the env value (the real one).
-            token = gaia.config.connectors.telegram.token or settings.telegram_bot_token
+            # The bot token is a secret: it lives in env (GAIA_TELEGRAM_BOT_TOKEN → settings), never
+            # in gaia.yaml (no token field there by design).
+            token = settings.telegram_bot_token
             if not token:
                 logger.warning(
                     "telegram enabled but no token (set GAIA_TELEGRAM_BOT_TOKEN) — skipping"

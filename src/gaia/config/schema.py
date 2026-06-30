@@ -411,12 +411,10 @@ class CLIConnectorConfig(BaseModel):
 
 
 class TelegramConnectorConfig(BaseModel):
-    """Telegram connector toggle. Token comes from env, never this file."""
+    """Telegram connector toggle. The bot token is a secret: env ``GAIA_TELEGRAM_BOT_TOKEN`` only,
+    never this file (gaia.yaml is hand-edited, not 0600) - so there's no token field here."""
 
     enabled: bool = Field(default=False, description="Run the Telegram connector.")
-    token: str | None = Field(
-        default=None, description="Bot token; set via env GAIA_TELEGRAM_BOT_TOKEN, not here."
-    )
     default_role: Literal["admin", "user", "guest"] = Field(
         default="guest",
         description="Role for a first-seen sender (admin/user/guest). 'guest' is gated "
