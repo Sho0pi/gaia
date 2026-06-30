@@ -258,3 +258,15 @@ async def test_style_shows_and_sets(tmp_path: Any) -> None:
 async def test_style_rejects_unknown(tmp_path: Any) -> None:
     out = await _run("style", _style_ctx("shakespeare", tmp_path / "gaia.yaml"))
     assert "unknown style" in out
+
+
+def test_memory_commands_are_self_service() -> None:
+    # /forget wipes the CALLER's own memory, like /remember writes it — none of the three may be
+    # admin-gated (regression: /forget used to require manage_users).
+    from gaia.commands.forget import ForgetCommand
+    from gaia.commands.memory import MemoryCommand
+    from gaia.commands.remember import RememberCommand
+
+    assert ForgetCommand.capability is None
+    assert RememberCommand.capability is None
+    assert MemoryCommand.capability is None

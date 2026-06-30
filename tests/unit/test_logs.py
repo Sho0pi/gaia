@@ -273,3 +273,12 @@ def test_force_rebuilds_handlers(tmp_path: Path) -> None:
     # Same shape, but distinct handler instances — force closed + replaced them.
     assert len(after) == len(before)
     assert all(b is not a for b, a in zip(before, after, strict=False))
+
+
+def test_noisy_third_party_loggers_are_muted(tmp_path: Path) -> None:
+    # mem0's per-search "no keyword search" warning and trafilatura's per-empty-page ERRORs are
+    # pure noise — muted so they don't flood system.log / the self-monitor.
+    _setup(tmp_path)
+
+    assert logging.getLogger("mem0.memory.main").level == logging.ERROR  # WARNING dropped
+    assert logging.getLogger("trafilatura").level == logging.CRITICAL  # ERROR dropped

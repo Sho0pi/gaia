@@ -30,6 +30,7 @@ from gaia.connectors.base import (
     chunk_text,
     current_chat,
 )
+from gaia.logs import log_error
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from neonize.aioze.client import NewAClient
@@ -572,8 +573,8 @@ class WhatsAppWebConnector:
         try:
             await client.download_any(message.Message, str(path))
             transcript = await self._transcriber.transcribe(path)
-        except Exception:
-            logger.warning("voice note dropped: download/transcription failed", exc_info=True)
+        except Exception as exc:
+            log_error("voice_inbound", exc)
             return ""
         if not transcript:
             logger.info("voice note transcribed to empty text — ignored")
@@ -604,8 +605,8 @@ class WhatsAppWebConnector:
         path.parent.mkdir(parents=True, exist_ok=True)
         try:
             await client.download_any(message.Message, str(path))
-        except Exception:
-            logger.warning("inbound %s dropped: download failed", kind, exc_info=True)
+        except Exception as exc:
+            log_error("inbound_drop", exc, kind=kind)
             return None
         return InboundMedia(path=path, mime=mime, kind=kind)
 

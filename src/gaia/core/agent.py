@@ -178,11 +178,11 @@ class Gaia:
             "status=error, tell the user what failed (the error message) — do not silently retry "
             "or improvise a different tool.\n"
             "- To CHANGE or extend a soul's project (dark mode, add a page) — and ONLY when the "
-            "user asks for it: call delegate_to_soul again with the SAME short project slug (the "
-            "previous result tells you which project it is), or omit project to continue the last "
-            "one — never a new name or a sentence, or you fork a fresh copy and lose the edits. "
-            "Use a new project slug only for a genuinely new app. Never write into a soul's "
-            "workspace yourself (reading it via fs_read to verify or summarize is fine).\n"
+            "user asks for it: first call list_projects to see the soul's existing projects "
+            "(slug — description), then delegate_to_soul with the slug whose description matches "
+            "the app — never invent a new name or pass a sentence, or you fork a fresh copy and "
+            "lose the edits. Use a new project slug only for a genuinely new app. Never write into "
+            "a soul's workspace yourself (reading it via fs_read to verify or summarize is fine).\n"
             "- A MULTI-STEP or MULTI-ROLE mission, especially when one step needs another's output "
             "(a trainer writes the program, then a designer builds the site from it): call "
             "task_plan with the whole plan as JSON (refs + depends_on). It tracks each step, runs "
@@ -282,6 +282,7 @@ class Gaia:
         from gaia.core.acl_toolset import AclToolset
         from gaia.souls import make_delegate
         from gaia.tools.command import make_run_command
+        from gaia.tools.list_projects import make_list_projects
         from gaia.tools.message import make_message_user
         from gaia.tools.permission import make_manage_permission
         from gaia.tools.registry import _is_enabled
@@ -324,6 +325,7 @@ class Gaia:
                 make_run_command(self, handler),
                 make_message_user(self.users, self.connectors, lambda: self.memory_service),
                 make_manage_permission(self),
+                make_list_projects(self),
                 make_send_file(),
                 *save_skill,
                 *task_plan,

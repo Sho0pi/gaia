@@ -45,8 +45,18 @@ _NOISY = ("httpx", "httpcore", "urllib3", "grpc", "asyncio", "neonize", "telegra
 # turn ("Skipping missing token usage metadata", harmless: OpenAI reports usage in a
 # shape ADK's meter doesn't read). Telemetry itself is off (see _TELEMETRY_OFF); this
 # just hides the residual log line. mem0's spaCy loader warns twice per ingest when the
-# optional ``mem0ai[nlp]`` extra isn't installed — harmless fallback, pure noise.
-_MUTED = ("google_adk.google.adk.telemetry", "mem0.utils.spacy_models")
+# optional ``mem0ai[nlp]`` extra isn't installed — harmless fallback. mem0.memory.main warns
+# on EVERY search that chroma has no keyword search (we use chroma deliberately, #35) — pure noise.
+_MUTED = (
+    "google_adk.google.adk.telemetry",
+    "mem0.utils.spacy_models",
+    "mem0.memory.main",
+)
+
+# Loggers muted below CRITICAL — trafilatura logs at ERROR on an empty/blocked/non-HTML page
+# ("empty HTML tree", "parsed tree length: 0"), but web_fetch already handles the no-content case
+# and returns a clean error to the model; trafilatura's internal ERRORs are never actionable.
+_SILENCED = ("trafilatura",)
 
 # Standard LogRecord attributes — anything else on a record is a user-supplied field.
 _STD_ATTRS = frozenset(
@@ -279,6 +289,8 @@ def setup_logging(
         )
     )
 
+    for name in _SILENCED:
+        logging.getLogger(name).setLevel(logging.CRITICAL)
     for name in _NOISY:
         logging.getLogger(name).setLevel(logging.WARNING)
     for name in _MUTED:
