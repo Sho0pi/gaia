@@ -12,6 +12,7 @@ unit tests can exercise the wiring without the native whatsmeow binary.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import inspect
 import logging
 import re
@@ -25,6 +26,7 @@ from gaia.connectors.base import (
     Inbound,
     InboundMedia,
     Media,
+    Question,
     Reply,
     as_text,
     chunk_text,
@@ -338,6 +340,9 @@ class WhatsAppWebConnector:
         self._own_ids: set[str] = set()  # bot's own number-parts (phone + @lid); lazy-loaded
         # Blue-tick + typing presence always travel together — one flag drives both.
         self._show_active = show_active
+        # Options of the last poll (a multiple-choice Question) sent per chat, so an inbound poll
+        # vote can be mapped back to its option label (vote.selectedOptions are sha256(option)).
+        self._polls: dict[str, tuple[str, ...]] = {}
         self._client: Any = None  # the live client while start() runs (for send_to)
         # Set by ConnectedEv/PairStatusEv; pair() awaits it. Re-created per client.
         self._connected = asyncio.Event()
@@ -395,6 +400,9 @@ class WhatsAppWebConnector:
             text = _message_text(message)
             was_voice = False
             media: tuple[InboundMedia, ...] = ()
+            poll_answer = await self._poll_answer(client, message, source)  # a tap on a poll
+            if poll_answer:
+                text = poll_answer
             found = _media_message(message)  # image/video/document/sticker, with optional caption
             if found is not None:
                 proto, kind = found
@@ -418,11 +426,16 @@ class WhatsAppWebConnector:
                 current_chat.set((self.NAME, _deliverable_chat(source)))
 
                 async def send(reply: Reply) -> None:
-                    # A media reply goes out as the real file (image/video/audio/document);
-                    # text and questions quote the inbound message — a Question degrades to
-                    # numbered text via as_text, so the user replies with the option number.
+                    # Media → the real file; a multiple-choice Question → a native WhatsApp poll
+                    # (the vote returns as "[Selected: X]", see _poll_answer); else quote text back.
                     if isinstance(reply, Media):
                         await _send_media(client, chat, reply)
+                    elif isinstance(reply, Question) and reply.options:
+                        poll = await client.build_poll_vote_creation(
+                            reply.text, list(reply.options), 1
+                        )
+                        await client.send_message(chat, poll)
+                        self._polls[_deliverable_chat(source)] = reply.options
                     else:
                         for part in chunk_text(as_text(reply), WHATSAPP_LIMIT):
                             await client.reply_message(part, message)
@@ -554,6 +567,29 @@ class WhatsAppWebConnector:
             await client.send_chat_presence(chat, state, media)
         except Exception:  # pragma: no cover - presence is best-effort
             logger.debug("send_chat_presence failed", exc_info=True)
+
+    async def _poll_answer(self, client: Any, message: Any, source: Any) -> str:
+        """An inbound poll vote → ``"[Selected: <option>]"`` (resolves a Question), else ``""``.
+
+        Only the chat's last poll is tracked (a conversation pauses on one question at a time); the
+        vote's ``selectedOptions`` are ``sha256(option)`` hashes, matched against the recorded
+        options. Best-effort: a decrypt failure is logged and the vote dropped, never crashing.
+        """
+        if getattr(message.Message, "pollUpdateMessage", None) is None:
+            return ""
+        options = self._polls.get(_deliverable_chat(source))
+        if not options:
+            return ""
+        try:
+            vote = await client.decrypt_poll_vote(message.Message)
+        except Exception as exc:
+            log_error("poll_vote", exc, channel="whatsapp")
+            return ""
+        selected = list(getattr(vote, "selectedOptions", None) or [])
+        for opt in options:
+            if hashlib.sha256(opt.encode()).digest() in selected:
+                return f"[Selected: {opt}]"
+        return ""
 
     async def _transcribe_voice(self, client: Any, message: Any) -> str:
         """Transcript of an inbound voice note, or ``""`` (no audio / no transcriber / error).

@@ -834,3 +834,29 @@ async def test_pair_signals_only_after_authenticated_connect(
 
     await client.handlers[fake_neonize["ConnectedEv"]](client, SimpleNamespace())
     assert connector._connected.is_set()  # authenticated → session saved → safe to stop
+
+
+async def test_poll_answer_maps_vote_to_selected_option(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import hashlib
+
+    import gaia.connectors.whatsapp_web as wa
+
+    monkeypatch.setattr(wa, "_deliverable_chat", lambda _s: "chat-key")
+    conn = WhatsAppWebConnector(tmp_path / "wa.db", _noop_dispatch)
+    conn._polls["chat-key"] = ("Red", "Blue")
+
+    async def decrypt_poll_vote(_m: Any) -> Any:
+        return SimpleNamespace(selectedOptions=[hashlib.sha256(b"Blue").digest()])
+
+    client = SimpleNamespace(decrypt_poll_vote=decrypt_poll_vote)
+    message = SimpleNamespace(Message=SimpleNamespace(pollUpdateMessage=SimpleNamespace()))
+
+    assert await conn._poll_answer(client, message, object()) == "[Selected: Blue]"
+
+
+async def test_poll_answer_empty_without_a_poll_vote(tmp_path: Path) -> None:
+    conn = WhatsAppWebConnector(tmp_path / "wa.db", _noop_dispatch)
+    message = SimpleNamespace(Message=SimpleNamespace(pollUpdateMessage=None))
+    assert await conn._poll_answer(SimpleNamespace(), message, object()) == ""
