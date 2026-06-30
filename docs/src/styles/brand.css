@@ -1,5 +1,6 @@
-/* Gaia brand — mirrors gaia-agent.com (src/layouts/Layout.astro): dark-default nature palette,
-   Cinzel / Fraunces / Inter / JetBrains Mono. Overrides Starlight's CSS custom properties. */
+/* Gaia docs brand - mirrors gaia-agent.com (src/layouts/Layout.astro): the nature palette,
+   Cinzel / Fraunces / Inter / JetBrains Mono, a warm background texture, and classical edges.
+   Overrides Starlight's CSS custom properties so the docs read as one site with the marketing site. */
 
 @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
@@ -8,7 +9,7 @@
 	--sl-font-mono: 'JetBrains Mono', ui-monospace, monospace;
 }
 
-/* Dark (default) — bg #0B1612, ink #EFE7D2, accents moss/sea/glow/gold. */
+/* Dark (default) - bg #0B1612, ink #EFE7D2, accents moss/sea/glow. */
 :root,
 :root[data-theme='dark'] {
 	--sl-color-accent-low: #11211b;
@@ -23,9 +24,11 @@
 	--sl-color-gray-6: #0b1612;
 	--sl-color-black: #070f0c;
 	--sl-color-text-accent: #22f0a8; /* glow */
+	--gaia-glow-a: rgba(34, 240, 168, 0.08);
+	--gaia-glow-b: rgba(103, 232, 249, 0.05);
 }
 
-/* Light */
+/* Light - warm cream #F2EDE0 / surface #FBF7EC, ink #0E1A14. */
 :root[data-theme='light'] {
 	--sl-color-accent-low: #eae2d0;
 	--sl-color-accent: #2b5c44;
@@ -40,21 +43,51 @@
 	--sl-color-gray-7: #fbf7ec;
 	--sl-color-black: #fbf7ec;
 	--sl-color-text-accent: #0e7490; /* sea */
+	--gaia-glow-a: rgba(168, 137, 52, 0.05);
+	--gaia-glow-b: rgba(43, 92, 68, 0.06);
 }
 
-/* Headings in the display serif, the brand wordmark in Cinzel — like the marketing site. */
-:root {
-	--sl-font-headings: 'Fraunces', Georgia, serif;
+/* Warm background texture - the marketing site's two subtle radial gradients (fixed). */
+body {
+	background-image:
+		radial-gradient(circle at 30% 0%, var(--gaia-glow-a), transparent 50%),
+		radial-gradient(circle at 70% 100%, var(--gaia-glow-b), transparent 45%);
+	background-attachment: fixed;
 }
-.sl-markdown-content h1,
-.sl-markdown-content h2,
-.sl-markdown-content h3,
-h1.hero-title {
+
+/* Headings in the display serif (Fraunces), applied to the page title, content headings, and the
+   sidebar group labels - not just markdown - so nothing falls back to Inter. */
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6),
+.content-panel h1,
+.hero h1,
+h1#_top,
+.sidebar-content .group-label > span {
 	font-family: 'Fraunces', Georgia, serif;
 	font-optical-sizing: auto;
+	font-variation-settings: 'opsz' 40, 'SOFT' 24;
 }
-.site-title {
+
+/* The brand wordmark in Cinzel (the marketing .brand). */
+.site-title,
+.gaia-brand-word {
 	font-family: 'Cinzel', serif;
 	font-weight: 900;
 	letter-spacing: 0.06em;
+}
+
+/* Classical edges - the marketing site uses sharp corners; square the rounded chrome. */
+.sl-markdown-content pre,
+.sl-markdown-content .starlight-aside,
+.sl-markdown-content .expressive-code .frame.is-terminal,
+.sl-markdown-content .expressive-code .frame pre {
+	border-radius: 2px;
+}
+
+/* Accent + focus in moss/sea, matching the marketing site. */
+::selection {
+	background: color-mix(in srgb, var(--sl-color-accent) 30%, transparent);
+}
+:focus-visible {
+	outline: 2px solid var(--sl-color-accent);
+	outline-offset: 3px;
 }

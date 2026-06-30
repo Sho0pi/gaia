@@ -1,0 +1,88 @@
+---
+// Custom Starlight header - matches the marketing site (gaia-agent.com): the orb + GAIA (Cinzel)
+// brand lockup and the Home/How/Why nav, while re-using Starlight's Search, social icons, and theme
+// toggle so the docs UX (search, theme, mobile sidebar) keeps working.
+import Search from 'virtual:starlight/components/Search';
+import SocialIcons from 'virtual:starlight/components/SocialIcons';
+import ThemeSelect from 'virtual:starlight/components/ThemeSelect';
+import config from 'virtual:starlight/user-config';
+import gaiaIcon from '../assets/gaia-icon.png';
+
+const shouldRenderSearch =
+	config.pagefind || config.components.Search !== '@astrojs/starlight/components/Search.astro';
+---
+
+<div class="header sl-flex">
+	<a href="/" class="gaia-brand sl-flex" aria-label="Gaia docs home">
+		<img src={gaiaIcon.src} alt="" width="28" height="28" />
+		<span class="gaia-brand-word">GAIA</span>
+	</a>
+
+	<div class="gaia-search sl-flex print:hidden">
+		{shouldRenderSearch && <Search />}
+	</div>
+
+	<div class="right-group sl-flex">
+		<nav class="gaia-nav sl-hidden md:sl-flex" aria-label="Gaia">
+			<a href="https://gaia-agent.com/">Home</a>
+			<a href="https://gaia-agent.com/how-it-works/">How</a>
+			<a href="https://gaia-agent.com/why-gaia/">Why</a>
+		</nav>
+		<div class="sl-flex social-icons"><SocialIcons /></div>
+		<ThemeSelect />
+	</div>
+</div>
+
+<style>
+	.header {
+		gap: var(--sl-nav-gap);
+		justify-content: space-between;
+		align-items: center;
+		height: 100%;
+	}
+	.gaia-brand {
+		align-items: center;
+		gap: 0.55rem;
+		text-decoration: none;
+		color: var(--sl-color-white);
+		flex-shrink: 0;
+	}
+	.gaia-brand img {
+		object-fit: contain;
+	}
+	.gaia-brand-word {
+		font-family: 'Cinzel', serif;
+		font-weight: 900;
+		letter-spacing: 0.18em;
+		font-size: 1rem;
+	}
+	.gaia-search {
+		flex: 1;
+		max-width: 22rem;
+	}
+	.right-group,
+	.social-icons {
+		gap: 1rem;
+		align-items: center;
+	}
+	.gaia-nav {
+		gap: 1.75rem;
+		align-items: center;
+		font-size: 0.78rem;
+	}
+	.gaia-nav a {
+		color: var(--sl-color-gray-2);
+		text-decoration: none;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		transition: color 0.2s;
+	}
+	.gaia-nav a:hover {
+		color: var(--sl-color-text-accent);
+	}
+	.social-icons::after {
+		content: '';
+		height: 2rem;
+		border-inline-end: 1px solid var(--sl-color-gray-5);
+	}
+</style>
