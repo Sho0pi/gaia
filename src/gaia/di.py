@@ -28,6 +28,7 @@ from dependency_injector import containers, providers
 from gaia.agents import AgentFactory, SoulRegistry
 from gaia.missions import TaskStore
 from gaia.skills import build_skill_toolset, resolve_skills_dir
+from gaia.souls.projects import ProjectStore
 from gaia.tools import default_registry
 from gaia.users import UserStore
 from gaia.voice import build_transcriber
@@ -228,6 +229,10 @@ class Container(containers.DeclarativeContainer):
     )
     users: providers.Singleton[UserStore] = providers.Singleton(
         _build_user_store, settings.provided.users_file, config
+    )
+    # Each (user, soul)'s current project so a delegation continues the same app (no per-turn fork).
+    projects: providers.Singleton[ProjectStore] = providers.Singleton(
+        ProjectStore, settings.provided.projects_file
     )
     # The missions task board — one shared store (opens ~/.gaia/tasks.db) reused by the
     # task_* tools, the root agent's task_plan, and the dispatcher.
