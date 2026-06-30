@@ -53,6 +53,7 @@ class Gaia:
         self.skills_dir = self.container.skills_dir()
         self.souls = self.container.souls()
         self.users = self.container.users()
+        self.projects = self.container.projects()  # each (user, soul)'s current project slug
         self.tasks = self.container.tasks()  # the shared missions board (TaskStore)
         self.tools = self.container.tools()
         self.soul_sessions = self.container.soul_sessions()  # warm per-(soul, project) sessions
@@ -177,9 +178,11 @@ class Gaia:
             "status=error, tell the user what failed (the error message) — do not silently retry "
             "or improvise a different tool.\n"
             "- To CHANGE or extend a soul's project (dark mode, add a page) — and ONLY when the "
-            "user asks for it: call delegate_to_soul again with the SAME project slug. Never "
-            "write into a soul's workspace yourself (reading it via fs_read to verify or summarize "
-            "is fine).\n"
+            "user asks for it: call delegate_to_soul again with the SAME short project slug (the "
+            "previous result tells you which project it is), or omit project to continue the last "
+            "one — never a new name or a sentence, or you fork a fresh copy and lose the edits. "
+            "Use a new project slug only for a genuinely new app. Never write into a soul's "
+            "workspace yourself (reading it via fs_read to verify or summarize is fine).\n"
             "- A MULTI-STEP or MULTI-ROLE mission, especially when one step needs another's output "
             "(a trainer writes the program, then a designer builds the site from it): call "
             "task_plan with the whole plan as JSON (refs + depends_on). It tracks each step, runs "
@@ -285,12 +288,17 @@ class Gaia:
         from gaia.tools.save_skill import NAME as SAVE_SKILL
         from gaia.tools.save_skill import make_save_skill
         from gaia.tools.send_file import make_send_file
-        from gaia.tools.task import make_task_plan
+        from gaia.tools.task import TASK_PLAN, make_task_plan
 
-        # save_skill is on by default (root-only "learn & grow"); tools.save_skill.enabled=false
-        # turns it off, like any registry tool.
+        # Root-only tools that are still on-by-default-but-config-gateable like any registry tool
+        # (tools.<id>.enabled=false turns them off): save_skill ("learn & grow") and task_plan.
         save_skill = (
             [make_save_skill(self.skills_dir)] if _is_enabled(self.config, SAVE_SKILL) else []
+        )
+        task_plan = (
+            [make_task_plan(self.tasks, max_tasks=self.config.missions.max_tasks)]
+            if _is_enabled(self.config, TASK_PLAN)
+            else []
         )
 
         # delegate_to_soul and message_user are attached to the root only — souls (built
@@ -318,7 +326,7 @@ class Gaia:
                 make_manage_permission(self),
                 make_send_file(),
                 *save_skill,
-                make_task_plan(self.tasks, max_tasks=self.config.missions.max_tasks),
+                *task_plan,
                 *self.container.mcp_toolsets(),
                 *self.container.skill_toolsets(),
             ],

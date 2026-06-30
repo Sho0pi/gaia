@@ -204,3 +204,12 @@ def test_download_and_save_skill_guidance_in_the_instruction(
 
     assert "## Downloading media" in instruction and "download_media" in instruction
     assert "## Saving what works" in instruction and "save_skill" in instruction
+
+
+def test_task_plan_gated_by_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    assert "task_plan" in _root_tool_names(_gaia(tmp_path), monkeypatch)  # default on
+
+    off = tmp_path / "off.yaml"
+    off.write_text("tools:\n  task_plan:\n    enabled: false\n")
+    gaia = Gaia(Settings(agent_registry_dir=tmp_path / "reg3", config_path=off))
+    assert "task_plan" not in _root_tool_names(gaia, monkeypatch)
