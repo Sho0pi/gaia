@@ -91,7 +91,7 @@ async def _push(gaia: Gaia, task: Task, text: str) -> None:
     try:
         await sender.send_to(chat, text)
     except Exception as exc:  # pragma: no cover - delivery is best-effort
-        log_error("mission_notify", exc, task=task.id)
+        log_error("mission_notify", exc, task=task.id, channel=channel)
 
 
 async def notify_approval(gaia: Gaia, task: Task) -> None:
@@ -168,4 +168,4 @@ async def notify_result(gaia: Gaia, task: Task, run: SoulRun) -> None:
                 full = Path(run.workspace) / path if run.workspace else Path(path)
                 await sender.send_to(chat, Media(path=full))
     except Exception as exc:  # pragma: no cover - delivery is best-effort
-        log_error("mission_deliver", exc, task=task.id)
+        log_error("mission_deliver", exc, task=task.id, channel=channel)

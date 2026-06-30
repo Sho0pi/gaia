@@ -178,7 +178,7 @@ class MissionDispatcher:
             try:
                 run = await self._execute(task)
             except Exception as exc:  # the worker must never crash the loop
-                log_error("task_run", exc, task=task.id)
+                log_error("task_run", exc, task=task.id, soul=task.assignee, owner=task.owner)
                 run = SoulRun(False, task.assignee, "", False, error=str(exc))
             self._finish(task, run)
             self._inflight.discard(task_id)

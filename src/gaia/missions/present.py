@@ -77,4 +77,4 @@ async def present_result(gaia: Gaia, task: Task, run: SoulRun) -> None:
     try:
         await handler(Inbound(text=_prompt(task, run)), send)
     except Exception as exc:  # pragma: no cover - presentation is best-effort
-        log_error("mission_present", exc, task=task.id)
+        log_error("mission_present", exc, task=task.id, soul=run.soul_key)

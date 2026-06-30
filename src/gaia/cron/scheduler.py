@@ -149,7 +149,7 @@ class CronScheduler:
             await self._runner(job)
         except Exception as exc:
             # A failing turn must never kill the scheduler loop; next fire tries again.
-            log_error("cron_job", exc, job=job.id)
+            log_error("cron_job", exc, job=job.id, name=job.name or job.message[:40])
         finally:
             self._store.mark_ran(job.id)  # one-shots are deleted here
             if job.delete_after_run:
