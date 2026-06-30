@@ -12,6 +12,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
+from gaia.commands import catalog
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from gaia.commands.registry import CommandRegistry
     from gaia.core.agent import Gaia
@@ -35,21 +37,34 @@ class CommandContext:
 
 
 class Command(ABC):
-    """A slash command: its metadata as class attributes + a ``run`` method.
+    """A slash command: its *behaviour* (name, capability, run) here; its *description* in
+    :mod:`gaia.commands.catalog` (one source, shared with the CLI).
 
-    Each command is a subclass setting ``name``/``summary`` (and optional ``aliases`` /
-    ``usage``) and implementing :meth:`run`. The registry holds one instance per command.
+    A subclass sets ``name`` (and optional ``aliases`` / ``capability``) and implements :meth:`run`.
+    ``summary``/``usage``/``category``/``details``/``examples`` are read from the catalog by name —
+    so the same wording feeds chat ``/help`` and the CLI's ``--help``. The registry holds one
+    instance per command.
     """
 
     name: ClassVar[str]
-    summary: ClassVar[str]
     aliases: ClassVar[tuple[str, ...]] = ()
-    usage: ClassVar[str] = ""
     #: The ACL capability required to run this command, or ``None`` for no restriction
     #: (anyone who can chat). Gated the same way for the human (``/cmd``) and the agent
     #: (``run_command``) — both go through :func:`authorize`. Examples: ``"manage_users"``
     #: for user/permission/forget commands, ``"skills"`` for ``/skill``.
     capability: ClassVar[str | None] = None
+
+    @property
+    def summary(self) -> str:
+        """The one-line description, from the catalog."""
+        i = catalog.info(self.name)
+        return i.summary if i else ""
+
+    @property
+    def usage(self) -> str:
+        """The arg hint (e.g. ``<fact>``), from the catalog."""
+        i = catalog.info(self.name)
+        return i.usage if i else ""
 
     @abstractmethod
     async def run(self, ctx: CommandContext) -> str:
@@ -64,6 +79,25 @@ class Command(ABC):
         if self.aliases:
             line += " (aka " + ", ".join(f"{PREFIX}{a}" for a in self.aliases) + ")"
         return line
+
+    def full_help(self) -> str:
+        """Rich ``/help <cmd>`` body: usage, aliases, admin gate, details, examples."""
+        i = catalog.info(self.name)
+        head = f"*{PREFIX}{self.name}"
+        if i and i.usage:
+            head += f" {i.usage}"
+        lines = [f"{head}*", i.summary if i else ""]
+        if self.aliases:
+            lines.append("aka " + ", ".join(f"{PREFIX}{a}" for a in self.aliases))
+        if self.capability == "manage_users":
+            lines.append("🔒 admin only")
+        elif self.capability is not None:
+            lines.append(f"🔒 needs the '{self.capability}' capability")
+        if i and i.details:
+            lines += ["", i.details]
+        if i and i.examples:
+            lines += ["", "*Examples*", *(f"  {e}" for e in i.examples)]
+        return "\n".join(line for line in lines if line is not None)
 
 
 def authorize(command: Command, ctx: CommandContext) -> str | None:

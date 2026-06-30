@@ -14,8 +14,6 @@ from gaia.logs import log_error
 
 class SkillCommand(Command):
     name = "skill"
-    summary = "Manage skills: list, show, search, install, remove (id/glob/all)."
-    usage = "<list|show|search|install|remove> [args]"
     capability = "skills"
 
     async def run(self, ctx: CommandContext) -> str:

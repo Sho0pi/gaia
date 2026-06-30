@@ -15,6 +15,7 @@ import typer
 
 from gaia.cli._console import console, emit_json
 from gaia.cli._options import state
+from gaia.commands.catalog import summary_of
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from gaia.users import UserStore
@@ -41,9 +42,9 @@ def _resolve(store: UserStore, ref: str) -> str | None:
     return None
 
 
-@app.command("list")
+@app.command("list", help=summary_of("acl"))
 def list_groups(ctx: typer.Context) -> None:
-    """List the capability groups and the tools each grants."""
+    # help text comes from the shared command catalog (same wording as the chat `/acl`).
     from gaia.acl import GROUPS
 
     groups = {name: sorted(tools) for name, tools in GROUPS.items()}

@@ -7,8 +7,6 @@ from gaia.commands.base import Command, CommandContext
 
 class RememberCommand(Command):
     name = "remember"
-    summary = "Save a fact to long-term memory."
-    usage = "<fact>"
 
     async def run(self, ctx: CommandContext) -> str:
         fact = ctx.args.strip()
