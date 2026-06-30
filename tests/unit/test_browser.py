@@ -599,3 +599,23 @@ def test_camoufox_headless_bool_passthrough() -> None:
 
     assert _camoufox_headless(BrowserConfig(headless=True)) is True
     assert _camoufox_headless(BrowserConfig(headless=False)) is False
+
+
+async def test_navigate_file_redirect_outside_workspace_blocked(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A file:// deliverable that redirects to a file OUTSIDE the workspace must be blocked on the
+    # post-goto re-check — not trusted just because the final URL is also a file: scheme.
+    monkeypatch.setattr("gaia.constants.AGENTS_DIR", tmp_path)
+    src = tmp_path / "ok.html"
+    src.write_text("<html></html>")
+
+    class _RedirectPage(_FakePage):
+        async def goto(self, url: str) -> None:
+            self.goto_url = url
+            self.url = "file:///etc/passwd"  # simulate a redirect outside the workspace
+
+    tool = browser.make_browser_navigate(_manager_with(_RedirectPage()))
+    res = await tool(f"file://{src}", tool_context=_FakeToolContext())
+
+    assert res["status"] == "error" and "blocked" in res["error_message"]
