@@ -14,10 +14,15 @@
       <stop offset="0%" stop-color="#0E7490"/>
       <stop offset="100%" stop-color="#34D399"/>
     </linearGradient>
-    <linearGradient id="mark" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0E7490"/>
-      <stop offset="100%" stop-color="#2B5C44"/>
+    <linearGradient id="orb" x1="10%" y1="16%" x2="90%" y2="84%">
+      <stop offset="0%" stop-color="#2456C8"/>
+      <stop offset="48%" stop-color="#009A9E"/>
+      <stop offset="100%" stop-color="#2BB36B"/>
     </linearGradient>
+    <radialGradient id="orbhl" cx="72%" cy="26%" r="55%">
+      <stop offset="0%" stop-color="#BFF3CE" stop-opacity="0.5"/>
+      <stop offset="60%" stop-color="#BFF3CE" stop-opacity="0"/>
+    </radialGradient>
   </defs>
 
   <!-- ground -->
@@ -29,11 +34,9 @@
     <path transform="translate(444 40)" d="M0 0h28v28h-18v-18h8v8M48 0h28v28h-18v-18h8v8M96 0h28v28h-18v-18h8v8M144 0h28v28h-18v-18h8v8M192 0h28v28h-18v-18h8v8M240 0h28v28h-18v-18h8v8M288 0h28v28h-18v-18h8v8"/>
   </g>
 
-  <!-- logo mark (the gaia icon: gradient disc + Γ) -->
-  <circle cx="640" cy="120" r="40" fill="url(#mark)"/>
-  <circle cx="640" cy="120" r="40" fill="none" stroke="#5EEAD4" stroke-width="1.5" opacity="0.5"/>
-  <text x="640" y="134" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif"
-        font-size="44" font-weight="900" fill="#F8FAFC">Γ</text>
+  <!-- logo mark (the gaia orb) -->
+  <circle cx="640" cy="120" r="42" fill="url(#orb)"/>
+  <circle cx="640" cy="120" r="42" fill="url(#orbhl)"/>
 
   <!-- wordmark -->
   <text x="640" y="270" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif"
