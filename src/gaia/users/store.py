@@ -82,6 +82,16 @@ class UserStore:
         ident = qualify(channel, sender_id)
         return next((u for u in self.list() if ident in u.identities), None)
 
+    def resolve_ref(self, ref: str) -> User | None:
+        """Resolve a free-form ref (canonical id, display name, or ``channel:sender``) to a user."""
+        user = self.get(ref)
+        if user is None:
+            user = next((u for u in self.list() if u.name.lower() == ref.lower()), None)
+        if user is None and ":" in ref:
+            ch, _, sender = ref.partition(":")
+            user = self.resolve(ch, sender)
+        return user
+
     def has_admin(self) -> bool:
         """Whether any admin exists yet — drives first-contact bootstrap when none does."""
         return any(u.role == "admin" for u in self.list())

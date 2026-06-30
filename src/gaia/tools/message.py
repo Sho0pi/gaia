@@ -98,12 +98,7 @@ def _resolve_target(
     that is neither a known user nor an address (e.g. "girlfriend") so the caller can try
     resolving it against the user's memory.
     """
-    user: User | None = store.get(recipient)
-    if user is None:
-        user = next((u for u in store.list() if u.name.lower() == recipient.lower()), None)
-    if user is None and ":" in recipient:
-        ch, _, sender = recipient.partition(":")
-        user = store.resolve(ch, sender)
+    user: User | None = store.resolve_ref(recipient)
 
     if user is not None:
         addr = user_address(store, user.id, channel)
