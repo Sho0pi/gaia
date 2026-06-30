@@ -218,7 +218,11 @@ async def test_forget_yes_wipes() -> None:
 
 
 async def test_memory_commands_handle_disabled_memory() -> None:
-    assert "off" in await _run("memory", _ctx(memory=None))
+    from gaia.config.schema import MemoryConfig
+
+    ctx = _ctx(memory=None)
+    ctx.gaia.config = GaiaConfig(memory=MemoryConfig(enabled=False))  # off is config-driven now
+    assert "off" in (await _run("memory", ctx)).lower()
     assert "nothing to forget" in await _run("forget", _ctx(memory=None))
 
 

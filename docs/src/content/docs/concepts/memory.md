@@ -63,13 +63,19 @@ mem0 is orchestration over three provider-agnostic pieces (all set in `gaia.yaml
 - **LLM** — extracts durable facts from a conversation and decides add/update/no-op.
   Default: Gemini (reuses `settings.model` + `GEMINI_API_KEY`).
 - **embedder** — vectorises facts for semantic search. Default: Gemini
-  (`models/gemini-embedding-2`).
+  (`models/gemini-embedding-2`, **free** on Google's free tier), or OpenAI
+  (`text-embedding-3-small`, needs `OPENAI_API_KEY`).
 - **vector store** — holds the vectors. Default: a local **Chroma** at
   `~/.gaia/memory/chroma` (+ mem0's own SQLite history). Portable down to a Raspberry Pi.
 
 Point any of the three at OpenAI / a local embedder / pgvector / qdrant without touching
 code. **Secrets never go in `gaia.yaml`** — each provider reads its own env var inside
 mem0, exactly like the agent model.
+
+You don't have to edit `gaia.yaml` by hand: the **`gaia setup`** wizard has a Memory step
+(toggle on/off, pick the embedder), and in chat **`/memory`** lists what's stored while an admin
+can `/memory on`, `/memory off`, or switch the embedder with `/memory gemini` / `/memory openai`.
+Switching the embedder resets the store (old vectors live in the previous embedder's space).
 
 ### What gets stored — extraction steering
 

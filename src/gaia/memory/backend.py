@@ -34,7 +34,13 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 #: Gemini embedding model used when the embedder provider is the (default) gemini one.
 #: ``gemini-embedding-2`` is the current/GA model per ai.google.dev/gemini-api/docs/embeddings.
+#: Free of charge on Google's free tier (paid is $0.15-0.20/1M) - the recommended default.
 DEFAULT_GEMINI_EMBEDDER_MODEL = "models/gemini-embedding-2"
+
+#: OpenAI embedding model used when the embedder provider is openai. ``text-embedding-3-small`` is
+#: the cheap standard one (1536-dim); reads ``OPENAI_API_KEY`` from env like the agent model (so it
+#: needs an OpenAI API key, not a ChatGPT-OAuth login).
+DEFAULT_OPENAI_EMBEDDER_MODEL = "text-embedding-3-small"
 
 #: Default steering for mem0's fact extractor (mem0 ``custom_instructions``). Keeps the store
 #: to durable facts about the user; drops the assistant's transient action logs.
@@ -78,6 +84,8 @@ def build_mem0_config(settings: Settings, memory: MemoryConfig) -> dict[str, Any
     embedder_defaults: dict[str, Any] = {}
     if memory.embedder.provider == "gemini":
         embedder_defaults = {"model": DEFAULT_GEMINI_EMBEDDER_MODEL}
+    elif memory.embedder.provider == "openai":
+        embedder_defaults = {"model": DEFAULT_OPENAI_EMBEDDER_MODEL}
 
     store_defaults: dict[str, Any] = {"collection_name": settings.mem0_collection}
     if memory.vector_store.provider == "chroma":
