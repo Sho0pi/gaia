@@ -37,9 +37,6 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 logger = logging.getLogger(__name__)
 
-#: How long a soul may run before the run is abandoned (seconds).
-SOUL_TIMEOUT = 300.0
-
 #: Cap on the number of workspace files reported back.
 MAX_FILES = 500
 
