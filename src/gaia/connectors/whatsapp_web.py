@@ -588,6 +588,7 @@ class WhatsAppWebConnector:
         selected = list(getattr(vote, "selectedOptions", None) or [])
         for opt in options:
             if hashlib.sha256(opt.encode()).digest() in selected:
+                self._polls.pop(_deliverable_chat(source), None)  # consume; ignore a changed vote
                 return f"[Selected: {opt}]"
         return ""
 
