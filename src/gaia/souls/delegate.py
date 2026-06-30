@@ -51,8 +51,10 @@ def make_delegate(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any] | None]]
 
         Args:
             task: the full task, in plain language.
-            project: a short slug (e.g. "plant-shop"); reuse to keep editing, new/omit to
-                start fresh. ``workspace`` is its dir.
+            project: a short, STABLE slug (e.g. "plant-shop") naming the app's workspace. REUSE the
+                same slug to keep editing ONE app (the result tells you which project you're in).
+                OMIT to continue the app you last worked on; pass a NEW name only for a new app.
+                Don't pass a sentence here.
             attachments: absolute paths of files to hand the soul (e.g. another soul's
                 ``media``/``files``) — copied into its workspace as relative files.
         """
