@@ -1,6 +1,9 @@
 <div align="center">
 
-<img src="assets/banner.svg" alt="Gaia - your everyday AI agent" width="100%">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
+  <img alt="Gaia - your everyday AI agent" src="assets/banner-light.svg" width="640">
+</picture>
 
 <!-- ⭐ Highest-converting thing you can add here: a real demo GIF. Record a 10-20s WhatsApp or
      terminal chat (ask -> soul forged -> memory recall), save it as assets/demo.gif, and uncomment
