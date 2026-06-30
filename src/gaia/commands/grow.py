@@ -7,7 +7,6 @@ from gaia.commands.base import Command, CommandContext
 
 class GrowCommand(Command):
     name = "grow"
-    summary = "List the skills/souls gaia changed (its own learning history)."
 
     async def run(self, ctx: CommandContext) -> str:
         from gaia.state import StateRepo

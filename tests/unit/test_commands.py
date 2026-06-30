@@ -105,7 +105,7 @@ async def test_effort_warns_on_nonthinking_model(tmp_path: Any) -> None:
 async def test_help_lists_every_command() -> None:
     out = await _run("help", _ctx())
 
-    assert out.startswith("Commands:")
+    assert "*Gaia — commands*" in out and "*Chat & memory*" in out  # grouped, bold sections
     for name in ("/help", "/reset", "/forget", "/remember"):
         assert name in out
 

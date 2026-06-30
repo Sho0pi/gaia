@@ -7,7 +7,6 @@ from gaia.commands.base import Command, CommandContext
 
 class WhoamiCommand(Command):
     name = "whoami"
-    summary = "Show your user/session id, model, and memory state."
 
     async def run(self, ctx: CommandContext) -> str:
         cfg = ctx.gaia.config

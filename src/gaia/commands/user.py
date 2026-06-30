@@ -46,7 +46,6 @@ def _find(ctx: CommandContext, ref: str) -> str | None:
 class UserCommand(Command):
     name = "user"
     capability = "manage_users"
-    summary = "List known users, their roles, and the channels that reach them (admin)."
 
     async def run(self, ctx: CommandContext) -> str:
         users = ctx.gaia.users.list()
@@ -63,8 +62,6 @@ class UserCommand(Command):
 class ApproveCommand(Command):
     name = "approve"
     capability = "manage_users"
-    summary = "Set a user's role (approve a guest). Usage: /approve <id|channel:sender> <role>."
-    usage = "<id|channel:sender> <role>"
     aliases = ("role",)
 
     async def run(self, ctx: CommandContext) -> str:
@@ -83,8 +80,6 @@ class ApproveCommand(Command):
 class RemoveCommand(Command):
     name = "remove"
     capability = "manage_users"
-    summary = "Delete a user from the store. Usage: /remove <id|channel:sender> (admin)."
-    usage = "<id|channel:sender>"
     aliases = ("deluser",)
 
     async def run(self, ctx: CommandContext) -> str:
@@ -104,8 +99,6 @@ class RemoveCommand(Command):
 class NameCommand(Command):
     name = "name"
     capability = "manage_users"
-    summary = "Set a user's display name. Usage: /name <id|channel:sender> <name>."
-    usage = "<id|channel:sender> <name>"
 
     async def run(self, ctx: CommandContext) -> str:
         ref, _, name = ctx.args.partition(" ")
@@ -122,8 +115,6 @@ class NameCommand(Command):
 class LinkCommand(Command):
     name = "link"
     capability = "manage_users"
-    summary = "Attach another channel id to a user. Usage: /link <id> <channel:sender>."
-    usage = "<id> <channel:sender>"
 
     async def run(self, ctx: CommandContext) -> str:
         user_id, _, ident = ctx.args.partition(" ")

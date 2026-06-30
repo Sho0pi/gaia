@@ -21,8 +21,6 @@ def _supports_effort(provider: str, model: str) -> bool:
 
 class EffortCommand(Command):
     name = "effort"
-    summary = "Show or set the model's reasoning effort (/effort <minimal|low|medium|high>)."
-    usage = "[minimal|low|medium|high|off]"
     #: Changes global config (gaia.yaml), so it's gated like the other admin commands.
     capability = "manage_users"
 

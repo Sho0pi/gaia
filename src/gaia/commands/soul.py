@@ -16,7 +16,6 @@ def _idle(seconds: float) -> str:
 
 class SoulCommand(Command):
     name = "soul"
-    summary = "List the souls Gaia has learned, and the ones live right now (warm sessions)."
 
     async def run(self, ctx: CommandContext) -> str:
         names = ctx.gaia.known_souls()

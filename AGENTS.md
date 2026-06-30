@@ -48,7 +48,9 @@ unsure which library, delegate to `lib-researcher` subagent.
   missing bun falls back to native). See `BrowserConfig` in `config/schema.py` for
   SSRF/isolation/observability tradeoffs.
 - `commands/` — in-chat slash commands (`/help`, `/reset`, …): one class per file,
-  handled out-of-band, never reach model. → `new-command` skill.
+  handled out-of-band, never reach model. Behaviour on the class; **description in
+  `catalog.py`** (one source, shared with the CLI via `summary_of`); `/help` renders from it,
+  role-filtered. → `new-command` skill.
 - `memory/` — `backend.py` builds mem0, `service.py` adapts it to ADK's
   `BaseMemoryService` (auto-ingest batching + `remember`/`load_memory` tools);
   `profile.py` distils the session-start `<USER_PROFILE>`. Full design:

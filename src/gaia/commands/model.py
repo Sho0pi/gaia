@@ -7,8 +7,6 @@ from gaia.commands.base import Command, CommandContext
 
 class ModelCommand(Command):
     name = "model"
-    summary = "Show the active model, or switch it (/model <id>)."
-    usage = "[model-id]"
     #: Changes global config (gaia.yaml), so it's gated like the other admin commands.
     capability = "manage_users"
 
