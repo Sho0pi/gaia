@@ -124,3 +124,41 @@ async def test_download_document_kind_from_mime() -> None:
     assert pdf is not None and pdf.kind == "document"
     png = await conn._download(_doc_message("image/png", "shot.png"))
     assert png is not None and png.kind == "image"  # an image sent as a file is still an image
+
+
+async def test_question_renders_inline_keyboard() -> None:
+    from gaia.connectors.base import Question
+
+    captured: dict[str, Any] = {}
+
+    async def reply_text(text: str, reply_markup: Any = None) -> None:
+        captured["text"], captured["markup"] = text, reply_markup
+
+    message = SimpleNamespace(chat_id=99, reply_text=reply_text)
+    conn = TelegramConnector("tok", _noop_dispatch)
+
+    await conn._send_reply(message, Question(text="Pick one", options=("Red", "Blue")))
+
+    assert captured["text"] == "Pick one"
+    rows = captured["markup"].inline_keyboard  # InlineKeyboardMarkup
+    assert [r[0].text for r in rows] == ["Red", "Blue"]
+    assert [r[0].callback_data for r in rows] == ["0", "1"]  # index → label on a tap
+    assert conn._choices[99] == ("Red", "Blue")
+
+
+async def test_run_turn_feeds_the_selected_answer() -> None:
+    captured: dict[str, Any] = {}
+
+    async def dispatch(_sid: str, _name: str, inbound: Any, _send: Any) -> None:
+        captured["text"] = inbound.text
+
+    async def send_chat_action(**_k: Any) -> None:
+        return None
+
+    conn = TelegramConnector("tok", dispatch)
+    message = SimpleNamespace(chat_id=99, chat=SimpleNamespace(type="private"))
+    sender = SimpleNamespace(id=5, first_name="Itay", username=None)
+    context = SimpleNamespace(bot=SimpleNamespace(send_chat_action=send_chat_action))
+
+    await conn._run_turn(context, message, sender, "[Selected: Red]")
+    assert captured["text"] == "[Selected: Red]"

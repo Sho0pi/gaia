@@ -105,6 +105,14 @@ def _jid_to_str(jid: Any) -> str:
     return f"{user}@{server}" if user else str(server)
 
 
+def _build_chat_jid(chat: str) -> Any:
+    """A neonize JID from a ``user@server`` string — for ``send_message`` to a deliverable chat."""
+    from neonize.utils import build_jid
+
+    user, _, server = chat.partition("@")
+    return build_jid(user, server or "s.whatsapp.net")
+
+
 def _deliverable_chat(source: Any) -> str:
     """The chat id later proactive sends should target.
 
@@ -418,9 +426,10 @@ class WhatsAppWebConnector:
                 current_chat.set((self.NAME, _deliverable_chat(source)))
 
                 async def send(reply: Reply) -> None:
-                    # A media reply goes out as the real file (image/video/audio/document);
-                    # text and questions quote the inbound message — a Question degrades to
-                    # numbered text via as_text, so the user replies with the option number.
+                    # A media reply goes out as the real file; everything else is quoted back as
+                    # text. A multiple-choice Question degrades to numbered text via as_text (a
+                    # WhatsApp poll proved unreliable; the user replies with the number. Telegram
+                    # renders tappable buttons.)
                     if isinstance(reply, Media):
                         await _send_media(client, chat, reply)
                     else:
@@ -659,10 +668,7 @@ class WhatsAppWebConnector:
         """
         if self._client is None:
             raise RuntimeError("whatsapp connector is not running")
-        from neonize.utils import build_jid
-
-        user, _, server = chat.partition("@")
-        jid = build_jid(user, server or "s.whatsapp.net")
+        jid = _build_chat_jid(chat)
         if isinstance(reply, Media):
             await _send_media(self._client, jid, reply)
         else:

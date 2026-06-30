@@ -21,6 +21,7 @@ from gaia.connectors.base import (
     Inbound,
     InboundMedia,
     Media,
+    Question,
     Reply,
     as_text,
     chunk_text,
@@ -82,12 +83,15 @@ class TelegramConnector:
         self._commands = commands or []
         # Turns inbound voice notes into text; None = voice messages are ignored (no transcriber).
         self._transcriber = transcriber
+        # The options of the last multiple-choice Question sent to a chat, so an inline-button tap
+        # (callback_data = the option index) maps back to the option label.
+        self._choices: dict[int, tuple[str, ...]] = {}
         self._app: Any = None  # the live Application while start() runs (for send_to)
 
     def build_application(self) -> object:
         """Create a python-telegram-bot Application wired to the dispatcher."""
         from telegram import Update
-        from telegram.ext import Application, MessageHandler, filters
+        from telegram.ext import Application, CallbackQueryHandler, MessageHandler, filters
 
         app = Application.builder().token(self._token).build()
 
@@ -95,7 +99,6 @@ class TelegramConnector:
             message = update.message
             if not message or not message.from_user:
                 return
-            sender = message.from_user
             text = (message.text or message.caption or "").strip()
             media: tuple[InboundMedia, ...] = ()
 
@@ -111,37 +114,31 @@ class TelegramConnector:
 
             if not text and not media:
                 return  # nothing we can hand to the model
+            await self._run_turn(context, message, message.from_user, text, media)
 
-            async def send(reply: Reply) -> None:
-                # A media reply goes out as the real file by kind; on any send failure
-                # fall back to the caption/path text so the user still gets something.
-                if isinstance(reply, Media):
-                    try:
-                        await _tg_reply_media(message, reply)
-                    except Exception:
-                        await message.reply_text(as_text(reply))
-                else:
-                    # str passes through (Question → numbered text); split past Telegram's
-                    # 4096-char cap so a long reply arrives as several messages, not an error.
-                    for part in chunk_text(as_text(reply), TELEGRAM_LIMIT):
-                        await message.reply_text(part)
-
-            # Record where this turn came from, so scheduling tools (cron) can capture the chat
-            # for later proactive delivery (the chat, not the sender).
-            current_chat.set((self.NAME, str(message.chat_id)))
-            name = sender.first_name or sender.username or str(sender.id)
-            is_group = message.chat.type != "private"
-            # Show "typing…" until the turn finishes (Telegram's action lasts ~5s, so refresh it).
-            typing = asyncio.create_task(self._keep_typing(context.bot, message.chat_id))
+        async def _on_callback(update: Update, context: Any) -> None:
+            # An inline-keyboard tap on a multiple-choice Question: ack it, map the option index
+            # back to its label, and feed it as the answer ("[Selected: X]" → resolve_answer).
+            query = update.callback_query
+            if not query or query.data is None or query.message is None or not query.from_user:
+                return
+            await query.answer()  # stop the button's loading spinner
+            message: Any = query.message  # MaybeInaccessibleMessage; chat_id is present in practice
+            options = self._choices.pop(message.chat_id, ())  # consume; re-tap can't re-fire
             try:
-                await self._dispatch(
-                    str(sender.id), name, Inbound(text=text, media=media, is_group=is_group), send
-                )
-            finally:
-                typing.cancel()
+                label = options[int(query.data)]
+            except (ValueError, IndexError):
+                return
+            # Replace the keyboard with the chosen option, so it can't be re-tapped and the pick is
+            # visible (the standard Telegram inline-keyboard pattern). Best-effort.
+            try:
+                await query.edit_message_text(f"{message.text}\n\n✅ {label}")
+            except Exception:
+                pass
+            await self._run_turn(context, message, query.from_user, f"[Selected: {label}]")
 
         # TEXT keeps slash-commands (/help, /reset, …) flowing (the handler dispatches them); the
-        # rest add voice + media. Status updates (joins, pins) are excluded by these filters.
+        # rest add voice + media; CallbackQuery handles inline-button taps. Status updates excluded.
         app.add_handler(
             MessageHandler(
                 filters.TEXT
@@ -153,7 +150,55 @@ class TelegramConnector:
                 _on_message,
             )
         )
+        app.add_handler(CallbackQueryHandler(_on_callback))
         return app
+
+    async def _send_reply(self, message: Any, reply: Reply) -> None:
+        """Send one reply: media as the real file, a multiple-choice Question as tappable inline
+        buttons, anything else as text (chunked past Telegram's 4096-char cap)."""
+        if isinstance(reply, Media):
+            try:
+                await _tg_reply_media(message, reply)
+            except Exception:
+                await message.reply_text(as_text(reply))
+        elif isinstance(reply, Question) and reply.options:
+            from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+            self._choices[message.chat_id] = reply.options  # map a later tap's index → label
+            keyboard = [
+                [InlineKeyboardButton(opt, callback_data=str(i))]
+                for i, opt in enumerate(reply.options)
+            ]
+            await message.reply_text(reply.text, reply_markup=InlineKeyboardMarkup(keyboard))
+        else:
+            # str passes through; a Question without options degrades to numbered text (as_text).
+            for part in chunk_text(as_text(reply), TELEGRAM_LIMIT):
+                await message.reply_text(part)
+
+    async def _run_turn(
+        self,
+        context: Any,
+        message: Any,
+        sender: Any,
+        text: str,
+        media: tuple[InboundMedia, ...] = (),
+    ) -> None:
+        """Dispatch one inbound (a message or a button tap) and hold "typing…" until it finishes."""
+        # Record where this turn came from, so scheduling tools (cron) can capture the chat.
+        current_chat.set((self.NAME, str(message.chat_id)))
+        name = sender.first_name or sender.username or str(sender.id)
+        is_group = message.chat.type != "private"
+
+        async def send(reply: Reply) -> None:
+            await self._send_reply(message, reply)
+
+        typing = asyncio.create_task(self._keep_typing(context.bot, message.chat_id))
+        try:
+            await self._dispatch(
+                str(sender.id), name, Inbound(text=text, media=media, is_group=is_group), send
+            )
+        finally:
+            typing.cancel()
 
     async def _keep_typing(self, bot: Any, chat_id: int) -> None:
         """Hold the "typing…" chat action for the whole turn (best-effort; never breaks it)."""
