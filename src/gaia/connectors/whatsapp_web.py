@@ -426,6 +426,11 @@ class WhatsAppWebConnector:
                 current_chat.set((self.NAME, _deliverable_chat(source)))
 
                 async def send(reply: Reply) -> None:
+                    logger.info(  # TEMP diagnostic — remove after the poll path is confirmed
+                        "WA send reply=%s options=%s",
+                        type(reply).__name__,
+                        getattr(reply, "options", "<n/a>"),
+                    )
                     # Media → the real file; a multiple-choice Question → a native WhatsApp poll
                     # (the vote returns as "[Selected: X]", see _poll_answer); else quote text back.
                     if isinstance(reply, Media):
