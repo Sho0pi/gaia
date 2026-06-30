@@ -702,3 +702,18 @@ async def test_idle_consolidation_waits_for_an_active_turn() -> None:
 
     # consolidation ran only after the turn finished (never interleaved)
     assert order == ["turn-start", "turn-end", "consolidate"]
+
+
+def test_is_superseded_turn_only_matches_the_stale_session_valueerror() -> None:
+    # A turn cancelled by a newer message raises ADK's stale-session ValueError on append — that's
+    # the only thing we swallow; real failures still get logged + apologized for.
+    from gaia.core.handler import _is_superseded_turn
+
+    stale = ValueError(
+        "The session has been modified in storage since it was loaded. "
+        "Please reload the session before appending more events."
+    )
+    assert _is_superseded_turn(stale) is True
+    assert _is_superseded_turn(ValueError("some unrelated value error")) is False
+    # same text but not a ValueError → a real error, not a supersede
+    assert _is_superseded_turn(RuntimeError("modified in storage since it was loaded")) is False
