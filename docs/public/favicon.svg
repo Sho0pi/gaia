@@ -1,10 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
   <defs>
-    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0E7490"/>
-      <stop offset="100%" stop-color="#2B5C44"/>
+    <linearGradient id="g" x1="10%" y1="16%" x2="90%" y2="84%">
+      <stop offset="0%" stop-color="#2456C8"/>
+      <stop offset="48%" stop-color="#009A9E"/>
+      <stop offset="100%" stop-color="#2BB36B"/>
     </linearGradient>
+    <radialGradient id="h" cx="72%" cy="26%" r="55%">
+      <stop offset="0%" stop-color="#BFF3CE" stop-opacity="0.5"/>
+      <stop offset="60%" stop-color="#BFF3CE" stop-opacity="0"/>
+    </radialGradient>
   </defs>
-  <circle cx="16" cy="16" r="15" fill="url(#g)"/>
-  <text x="16" y="21" text-anchor="middle" font-family="serif" font-size="16" font-weight="900" fill="white" letter-spacing="1">Γ</text>
+  <circle cx="16" cy="16" r="15.5" fill="url(#g)"/>
+  <circle cx="16" cy="16" r="15.5" fill="url(#h)"/>
 </svg>
