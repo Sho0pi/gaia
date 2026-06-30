@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 from pathlib import Path
 from typing import Literal
 
@@ -66,6 +67,11 @@ class UserStore:
 
     def __init__(self, path: Path | None = None) -> None:
         self._path = Path(path) if path is not None else constants.USERS_FILE
+        # Guards every read-modify-write below so a first-contact register / role change can't
+        # lose an update — the store is one shared singleton but connectors (PTB, neonize) run in
+        # their own threads, so the json read→write sequence must be atomic across them. RLock so
+        # a guarded method can call another (e.g. seed_admins → register/set_role).
+        self._lock = threading.RLock()
 
     def list(self) -> UserList:
         """Every stored user, file order (empty list when the file is missing)."""
@@ -102,17 +108,18 @@ class UserStore:
         The canonical id is a slug of ``name`` (deduped with a numeric suffix when taken),
         falling back to the channel-qualified id when there's no usable name.
         """
-        users = self.list()
-        taken = {u.id for u in users}
-        base = slugify(name) if name.strip() else slugify(qualify(channel, sender_id))
-        user = User(
-            id=_dedupe(base, taken),
-            name=name.strip(),
-            role=role,
-            identities=[qualify(channel, sender_id)],
-        )
-        self._write([*users, user])
-        return user
+        with self._lock:
+            users = self.list()
+            taken = {u.id for u in users}
+            base = slugify(name) if name.strip() else slugify(qualify(channel, sender_id))
+            user = User(
+                id=_dedupe(base, taken),
+                name=name.strip(),
+                role=role,
+                identities=[qualify(channel, sender_id)],
+            )
+            self._write([*users, user])
+            return user
 
     def set_role(self, user_id: str, role: Role) -> User | None:
         """Change a user's role; returns the updated user (or ``None`` if unknown)."""
@@ -154,12 +161,13 @@ class UserStore:
         long-term memory (mem0, keyed on ``user.id``) is *not* touched here; clear that
         separately if needed.
         """
-        users = self.list()
-        removed = next((u for u in users if u.id == user_id), None)
-        if removed is None:
-            return None
-        self._write([u for u in users if u.id != user_id])
-        return removed
+        with self._lock:
+            users = self.list()
+            removed = next((u for u in users if u.id == user_id), None)
+            if removed is None:
+                return None
+            self._write([u for u in users if u.id != user_id])
+            return removed
 
     def set_name(self, user_id: str, name: str) -> User | None:
         """Change a user's display name; returns the updated user (or ``None``)."""
@@ -172,18 +180,19 @@ class UserStore:
         to exactly one person.
         """
         ident = qualify(channel, sender_id)
-        users = self.list()
-        target = next((u for u in users if u.id == user_id), None)
-        if target is None:
-            return None
-        updated: UserList = []
-        for u in users:
-            idents = [i for i in u.identities if i != ident]  # detach from everyone else
-            if u.id == user_id and ident not in idents:
-                idents.append(ident)
-            updated.append(u.model_copy(update={"identities": idents}))
-        self._write(updated)
-        return self.get(user_id)
+        with self._lock:
+            users = self.list()
+            target = next((u for u in users if u.id == user_id), None)
+            if target is None:
+                return None
+            updated: UserList = []
+            for u in users:
+                idents = [i for i in u.identities if i != ident]  # detach from everyone else
+                if u.id == user_id and ident not in idents:
+                    idents.append(ident)
+                updated.append(u.model_copy(update={"identities": idents}))
+            self._write(updated)
+            return self.get(user_id)
 
     def seed_admins(self, admin_ids: StrList) -> None:
         """Ensure each ``"channel:sender"`` in ``admin_ids`` maps to an admin user.
@@ -206,12 +215,13 @@ class UserStore:
     # -- internals -------------------------------------------------------------------
 
     def _mutate(self, user_id: str, fn: object) -> User | None:
-        users = self.list()
-        if not any(u.id == user_id for u in users):
-            return None
-        updated = [fn(u) if u.id == user_id else u for u in users]  # type: ignore[operator]
-        self._write(updated)
-        return self.get(user_id)
+        with self._lock:
+            users = self.list()
+            if not any(u.id == user_id for u in users):
+                return None
+            updated = [fn(u) if u.id == user_id else u for u in users]  # type: ignore[operator]
+            self._write(updated)
+            return self.get(user_id)
 
     def _write(self, users: UserList) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
