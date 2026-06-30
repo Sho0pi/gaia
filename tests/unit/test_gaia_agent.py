@@ -102,6 +102,20 @@ def test_no_profile_block_without_a_profile(
     assert "</USER_PROFILE>" not in captured["instruction"]  # type: ignore[operator]
 
 
+def test_instruction_routes_soul_preview_to_delegate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # #350: showing a soul's app must delegate (the soul owns the workspace), and the root must not
+    # send_file junk it didn't make this turn.
+    gaia = _gaia(tmp_path)
+
+    instruction = _capture_root_kwargs(gaia, monkeypatch)["instruction"]
+
+    assert isinstance(instruction, str)
+    assert "an app a SOUL built" in instruction and "delegate_to_soul" in instruction
+    assert "send_file unrelated files you didn't create" in instruction
+
+
 def test_root_agent_attaches_skill_toolset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # On-demand skills: when skills_dir holds a skill, the root agent gets a SkillToolset.
     skills = tmp_path / "skills"
