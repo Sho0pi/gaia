@@ -381,7 +381,10 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
                 # them with Telegram (setMyCommands) without importing gaia.commands itself.
                 cmd_meta = [(c.name, c.summary) for c in default_registry(gaia.config).all()]
                 telegram = TelegramConnector(
-                    token, dispatcher.for_channel(TelegramConnector.NAME), commands=cmd_meta
+                    token,
+                    dispatcher.for_channel(TelegramConnector.NAME),
+                    commands=cmd_meta,
+                    transcriber=gaia.container.transcriber(),
                 )
                 tasks.append(asyncio.create_task(telegram.start()))
                 running[TelegramConnector.NAME] = telegram
