@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from gaia.core.elicit import soul_pending_from_json, soul_pending_to_json
-from gaia.logs import log_event
+from gaia.logs import log_error, log_event
 from gaia.missions.notify import notify_approval, notify_ask_user, notify_paused, notify_result
 from gaia.missions.present import present_result
 from gaia.missions.store import Task, TaskStatus, TaskStore
@@ -107,8 +107,8 @@ class MissionDispatcher:
         while True:
             try:
                 self._dispatch_ready()
-            except Exception:  # pragma: no cover - the loop must never die
-                logger.exception("dispatcher poll failed")
+            except Exception as exc:  # pragma: no cover - the loop must never die
+                log_error("dispatcher_poll", exc)
             await asyncio.sleep(self._poll_seconds)
 
     def _dispatch_ready(self) -> None:
@@ -178,7 +178,7 @@ class MissionDispatcher:
             try:
                 run = await self._execute(task)
             except Exception as exc:  # the worker must never crash the loop
-                logger.exception("task %s crashed", task.id)
+                log_error("task_run", exc, task=task.id)
                 run = SoulRun(False, task.assignee, "", False, error=str(exc))
             self._finish(task, run)
             self._inflight.discard(task_id)

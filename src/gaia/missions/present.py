@@ -18,6 +18,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from gaia.connectors.base import Inbound, Reply, current_chat
+from gaia.logs import log_error
 from gaia.missions.notify import _target
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -75,5 +76,5 @@ async def present_result(gaia: Gaia, task: Task, run: SoulRun) -> None:
     current_chat.set(target)
     try:
         await handler(Inbound(text=_prompt(task, run)), send)
-    except Exception:  # pragma: no cover - presentation is best-effort
-        logger.warning("mission %s: present turn failed", task.id, exc_info=True)
+    except Exception as exc:  # pragma: no cover - presentation is best-effort
+        log_error("mission_present", exc, task=task.id)

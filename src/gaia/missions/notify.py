@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from gaia.connectors.base import Media
+from gaia.logs import log_error
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from gaia.core.agent import Gaia
@@ -89,8 +90,8 @@ async def _push(gaia: Gaia, task: Task, text: str) -> None:
         return
     try:
         await sender.send_to(chat, text)
-    except Exception:  # pragma: no cover - delivery is best-effort
-        logger.warning("mission %s: message push failed", task.id, exc_info=True)
+    except Exception as exc:  # pragma: no cover - delivery is best-effort
+        log_error("mission_notify", exc, task=task.id)
 
 
 async def notify_approval(gaia: Gaia, task: Task) -> None:
@@ -166,5 +167,5 @@ async def notify_result(gaia: Gaia, task: Task, run: SoulRun) -> None:
             if path.lower().endswith(_IMAGE_SUFFIXES):
                 full = Path(run.workspace) / path if run.workspace else Path(path)
                 await sender.send_to(chat, Media(path=full))
-    except Exception:  # pragma: no cover - delivery is best-effort
-        logger.warning("mission %s: result delivery failed", task.id, exc_info=True)
+    except Exception as exc:  # pragma: no cover - delivery is best-effort
+        log_error("mission_deliver", exc, task=task.id)
