@@ -367,7 +367,9 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
                 )
 
         if "telegram" in selected:
-            token = gaia.config.connectors.telegram.token
+            # The bot token is a secret: it lives in env (GAIA_TELEGRAM_BOT_TOKEN → settings), never
+            # in gaia.yaml (no token field there by design).
+            token = settings.telegram_bot_token
             if not token:
                 logger.warning(
                     "telegram enabled but no token (set GAIA_TELEGRAM_BOT_TOKEN) — skipping"
@@ -379,7 +381,10 @@ async def _run_background(settings: Settings, gaia: Gaia, selected: list[str]) -
                 # them with Telegram (setMyCommands) without importing gaia.commands itself.
                 cmd_meta = [(c.name, c.summary) for c in default_registry(gaia.config).all()]
                 telegram = TelegramConnector(
-                    token, dispatcher.for_channel(TelegramConnector.NAME), commands=cmd_meta
+                    token,
+                    dispatcher.for_channel(TelegramConnector.NAME),
+                    commands=cmd_meta,
+                    transcriber=gaia.container.transcriber(),
                 )
                 tasks.append(asyncio.create_task(telegram.start()))
                 running[TelegramConnector.NAME] = telegram

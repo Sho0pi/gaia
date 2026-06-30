@@ -63,3 +63,64 @@ async def test_register_commands_noop_without_commands() -> None:
     await conn._register_commands(app)
 
     assert app.bot.calls == []  # set_my_commands never called
+
+
+class _FakeFile:
+    async def download_to_drive(self, custom_path: str) -> None:  # the bytes don't matter here
+        return None
+
+
+class _FakeTranscriber:
+    def __init__(self, text: str) -> None:
+        self._text = text
+
+    async def transcribe(self, path: Any) -> str:
+        return self._text
+
+
+def _voice_message(mid: int = 1) -> Any:
+    async def get_file() -> Any:
+        return _FakeFile()
+
+    return SimpleNamespace(voice=SimpleNamespace(get_file=get_file), audio=None, message_id=mid)
+
+
+async def test_transcribe_prefixes_voice_text() -> None:
+    conn = TelegramConnector("tok", _noop_dispatch, transcriber=_FakeTranscriber("hi there"))
+    assert await conn._transcribe(_voice_message()) == "[voice message] hi there"
+
+
+async def test_transcribe_empty_without_transcriber_or_when_silent() -> None:
+    assert await TelegramConnector("tok", _noop_dispatch)._transcribe(_voice_message()) == ""
+    silent = TelegramConnector("tok", _noop_dispatch, transcriber=_FakeTranscriber(""))
+    assert await silent._transcribe(_voice_message()) == ""
+
+
+def _photo_message(mid: int = 2) -> Any:
+    async def get_file() -> Any:
+        return _FakeFile()
+
+    return SimpleNamespace(
+        photo=[SimpleNamespace(get_file=get_file)], document=None, video=None, message_id=mid
+    )
+
+
+def _doc_message(mime: str, fname: str, mid: int = 3) -> Any:
+    async def get_file() -> Any:
+        return _FakeFile()
+
+    doc = SimpleNamespace(get_file=get_file, mime_type=mime, file_name=fname)
+    return SimpleNamespace(photo=None, document=doc, video=None, message_id=mid)
+
+
+async def test_download_photo_is_image() -> None:
+    item = await TelegramConnector("tok", _noop_dispatch)._download(_photo_message())
+    assert item is not None and item.kind == "image" and item.mime == "image/jpeg"
+
+
+async def test_download_document_kind_from_mime() -> None:
+    conn = TelegramConnector("tok", _noop_dispatch)
+    pdf = await conn._download(_doc_message("application/pdf", "report.pdf"))
+    assert pdf is not None and pdf.kind == "document"
+    png = await conn._download(_doc_message("image/png", "shot.png"))
+    assert png is not None and png.kind == "image"  # an image sent as a file is still an image
