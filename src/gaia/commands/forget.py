@@ -7,7 +7,8 @@ from gaia.commands.base import Command, CommandContext
 
 class ForgetCommand(Command):
     name = "forget"
-    capability = "manage_users"
+    # Self-service like /remember and /memory: wipes the CALLER's own memory, not anyone else's
+    # (user_id=ctx.user_id), so no manage_users gate. The '/forget yes' confirm is the safety.
     summary = "Wipe your long-term memory. Send '/forget yes' to confirm."
     usage = "[yes]"
 
