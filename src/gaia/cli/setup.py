@@ -39,6 +39,7 @@ def main(ctx: typer.Context) -> None:
     # admin. `gaia setup admin --id …` remains for advanced/manual cases.
     for label, step in (
         ("Model", model),
+        ("Memory", memory),
         ("Connectors", connectors),
         ("Tools", tools_step),
     ):
@@ -63,6 +64,12 @@ ProviderOpt = Annotated[
 ]
 ModelOpt = Annotated[
     str | None, typer.Option("--model", help="Model id (e.g. gpt-4o, gemini-2.5-flash).")
+]
+EmbedderOpt = Annotated[
+    str | None, typer.Option("--embedder", help="Memory embedder: gemini | openai.")
+]
+MemoryOnOpt = Annotated[
+    bool | None, typer.Option("--on/--off", help="Turn long-term memory on or off.")
 ]
 
 
@@ -90,6 +97,77 @@ def _save_key(
         set_env_var(env_path, key_name, key)  # type: ignore[arg-type]
         console().print(f"{label} saved")
     return key or existing
+
+
+def memory(
+    ctx: typer.Context,
+    on: MemoryOnOpt = None,
+    embedder: EmbedderOpt = None,
+    api_key: ApiKeyOpt = None,
+) -> None:
+    """Wizard step - turn long-term memory on/off and pick its embedder (gemini = free, or openai).
+
+    Reached via `gaia setup`; for non-interactive changes use the chat `/memory` command
+    (on|off|gemini|openai) or `gaia config set memory.embedder.provider`.
+    """
+    from gaia import constants
+    from gaia.cli._envfile import get_env_var
+    from gaia.cli._select import select_one
+    from gaia.cli._yamledit import set_config_value
+    from gaia.config import ConfigSupplier, get_settings
+
+    out = console()
+    settings = get_settings(state(ctx).env_file)
+    env_path = state(ctx).env_file or constants.ENV_FILE  # honor --env-file for secret writes
+    cfg = settings.config_path
+    mem = ConfigSupplier(cfg).current.memory
+
+    # 1. on / off
+    enabled = on
+    if enabled is None:
+        enabled = typer.confirm(
+            "Turn on long-term memory? (Gaia remembers you across chats)", default=mem.enabled
+        )
+    set_config_value(cfg, "memory.enabled", enabled)
+    if not enabled:
+        out.print("long-term memory [yellow]off[/]")
+        return
+
+    # 2. pick the embedder (Gemini is free; OpenAI needs an OpenAI API key)
+    prov = (embedder or "").strip().lower()
+    if not prov:
+        cur = mem.embedder.provider
+        prov = (
+            select_one(
+                "Memory embedder",
+                [
+                    ("gemini", "Gemini", "free, recommended", "current" if cur == "gemini" else ""),
+                    (
+                        "openai",
+                        "OpenAI",
+                        "needs an OpenAI key",
+                        "current" if cur == "openai" else "",
+                    ),
+                ],
+                default=cur,
+            )
+            or cur
+        )
+    if prov not in ("gemini", "openai"):
+        out.print(f"[red]unknown embedder {prov!r}; use gemini | openai[/]")
+        raise typer.Exit(1)
+    set_config_value(cfg, "memory.embedder.provider", prov)
+
+    # 3. ensure the embedder's key (same env vars the model step uses)
+    key_name = "GEMINI_API_KEY" if prov == "gemini" else "OPENAI_API_KEY"
+    cur_key = settings.google_api_key if prov == "gemini" else settings.openai_api_key
+    existing = get_env_var(env_path, key_name) or cur_key
+    if prov == "gemini" and not existing:
+        out.print(
+            "Gemini embeddings are [green]free[/] - get a key at https://aistudio.google.com/apikey"
+        )
+    _save_key(env_path, key_name, existing=existing, flag=api_key, label=key_name)
+    out.print(f"long-term memory [green]on[/] (embedder: {prov})")
 
 
 def search(ctx: typer.Context, engine: EngineOpt = None, api_key: ApiKeyOpt = None) -> None:

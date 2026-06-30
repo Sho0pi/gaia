@@ -76,6 +76,20 @@ def test_local_embedder_needs_no_key() -> None:
     assert cfg["embedder"] == {"provider": "fastembed", "config": {}}
 
 
+def test_openai_embedder_uses_default_model() -> None:
+    # openai embedder gets an explicit default model (mirrors gemini); the key stays in env
+    # (OPENAI_API_KEY), never injected here.
+    from gaia.memory.backend import DEFAULT_OPENAI_EMBEDDER_MODEL
+
+    memory = MemoryConfig(embedder=MemoryProvider(provider="openai"))
+    cfg = build_mem0_config(_settings(), memory)
+
+    assert cfg["embedder"] == {
+        "provider": "openai",
+        "config": {"model": DEFAULT_OPENAI_EMBEDDER_MODEL},
+    }
+
+
 def test_config_path_is_absolute() -> None:
     cfg = build_mem0_config(_settings(), MemoryConfig())
     assert Path(cfg["vector_store"]["config"]["path"]).is_absolute()

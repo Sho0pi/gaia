@@ -57,11 +57,14 @@ CATALOG: dict[str, CommandInfo] = {
     ),
     "memory": CommandInfo(
         "memory",
-        "List what Gaia remembers about you.",
+        "List what Gaia remembers, or turn memory on/off.",
         "Chat & memory",
-        details="Shows every fact in your long-term memory. Add one with /remember, clear all with "
-        "/forget.",
-        examples=("/memory",),
+        usage="[on|off|gemini|openai]",
+        details="No argument lists your long-term memory + its status. Admins can toggle it on/off "
+        "or switch the embedder: gemini (free, recommended) or openai (needs an OpenAI API key). "
+        "Switching provider RESETS the store - old vectors don't match a new embedder. Add a fact "
+        "with /remember, clear all with /forget.",
+        examples=("/memory", "/memory off", "/memory openai"),
     ),
     "forget": CommandInfo(
         "forget",
