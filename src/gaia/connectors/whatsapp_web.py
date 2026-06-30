@@ -107,6 +107,14 @@ def _jid_to_str(jid: Any) -> str:
     return f"{user}@{server}" if user else str(server)
 
 
+def _build_chat_jid(chat: str) -> Any:
+    """A neonize JID from a ``user@server`` string — for ``send_message`` to a deliverable chat."""
+    from neonize.utils import build_jid
+
+    user, _, server = chat.partition("@")
+    return build_jid(user, server or "s.whatsapp.net")
+
+
 def _deliverable_chat(source: Any) -> str:
     """The chat id later proactive sends should target.
 
@@ -426,11 +434,6 @@ class WhatsAppWebConnector:
                 current_chat.set((self.NAME, _deliverable_chat(source)))
 
                 async def send(reply: Reply) -> None:
-                    logger.info(  # TEMP diagnostic — remove after the poll path is confirmed
-                        "WA send reply=%s options=%s",
-                        type(reply).__name__,
-                        getattr(reply, "options", "<n/a>"),
-                    )
                     # Media → the real file; a multiple-choice Question → a native WhatsApp poll
                     # (the vote returns as "[Selected: X]", see _poll_answer); else quote text back.
                     if isinstance(reply, Media):
@@ -439,8 +442,11 @@ class WhatsAppWebConnector:
                         poll = await client.build_poll_vote_creation(
                             reply.text, list(reply.options), 1
                         )
-                        await client.send_message(chat, poll)
-                        self._polls[_deliverable_chat(source)] = reply.options
+                        # A poll goes via send_message, so it must target the DELIVERABLE jid (a DM's
+                        # @lid Chat drops it silently); reply_message dodges this for text.
+                        deliverable = _deliverable_chat(source)
+                        await client.send_message(_build_chat_jid(deliverable), poll)
+                        self._polls[deliverable] = reply.options
                     else:
                         for part in chunk_text(as_text(reply), WHATSAPP_LIMIT):
                             await client.reply_message(part, message)
@@ -701,10 +707,7 @@ class WhatsAppWebConnector:
         """
         if self._client is None:
             raise RuntimeError("whatsapp connector is not running")
-        from neonize.utils import build_jid
-
-        user, _, server = chat.partition("@")
-        jid = build_jid(user, server or "s.whatsapp.net")
+        jid = _build_chat_jid(chat)
         if isinstance(reply, Media):
             await _send_media(self._client, jid, reply)
         else:
