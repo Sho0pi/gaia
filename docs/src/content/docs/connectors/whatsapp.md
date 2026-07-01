@@ -39,6 +39,22 @@ A first-seen sender is a **guest**, gated until an admin approves.
 Set the default with `connectors.whatsapp.default_role`.
 Link a number to an existing identity (shared memory) with `/link <your-id> whatsapp:<number>@s.whatsapp.net`.
 
+## Configure it
+
+```yaml
+# ~/.gaia/gaia.yaml
+connectors:
+  whatsapp:
+    enabled: true
+    default_role: guest
+    show_active: true          # blue-tick + "typing…" while working
+    group_trigger:
+      respond_in_groups: true
+      mention_only: true       # in groups, only when @mentioned or replied to
+```
+
+All keys: [Reference → Config](/reference/config/); editing by hand: [Configuration](/guides/configuration/).
+
 ## Notes + limits
 
 - This is the WhatsApp-Web (personal-account) backend via neonize; it reconnects automatically if the link drops.

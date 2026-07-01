@@ -26,7 +26,17 @@ Shell access is the `shell` capability and is deliberately guarded - `exec` is n
 - **Allowlist mode (default):** only a curated set of dev tools runs (`ls`, `cat`, `git`, `python`/`python3`, `node`, `bun`/`bunx`, `pip`, `uv`, `pytest`, `grep`, `find`, …). Widen or change it in `gaia.yaml`.
 - **One command per call:** chaining and substitution (`;`, `&&`, `||`, `|`, backticks, `$(…)`) are rejected.
 
-The policy lives in `src/gaia/tools/shell/base.py`; tune the mode and allowlist under `tools.exec` in `gaia.yaml`.
+The policy lives in `src/gaia/tools/shell/base.py`; tune the mode and allowlist under `tools.exec` in `gaia.yaml`:
+
+```yaml
+# ~/.gaia/gaia.yaml
+tools:
+  exec:
+    security: allowlist          # 'allowlist' (default) or 'off' (denylist only)
+    allowlist: [ls, cat, git, python3, uv, pytest, node]   # replaces the built-in set
+```
+
+The denylist applies in **every** mode. See [Configuration](/guides/configuration/) for the override pattern.
 
 ## Capabilities
 

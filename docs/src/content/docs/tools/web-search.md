@@ -27,3 +27,14 @@ gaia setup search    # pick the engine, paste a key if needed
 A typical flow: `web_search` to find the right page, then `web_fetch` (or the browser) to read it.
 
 Both tools are in the `web` capability group, granted to regular users by default.
+
+## Configure it
+
+```yaml
+# ~/.gaia/gaia.yaml (the brave key is env-only: BRAVE_API_KEY)
+tools:
+  web_search:
+    engine: duckduckgo   # or 'brave'
+```
+
+Every tool is on by default; turn one off with `tools.<id>.enabled: false`. See [Configuration](/guides/configuration/).
