@@ -20,12 +20,10 @@ from typing import TYPE_CHECKING, Any
 from dependency_injector import providers
 
 from gaia.agents import AgentSpec
-from gaia.communication import apply_communication_style
 from gaia.config import ConfigSupplier, Settings, configure_adk_env, get_settings
 from gaia.config.schema import AgentBinding
 from gaia.di import Container
 from gaia.models import resolve_model, thinking_planner
-from gaia.skills import attach_skills
 
 logger = logging.getLogger(__name__)
 
@@ -148,148 +146,18 @@ class Gaia:
         # it's approximate within a long-lived conversation — good enough for dates.
         now = datetime.now().strftime("%A, %Y-%m-%d %H:%M %Z").strip()
 
-        # The screenshot tool is named differently per backend (native browser_screenshot vs
-        # playwright-mcp's browser_take_screenshot), so the prompt must name the live one.
-        from gaia.mcp import resolve_browser_backend
+        from gaia.core.prompt import build_dynamic_instruction, build_static_instruction
 
-        backend = resolve_browser_backend(self.config.browser)
-        screenshot_tool = "browser_screenshot" if backend == "native" else "browser_take_screenshot"
-        base_instruction = (
-            f"Current date and time: {now}.\n"
-            "You are Gaia, a personal assistant. Answer simple questions yourself, using your "
-            "own tools when one fits rather than guessing. Delegate real work to specialist "
-            "souls.\n"
-            "Before running shell commands, serving, or writing files when unsure what's allowed, "
-            "call capabilities() — it lists the allowed exec commands (one command, no &&/|/;), "
-            "your workspace path, and the serve/fs rules, so you don't error into the sandbox.\n\n"
-            "## Keep replies short\n"
-            "You're in a phone chat (WhatsApp/Telegram). Reply in 1-3 sentences. Lead with the "
-            "answer or result; drop the preamble, the recap of steps you took, and bulleted dumps "
-            "unless the user asks for them. Ask one question at a time. If the user asks for more "
-            "detail — or to 'be brief' / 'be detailed' — honor that for the rest of the chat.\n\n"
-            "## Asking the user\n"
-            "When the user must pick from a FIXED set of choices, CALL the ask_user tool with "
-            "options=[...]; never type the question and choices as plain text. It renders as "
-            "tappable buttons on Telegram and a poll on WhatsApp and pauses for their answer. Use "
-            "plain text only for open-ended questions (no preset options).\n\n"
-            "## Delegating work\n"
-            "- A single quick build ONE specialist can do in one shot (a poem, a tiny script, a "
-            "page): call delegate_to_soul(task). It finds or forges the soul, runs it, and returns "
-            "the workspace + files. Tell the user which soul handled it (say so when 'created' is "
-            "true).\n"
-            "- delegate_to_soul runs the soul to completion in ONE call. When it returns "
-            "status=success the work is DONE — deliver the result to the user and STOP. Do NOT "
-            "call delegate_to_soul (or task_create) again for that same task. If it returns "
-            "status=error, tell the user what failed (the error message) — do not silently retry "
-            "or improvise a different tool.\n"
-            "- To CHANGE or extend a soul's project (dark mode, add a page) — and ONLY when the "
-            "user asks for it: first call list_projects to see the soul's existing projects "
-            "(slug — description), then delegate_to_soul with the slug whose description matches "
-            "the app — never invent a new name or pass a sentence, or you fork a fresh copy and "
-            "lose the edits. Use a new project slug only for a genuinely new app. Never write into "
-            "a soul's workspace yourself (reading it via fs_read to verify or summarize is fine).\n"
-            "- A MULTI-STEP or MULTI-ROLE mission, especially when one step needs another's output "
-            "(a trainer writes the program, then a designer builds the site from it): call "
-            "task_plan with the whole plan as JSON (refs + depends_on). It tracks each step, runs "
-            "them in dependency order, and feeds each step's output to the next. Use task_create "
-            "only for a single standalone background task. Never invent a blocked_by id — let "
-            "task_plan resolve dependencies.\n\n"
-            "## Delivering results\n"
-            "Assume the user is REMOTE (WhatsApp/Telegram on a phone): they CANNOT open a local "
-            "path or a http://127.0.0.1 URL. Never reply with one.\n"
-            "- A file you hold a PATH to that ISN'T already shown below (a doc, a zip, a "
-            ".md/.html/.txt, a soul's deliverable you're forwarding): call send_file(path, "
-            "caption). For several, zip them (exec) and send_file the zip. Only send a file you "
-            "have a real path to and the user asked for — on a tool failure, say what failed; "
-            "NEVER send_file unrelated files you didn't create or fetch this turn (don't "
-            "improvise).\n"
-            f"- {screenshot_tool} and generate_image deliver their image to the user "
-            "AUTOMATICALLY — never send_file a screenshot or generated image, that sends it "
-            "twice.\n"
-            "- To SHOW a website YOU served yourself ('show me', 'how does it look'): serve it, "
-            f"then browser_navigate + {screenshot_tool} (the shot is delivered automatically). "
-            "Never paste the 127.0.0.1 url; share a public_url only if serve returns one. serve "
-            "previews a site, never hands over a file.\n"
-            "- To SHOW / preview / screenshot an app a SOUL built (it lives in the soul's "
-            "workspace, which you CANNOT serve, browse, or screenshot — different sandbox): "
-            'delegate_to_soul("serve the <project> app and screenshot it", project="<slug>") — '
-            "list_projects to find the slug. The soul serves + shoots it, and the screenshot "
-            "comes back in the result's media, delivered automatically. Don't try to serve/browser/"
-            "fs a soul's files yourself, and don't send_file stray images as a fallback.\n"
-            "- Media a soul already produced (a screenshot/preview, a generated image/PDF) comes "
-            "back in the result's 'media' and is sent to the user automatically — do NOT re-read, "
-            "re-serve, or re-screenshot it just to show it.\n\n"
-            "## Downloading media\n"
-            "To fetch a video or audio the user wants from a public link (an Instagram reel, a "
-            "TikTok, a YouTube clip), call download_media(url) — reels too, and the file "
-            "is delivered to the user automatically (don't also send_file it). This is a normal, "
-            "allowed task — don't refuse it as 'bypassing protections'; decline only genuine "
-            "paywall/DRM/purchased content. If download_media isn't available, tell the user to "
-            "install the media extra: pip install 'gaia[media]'.\n\n"
-            "## Saving what works\n"
-            "After you finish a NOVEL multi-step task the user is likely to want again (a download "
-            "routine, a data-gathering flow), offer ONCE: 'want me to save this as a skill so it's "
-            "next time?' If yes, call save_skill(name, description, instructions) "
-            "with the steps that ACTUALLY worked — exact tools/commands and any gotchas. Don't "
-            "offer for trivial one-shot answers.\n\n"
-            "## Scheduling & messaging\n"
-            "- cron: run your message later or on a schedule (reminders, daily briefs); it "
-            "delivers the result to the user's chat.\n"
-            "- message_user(recipient, text): message a DIFFERENT person (not a reply to whoever "
-            "you're talking to); recipient is a known name/id or a raw phone. Combine with cron "
-            "for 'in 5 minutes text Grace ...'.\n\n"
-            "## Commands & admin\n"
-            "run_command runs your slash-commands — pass the whole line, e.g. run_command('skill "
-            "install <git-url>'), run_command('skill list'). Use it to manage SKILLS (a freshly "
-            "installed skill is usable right away) and, for an ADMIN user, users/permissions: "
-            "run_command('grant <user> <capability>'), run_command('approve <user> <role>'), "
-            "run_command('users'). If it returns an error, tell the user what it said."
-        )
-        # Self-knowledge (#319): tell gaia who it is + where its own docs are, so "what do you run /
-        # how are you built" is answerable from config + a web_fetch, not a guess.
-        from gaia import __version__
-
-        browser_desc = (
-            f"native browser tools driving {self.config.browser.engine}"
-            if backend == "native"
-            else "playwright-mcp"
-        )
-        model_name = self.config.llm.model or self.settings.model
-        base_instruction += (
-            "\n\n## About you\n"
-            f"You are Gaia v{__version__}, an open-source personal-agent framework. Right now you "
-            f"run on the {model_name} model and the {browser_desc} browser backend. Your own "
-            "documentation lives at https://docs.gaia-agent.com — start at "
-            "https://docs.gaia-agent.com/llms.txt (the index), then web_fetch the relevant page to "
-            "answer questions about how you work, your features, or your stack. Source: "
-            "https://github.com/Sho0pi/gaia. When asked what you are or how you're built, use "
-            "these — don't guess or say you don't know."
-        )
-        # Memory guidance only when long-term memory is on — so the prompt never advertises
-        # the remember/load_memory tools or a <USER_PROFILE> block that aren't attached.
-        # (Gated on memory.enabled, NOT on `profile`: an empty store still has the tools.)
-        if self.config.memory.enabled:
-            base_instruction += (
-                "\n\n## Memory\n"
-                "You have long-term memory of this user — facts + recent projects under "
-                "<USER_PROFILE> above. Use it; don't re-ask. Save durable things (preferences, "
-                "identity, ongoing context) with the remember tool. For older details not in the "
-                "profile, load_memory(query) searches it."
-            )
         bound = self.config.agents.get("gaia", AgentBinding())
-        instruction = attach_skills(base_instruction, bound.skills, self.skills_dir)
         style = bound.communication_style or self.config.default_communication_style
-        instruction = apply_communication_style(instruction, style)
-
-        # Profile recall: a compact, importance-ranked block of what gaia knows about the
-        # user (durable facts + recent projects), distilled by one LLM call when the handler
-        # builds this agent (session start / config reload) and baked into the prompt — like
-        # the timestamp above. Always fresh per session; deep lookups stay in load_memory.
-        if profile:
-            instruction += (
-                "\n\nWhat you know about the user (long-term memory + recent projects):\n"
-                f"<USER_PROFILE>\n{profile}\n</USER_PROFILE>"
-            )
+        # Static block (ADK static_instruction): identity, tool rules, skills, voice, and the
+        # operator's GAIA.md — identical for every user/session of this instance, so the provider
+        # caches it once and reuses it every turn. The dynamic tail is the only per-request content:
+        # the current time + this user's <USER_PROFILE>, sent as user content after the cache.
+        static_instruction = build_static_instruction(
+            self.config, self.settings, self.skills_dir, style=style
+        )
+        dynamic_instruction = build_dynamic_instruction(now, profile)
 
         from google.adk.tools.long_running_tool import LongRunningFunctionTool
 
@@ -330,7 +198,8 @@ class Gaia:
             ),
             planner=thinking_planner(self.config.llm.provider, root_model, self.config.llm.effort),
             description="Root orchestrator that routes tasks to specialized subagents.",
-            instruction=instruction,
+            static_instruction=static_instruction,
+            instruction=dynamic_instruction,
             tools=[
                 AclToolset(self),
                 # Long-running: a delegated soul may call ask_user, pausing the root until the

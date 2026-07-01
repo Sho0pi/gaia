@@ -28,6 +28,7 @@ ENV_PREFIX = f"{APP_NAME.upper()}_"
 
 # Default file/dir locations, all under HOME_DIR.
 CONFIG_PATH = HOME_DIR / "gaia.yaml"  # "gaia.yaml" names the Gaia agent, not the package
+GAIA_MD = HOME_DIR / "GAIA.md"  # operator's persona/rules customization, layered into the prompt
 LOG_DIR = HOME_DIR / "logs"
 # Redacted crash reports (one JSON per fatal daemon failure) — surfaced by `gaia report`.
 CRASHES_DIR = HOME_DIR / "crashes"

@@ -123,7 +123,9 @@ class AgentFactory:
             ),
             planner=thinking_planner(self._default_provider, model_id, effort),
             description=spec.description,
-            instruction=instruction,
+            # The soul's whole prompt (spec + skills + voice) is stable per spec and it's reused, so
+            # it's the cacheable static block; the task arrives as the user turn from delegation.
+            static_instruction=instruction,
             tools=tools,
         )
 

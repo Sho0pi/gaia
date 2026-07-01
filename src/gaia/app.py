@@ -39,6 +39,7 @@ from gaia.connectors.base import Dispatch
 from gaia.connectors.socket import DaemonNotRunningError, SocketChatClient, SocketConnector
 from gaia.core import Gaia
 from gaia.core.dispatch import build_dispatcher
+from gaia.core.prompt import write_default_gaia_md
 from gaia.logs import setup_logging
 
 logger = logging.getLogger(__name__)
@@ -131,6 +132,7 @@ def run_dev(
 
     settings = settings or get_settings(env_file)
     write_default_config(settings.config_path)  # fresh home: drop the commented default (#55)
+    write_default_gaia_md()  # + the GAIA.md customization template
     gaia = Gaia(settings)
     setup_logging(settings, gaia.config.logging)
     serve_dev(gaia, host=host, port=port)
@@ -161,6 +163,7 @@ def run(settings: Settings | None = None, *, env_file: Path | None = None) -> No
     """Build Gaia and launch the connectors enabled in gaia.yaml."""
     settings = settings or get_settings(env_file)
     write_default_config(settings.config_path)
+    write_default_gaia_md()
     gaia = Gaia(settings)
     selected = plan_launch(gaia.config)
     # The CLI chat owns the terminal prompt, so console log handlers would draw over it.
@@ -194,6 +197,7 @@ def run_daemon(
 
     settings = settings or get_settings(env_file)
     write_default_config(settings.config_path)
+    write_default_gaia_md()
     gaia = Gaia(settings)
     selected = plan_launch(gaia.config, daemon=True)
     # Console handlers stay on: when spawned by `gaia start`, stdout IS daemon.log
