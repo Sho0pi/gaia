@@ -49,8 +49,8 @@ Write real lines under a heading (outside these comments) to activate them; dele
 -->
 
 ## About the owner
-<!-- You, the person running Gaia. Gaia can also serve other people you approve, so this is context
-about the OWNER, not necessarily whoever is chatting now. e.g.:  I'm Itay, in Tel Aviv. Call me Itay. -->
+<!-- You, the person running Gaia. Gaia can also serve others you approve, so this is context about
+the OWNER, not whoever is chatting now. e.g.: I'm Itay in Tel Aviv, call me Itay. -->
 """
 
 
