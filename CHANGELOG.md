@@ -7,58 +7,38 @@ in `src/gaia/__init__.py`; the GitHub Release for each tag is cut from the match
 
 ## [Unreleased]
 
-### Added
-- **Tappable answers** - when the agent asks a multiple-choice question (`ask_user`), Telegram
-  renders inline buttons and WhatsApp a numbered list; the tap/number resumes the turn.
-- **Telegram parity** - voice notes (transcribed locally), inbound and outbound media, a "typing…"
-  indicator, and the `/` command menu.
-- **Shell completion** - `gaia completion install` adds tab-completion for commands, options, and
-  values (config keys, soul keys, task ids, users, capabilities). Installed on setup, refreshed on
-  update, removed on uninstall.
-- **Per-connector allow-list** - `connectors.<channel>.allow` in `gaia.yaml` pre-approves senders
-  past the guest gate; number entry is forgiving (`+`, spaces, dashes).
-- **GAIA.md customization** - a hand-edited `~/.gaia/GAIA.md` layers persona, house rules, and owner
-  facts on top of the built-in prompt.
-- **Prompt caching** - the system prompt splits into a cached static block and a per-session dynamic
-  tail (date + user profile), so the stable part isn't re-sent every turn.
-- **Docs** - a page per connector and per tool group, configuration + shell-completion guides, and a
-  docs site restyled to match the marketing brand.
-
-### Changed
-- **Roles in `gaia.yaml`** - each role's capabilities (admin/user/guest) are laid out and editable
-  under `roles.<role>.capabilities`; `cron` (self-service reminders) is now a default `user`
-  capability, so reminders work without an admin grant.
-- **`exec` allow-list widens** - `tools.exec.allowlist` adds to the built-in commands instead of
-  replacing them (so allowing one extra tool no longer drops `git`/`python`/…).
-
-### Fixed
-- **Capability typos caught** - `/grant` and `/revoke` (chat and `gaia acl`) reject an unknown
-  capability with the valid list instead of storing it silently.
-- **`/approve` by name** - resolves a user by display name, shows the roster to pick from on no
-  match, and can onboard a new person by number.
-- **Relayed messages attributed** - `message_user` names who a message is from ("Itay: …") when it's
-  sent on someone's behalf.
-
-## [0.1.0a1] - 2026-06-28
+## [0.1.0a1] - 2026-07-01
 
 First open alpha.
 
 ### Added
-- **Souls** — gaia forges specialist subagents on demand, stores them, and reuses them; the
+- **Souls** - gaia forges specialist subagents on demand, stores them, and reuses them; the
   soul-smith decides reuse-vs-forge. `gaia soul` / `/soul`.
-- **Two-tier memory** — short-term ADK sessions + long-term mem0. Sessions are **durable**
-  (survive restarts) and **windowed**; a conversation is **consolidated into long-term memory when
-  it goes idle**, then cleared (human-like). Plus the `remember` tool.
-- **Frictionless onboarding** — the first person to DM gaia (DM-only) becomes admin automatically;
-  no id to look up. WhatsApp QR links gaia's own account; pre-allow others at connect.
-- **Connectors** — terminal chat, Telegram (BotFather token), WhatsApp (QR). One identity, shared
-  memory across channels.
-- **Missions** — a task board + daemon dispatcher that runs souls, with cron **scheduling**.
-- **Skills** — reusable `SKILL.md` playbooks loaded on demand (`gaia skill` / `/skill`).
-- **Self-improvement** — gaia mines its own usage to propose new skills/souls (`gaia grow`).
-- **Install / lifecycle** — one-line installer (`curl … | bash`), `gaia update` / `uninstall`,
-  run-on-boot service, and `gaia report` for crash reports.
-- **Docs** — docs.gaia-agent.com, plus an agent-readable layer (`AGENTS.md`, `/llms.txt`).
+- **Two-tier memory** - short-term ADK sessions + long-term mem0. Sessions are durable (survive
+  restarts) and windowed; an idle conversation is consolidated into long-term memory, then cleared
+  (human-like). Plus the `remember` tool and a hand-edited `~/.gaia/GAIA.md` for persona, house
+  rules, and owner facts.
+- **Connectors** - terminal chat, Telegram, and WhatsApp (Cloud API + personal/QR); one identity with
+  shared memory across channels. Voice notes (transcribed locally), inbound and outbound media, a
+  "typing…" indicator, the `/` command menu, and tappable multiple-choice answers (`ask_user` renders
+  inline buttons on Telegram, a numbered list on WhatsApp).
+- **Access control** - roles (admin/user/guest) + capability groups and per-user grants, all laid out
+  and editable in `gaia.yaml`; a per-connector allow-list with forgiving number entry; the first
+  person to DM gaia becomes admin automatically; `/approve` resolves by name and can onboard a new
+  person by number.
+- **Tools** - sandboxed files and shell (denylist always, a widen-able allowlist), a browser (Camoufox
+  anti-detect or playwright-mcp) with an SSRF guard, web fetch/search, image generation, media
+  download, cron scheduling, and local serve + tunnel.
+- **Missions** - a SQLite task board + in-daemon dispatcher that runs multi-step, multi-agent work on
+  souls and pushes the result back to the owner.
+- **Skills** - reusable `SKILL.md` playbooks loaded on demand (`gaia skill` / `/skill`); a self-improve
+  loop mines usage to propose new skills and souls (`gaia grow`).
+- **Prompt caching** - the system prompt splits into a cached static block and a per-session dynamic
+  tail (date + user profile), so the stable part isn't re-sent every turn.
+- **CLI + lifecycle** - `gaia` (Typer) with shell tab-completion, a one-line installer, `gaia update`
+  / `uninstall`, a run-on-boot service, and `gaia report` for crash reports.
+- **Docs** - docs.gaia-agent.com with a page per connector and per tool group, configuration and
+  shell-completion guides, a brand-matched site, and an agent-readable layer (`AGENTS.md`, `/llms.txt`).
 
 ### Security
 - exec is admin-only by default (ACL); destructive commands are denylisted in every mode.
