@@ -60,3 +60,20 @@ async def test_background_process_polls_to_completion_no_orphan() -> None:
     assert Path(started["log"]).is_file()  # noqa: ASYNC240 - assertion, not hot-path I/O
 
     await mgr.close_all()  # leaves no live child
+
+
+async def test_config_allowlist_widens_and_denylist_still_applies() -> None:
+    # tools.exec.allowlist WIDENS the built-in set: an extra command runs AND the defaults stay,
+    # while the denylist keeps refusing destructive commands regardless. Guards the widen fix.
+    allowlist = shell.widen_allowlist(["true"])  # 'true' is not a default; 'echo' is
+    tool = shell.make_exec(
+        ProcessManager(), local_spawner, security="allowlist", allowlist=allowlist
+    )
+    ctx: Any = _Ctx()
+
+    assert (await tool("echo kept", tool_context=ctx))["status"] == "success"  # default kept
+    assert (await tool("true", tool_context=ctx))["status"] == "success"  # widened-in extra
+    assert (await tool("frobnicate x", tool_context=ctx))["status"] == "error"  # not allowed
+
+    danger = await tool("rm -rf /", tool_context=ctx)
+    assert danger["status"] == "error" and "denylist" in danger["error_message"]
