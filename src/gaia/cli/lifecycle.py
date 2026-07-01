@@ -105,6 +105,16 @@ def update(ref: RefOpt = None, extras: ExtrasOpt = "all") -> None:
     )
     out.print(f"[green]updated[/] — {(after.stdout or '').strip() or 'gaia'}")
 
+    # Keep shell tab-completion installed by default and current with each update. Best-effort:
+    # an undetected/unsupported shell (or a headless box) just skips it, never failing the update.
+    try:
+        from gaia.cli.completion import run_install
+
+        shell, _ = run_install()
+        out.print(f"[dim]shell completion refreshed ({shell})[/]")
+    except Exception:
+        pass
+
     # Repair the runtime deps too — `uv pip install` only touches the Python package, so a
     # playwright-mcp bump (which moves the browser revision) would otherwise leave screenshots
     # broken until the next install.sh run (#303).
@@ -137,6 +147,12 @@ def uninstall(purge: PurgeOpt = False, keep: KeepOpt = False) -> None:
     # Stop the daemon + remove the boot service first (best-effort; no-ops if not present).
     subprocess.run([_gaia_cmd(), "stop"], capture_output=True)
     subprocess.run([_gaia_cmd(), "service", "uninstall"], capture_output=True)
+
+    # Remove the shell completion we install/refresh on update (best-effort).
+    from gaia.cli.completion import run_uninstall
+
+    for path in run_uninstall():
+        out.print(f"[dim]removed completion {path}[/]")
 
     remove_data = purge
     if not purge and not keep:

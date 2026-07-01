@@ -57,16 +57,20 @@ def main(ctx: typer.Context) -> None:
 
 
 def _completion_step(ctx: typer.Context) -> None:
-    """Offer to install shell tab-completion (commands, options, and dynamic values)."""
-    if not typer.confirm("Enable shell tab-completion for gaia?", default=True):
-        return
+    """Install shell tab-completion by default (commands, options, and dynamic values).
+
+    Auto-installed (not prompted): low-risk and reversible with ``gaia completion uninstall`` (and
+    removed by ``gaia uninstall``). Best-effort - an undetected shell just prints how to enable it.
+    """
     try:
         from gaia.cli.completion import run_install
 
         shell, path = run_install()
-        console().print(f"  ✓ {shell} completion written to {path} — restart your shell to load it")
+        console().print(
+            f"  ✓ {shell} completion installed ({path}) — restart your shell to load it"
+        )
     except Exception:
-        console().print("  [dim]couldn't auto-install — run 'gaia completion install' later[/]")
+        console().print("  [dim]shell not detected — run 'gaia completion install' to enable[/]")
 
 
 EngineOpt = Annotated[

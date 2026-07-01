@@ -79,6 +79,14 @@ gaia completion show [options]
 |---|---|
 | `--shell` | Target shell (bash/zsh/fish/powershell); default: auto-detect. |
 
+### `gaia completion uninstall`
+
+Remove gaia's shell completion (all shells).
+
+```
+gaia completion uninstall
+```
+
 ## `gaia config`
 
 Inspect and edit gaia.yaml.

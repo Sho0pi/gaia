@@ -6,16 +6,20 @@ description: Tab-complete gaia commands, options, and values - config keys, soul
 The `gaia` CLI has **tab-completion** for commands and options, and - the advanced part - for
 **values**: config keys and their choices, soul keys, task ids, user refs, tool ids, and capabilities.
 
-## Enable it
+## It's on by default
 
-`gaia setup` offers to install it. Or any time:
+Completion is installed **automatically**: `gaia setup` (run by the installer) writes it for your
+shell, and every `gaia update` refreshes it. Just **restart your shell** once to load it.
+
+Manage it by hand any time:
 
 ```bash
-gaia completion install    # detects your shell (zsh/bash/fish) and writes the script
-# then restart your shell (or source the file it names) to load it
+gaia completion install     # (re)install for the detected shell (zsh/bash/fish)
+gaia completion show        # print the script instead, to install it manually
+gaia completion uninstall   # remove it
 ```
 
-`gaia completion show` prints the script instead, if you'd rather install it by hand.
+`gaia uninstall` also removes the completion scripts.
 
 ## What completes
 
