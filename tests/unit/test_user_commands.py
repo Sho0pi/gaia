@@ -97,9 +97,10 @@ async def test_link_attaches_channel_to_user(tmp_path: Path) -> None:
 
 
 async def test_approve_unknown_ref(tmp_path: Path) -> None:
+    # A bare name that resolves to nothing -> the roster (here empty), not a dead end.
     out = await _run("approve", _ctx(_store(tmp_path), args="ghost user"))
 
-    assert "No user" in out
+    assert "No one matches" in out and "no users yet" in out
 
 
 async def test_remove_deletes_user(tmp_path: Path) -> None:
@@ -132,3 +133,36 @@ async def test_remove_requires_admin(tmp_path: Path) -> None:
 
     assert "admin" in out.lower()
     assert store.get("grace") is not None  # untouched
+
+
+async def test_approve_resolves_by_display_name(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    store.register("whatsapp", "111@s.whatsapp.net", "Grace", role="guest")
+    out = await _run("approve", _ctx(store, args="grace user"))
+    assert store.get("grace").role == "user" and "user" in out.lower()  # type: ignore[union-attr]
+
+
+async def test_approve_unknown_name_returns_the_roster(tmp_path: Path) -> None:
+    # A Hebrew display name that the English 'ron' can't match -> show the roster with ids so Gaia
+    # (which reads Hebrew) can pick the right id and retry.
+    store = _store(tmp_path)
+    store.register("whatsapp", "111@s.whatsapp.net", "רון", role="guest")
+    out = await _run("approve", _ctx(store, args="ron user"))
+    assert "Pick by id" in out and store.list()[0].id in out
+    assert store.list()[0].role == "guest"  # nothing changed, just listed
+
+
+async def test_approve_by_id_works(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    store.register("whatsapp", "111@s.whatsapp.net", "רון", role="guest")
+    uid = store.list()[0].id
+    await _run("approve", _ctx(store, args=f"{uid} user"))
+    assert store.get(uid).role == "user"  # type: ignore[union-attr]
+
+
+async def test_approve_onboards_a_new_number(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    out = await _run("approve", _ctx(store, args="+972 50-111-2222 user"))
+    assert "Added" in out
+    added = store.resolve("whatsapp", "972501112222@s.whatsapp.net")
+    assert added is not None and added.role == "user"
