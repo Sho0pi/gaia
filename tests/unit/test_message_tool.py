@@ -127,18 +127,18 @@ async def test_empty_text_rejected(tmp_path: Path) -> None:
 
 async def test_label_resolves_to_number_from_memory(tmp_path: Path) -> None:
     wa = _FakeConnector()
-    memory = _memory("User's girlfriend is Grace; her number is +852 9750 8025.")
+    memory = _memory("User's girlfriend is Mei; her number is +852 5550 1234.")
     _, tool = _tool(tmp_path, {"whatsapp": wa}, memory)
     current_chat.set(("", ""))
 
     out = await tool("girlfriend", "Goodnight", tool_context=_CTX)
 
     assert out["status"] == "success"
-    assert wa.sent == [("85297508025", "Goodnight")]  # single clear match -> auto-send
+    assert wa.sent == [("85255501234", "Goodnight")]  # single clear match -> auto-send
 
 
 async def test_label_with_multiple_numbers_asks(tmp_path: Path) -> None:
-    memory = _memory("Grace: +852 9750 8025", "old Grace number +852 1111 2222")
+    memory = _memory("Mei: +852 5550 1234", "old Mei number +852 1111 2222")
     _, tool = _tool(tmp_path, {"whatsapp": _FakeConnector()}, memory)
     current_chat.set(("", ""))
 
