@@ -133,12 +133,13 @@ class GaiaHandler:
         each call, so a rebuild picks up every gaia.yaml change. The session service is
         shared, so the conversation continues across rebuilds.
         """
+        from google.adk.agents.context_cache_config import ContextCacheConfig
         from google.adk.runners import Runner
 
         from gaia.core.plugins import SessionWindowPlugin, ToolLoggingPlugin, ToolPermissionPlugin
 
         window = self._gaia.config.sessions.window_turns
-        return Runner(
+        runner = Runner(
             app_name=constants.APP_NAME,
             agent=self._gaia.build_root_agent(self, profile=profile),
             session_service=self._gaia.session_service,
@@ -149,6 +150,12 @@ class GaiaHandler:
                 SessionWindowPlugin(window),  # cap replayed turns; full session stays on disk
             ],
         )
+        # Cache the static system block (identity + tools + GAIA.md) so it isn't re-sent each turn -
+        # identical across the instance's users/sessions. Kicks in on turn 2 (Gemini context
+        # cache); OpenAI Responses already reuses the stable prefix via prompt_cache_key. Set on the
+        # runner attribute (Runner.__init__ only takes it via an App; `plugins=` is the interim).
+        runner.context_cache_config = ContextCacheConfig()
+        return runner
 
     async def _ensure_runner(self) -> Any:
         if self._runner is None:
