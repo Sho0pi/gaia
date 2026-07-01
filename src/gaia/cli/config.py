@@ -13,16 +13,25 @@ from typing import Annotated, Any
 
 import typer
 
+from gaia.cli import _complete
 from gaia.cli._console import console, emit_json
 from gaia.cli._options import state
 
 app = typer.Typer(name="config", help="Inspect and edit gaia.yaml.", no_args_is_help=True)
 
 KeyArg = Annotated[
-    str, typer.Argument(help="A dotted config key, e.g. 'llm.model' or 'missions.max_tasks'.")
+    str,
+    typer.Argument(
+        help="A dotted config key, e.g. 'llm.model' or 'missions.max_tasks'.",
+        autocompletion=_complete.config_keys,
+    ),
 ]
 ValueArg = Annotated[
-    str, typer.Argument(help="The value to set (written verbatim; the schema coerces it on load).")
+    str,
+    typer.Argument(
+        help="The value to set (written verbatim; the schema coerces it on load).",
+        autocompletion=_complete.config_values,
+    ),
 ]
 
 _MISSING = object()

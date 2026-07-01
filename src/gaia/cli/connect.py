@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Annotated, Any
 
 import typer
 
+from gaia.cli import _complete
 from gaia.cli._console import console
 from gaia.cli._envfile import get_env_var, set_env_var
 from gaia.cli._options import state
@@ -48,7 +49,10 @@ _WHATSAPP_TUTORIAL = """\
 
 ConnectorsArg = Annotated[
     list[str] | None,
-    typer.Argument(help="Connector names (telegram/whatsapp); empty = pick from a menu."),
+    typer.Argument(
+        help="Connector names (telegram/whatsapp); empty = pick from a menu.",
+        autocompletion=_complete.channels,
+    ),
 ]
 TokenOpt = Annotated[
     str | None, typer.Option("--token", help="Telegram bot token (skips the prompt).")

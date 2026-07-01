@@ -51,6 +51,42 @@ Chat with Gaia in the local terminal.
 gaia chat
 ```
 
+## `gaia completion`
+
+Install shell tab-completion for gaia.
+
+### `gaia completion install`
+
+Install tab-completion into your shell config (restart the shell to load it).
+
+```
+gaia completion install [options]
+```
+
+| Option | Description |
+|---|---|
+| `--shell` | Target shell (bash/zsh/fish/powershell); default: auto-detect. |
+
+### `gaia completion show`
+
+Print the completion script (to inspect it or install it by hand).
+
+```
+gaia completion show [options]
+```
+
+| Option | Description |
+|---|---|
+| `--shell` | Target shell (bash/zsh/fish/powershell); default: auto-detect. |
+
+### `gaia completion uninstall`
+
+Remove gaia's shell completion (all shells).
+
+```
+gaia completion uninstall
+```
+
 ## `gaia config`
 
 Inspect and edit gaia.yaml.
