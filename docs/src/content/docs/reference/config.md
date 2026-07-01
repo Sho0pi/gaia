@@ -193,8 +193,17 @@ skills_dir: null
 skill_index: []
 # Per-agent bindings; the root orchestrator uses key 'gaia'.
 agents: {}
-# Per-role ACL overrides keyed by role (admin/user/guest), e.g. user.capabilities: [web, memory]. Empty = built-in defaults.
-roles: {}
+# Per-role ACL, keyed by role (admin/user/guest): the capabilities each holds. Pre-filled with the built-in defaults so you see and edit exactly what each role can do. A role you drop / leave with empty capabilities falls back to its built-in default.
+roles:
+  guest:
+    # ACL capabilities this role holds (group names like 'web'/'shell', '*' for all, or a raw tool id). Empty = built-in default for the role.
+    capabilities: []
+  user:
+    # ACL capabilities this role holds (group names like 'web'/'shell', '*' for all, or a raw tool id). Empty = built-in default for the role.
+    capabilities: ['web', 'memory', 'browser', 'tasks', 'serve', 'skills', 'ask', 'core', 'images', 'media', 'cron']
+  admin:
+    # ACL capabilities this role holds (group names like 'web'/'shell', '*' for all, or a raw tool id). Empty = built-in default for the role.
+    capabilities: ['*']
 # Per-tool settings keyed by tool id (e.g. web_search.engine: duckduckgo). Every tool is attached to agents by default; disable one with enabled: false.
 tools: {}
 # Delegated-soul settings (e.g. timeout_seconds).

@@ -71,6 +71,17 @@ def _render_instance(model: BaseModel, indent: int) -> list[str]:
         if isinstance(value, BaseModel):
             lines.append(f"{pad}{name}:")
             lines.extend(_render_instance(value, indent + 1))
+        elif (
+            isinstance(value, dict)
+            and value
+            and all(isinstance(v, BaseModel) for v in value.values())
+        ):
+            # A populated map of sub-models (e.g. `roles`) — render each key + its fields, so the
+            # built-in defaults are visible and editable rather than collapsed to `{}`.
+            lines.append(f"{pad}{name}:")
+            for key, sub in value.items():
+                lines.append(f"{pad}  {key}:")
+                lines.extend(_render_instance(sub, indent + 2))
         else:
             lines.append(f"{pad}{name}: {_scalar(value)}")
     return lines
