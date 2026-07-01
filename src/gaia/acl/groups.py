@@ -69,7 +69,7 @@ GROUP_PREFIXES: dict[str, str] = {"browser_": "browser"}
 
 
 def known_capabilities() -> set[str]:
-    """Every token ``/grant`` / ``/revoke`` accept: a group name, an individual tool id, or ``*``."""
+    """Every token ``/grant`` / ``/revoke`` accept: a group name, a tool id, or ``*``."""
     tools = {tool for members in GROUPS.values() for tool in members}
     return set(GROUPS) | tools | {ALL}
 
