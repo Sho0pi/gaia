@@ -91,3 +91,33 @@ h1#_top,
 	outline: 2px solid var(--sl-color-accent);
 	outline-offset: 3px;
 }
+
+/* Landing hero - mirror the marketing hero: Cinzel eyebrow, big Fraunces display title, sharp
+   ink/moss CTAs. CSS-only over Starlight's splash hero (no component override needed). */
+.hero .copy::before {
+	content: 'agents that build agents';
+	font-family: 'Cinzel', serif;
+	font-weight: 500;
+	font-size: 0.72rem;
+	letter-spacing: 0.32em;
+	text-transform: uppercase;
+	color: var(--sl-color-accent-high);
+	margin-bottom: 0.25rem;
+}
+.hero h1 {
+	font-variation-settings: 'opsz' 144, 'SOFT' 30;
+	font-size: clamp(3rem, 8vw, 5.5rem);
+	line-height: 0.95;
+}
+.hero .actions .action {
+	border-radius: 0;
+}
+.hero .actions .action.primary {
+	background: var(--sl-color-white);
+	color: var(--sl-color-black);
+	border-color: transparent;
+}
+.hero .actions .action.primary:hover {
+	background: var(--sl-color-accent-high);
+	color: var(--sl-color-black);
+}
