@@ -7,6 +7,38 @@ in `src/gaia/__init__.py`; the GitHub Release for each tag is cut from the match
 
 ## [Unreleased]
 
+### Added
+- **Tappable answers** - when the agent asks a multiple-choice question (`ask_user`), Telegram
+  renders inline buttons and WhatsApp a numbered list; the tap/number resumes the turn.
+- **Telegram parity** - voice notes (transcribed locally), inbound and outbound media, a "typing…"
+  indicator, and the `/` command menu.
+- **Shell completion** - `gaia completion install` adds tab-completion for commands, options, and
+  values (config keys, soul keys, task ids, users, capabilities). Installed on setup, refreshed on
+  update, removed on uninstall.
+- **Per-connector allow-list** - `connectors.<channel>.allow` in `gaia.yaml` pre-approves senders
+  past the guest gate; number entry is forgiving (`+`, spaces, dashes).
+- **GAIA.md customization** - a hand-edited `~/.gaia/GAIA.md` layers persona, house rules, and owner
+  facts on top of the built-in prompt.
+- **Prompt caching** - the system prompt splits into a cached static block and a per-session dynamic
+  tail (date + user profile), so the stable part isn't re-sent every turn.
+- **Docs** - a page per connector and per tool group, configuration + shell-completion guides, and a
+  docs site restyled to match the marketing brand.
+
+### Changed
+- **Roles in `gaia.yaml`** - each role's capabilities (admin/user/guest) are laid out and editable
+  under `roles.<role>.capabilities`; `cron` (self-service reminders) is now a default `user`
+  capability, so reminders work without an admin grant.
+- **`exec` allow-list widens** - `tools.exec.allowlist` adds to the built-in commands instead of
+  replacing them (so allowing one extra tool no longer drops `git`/`python`/…).
+
+### Fixed
+- **Capability typos caught** - `/grant` and `/revoke` (chat and `gaia acl`) reject an unknown
+  capability with the valid list instead of storing it silently.
+- **`/approve` by name** - resolves a user by display name, shows the roster to pick from on no
+  match, and can onboard a new person by number.
+- **Relayed messages attributed** - `message_user` names who a message is from ("Itay: …") when it's
+  sent on someone's behalf.
+
 ## [0.1.0a1] - 2026-06-28
 
 First open alpha.
