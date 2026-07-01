@@ -191,9 +191,15 @@ def make_message_user(
         Returns an error if the recipient can't be resolved (then ask for a number) or the
         channel isn't running.
 
+        The recipient sees this from GAIA's number, NOT from the person asking you. So when you
+        relay a message on someone's behalf, name who it's from IN the text: 'say I love you to
+        Grace' from Itay -> send "Itay: I love you" (use the asker's name from their profile). Send
+        it unattributed only if they ask you to send it anonymously or word-for-word.
+
         Args:
             recipient: a user id/name ("grace"), a relationship/nickname in your memory
                 ("girlfriend"), a "channel:sender" id, or a raw phone/chat id.
+            text: the message to send; include who it's from when relaying (see above).
             channel: connector to send on (whatsapp/telegram); inferred when omitted.
         """
         # No self-logging: ToolLoggingPlugin records one tool_used event per call.

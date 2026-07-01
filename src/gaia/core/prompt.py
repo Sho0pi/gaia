@@ -44,7 +44,7 @@ Write real lines under a heading (outside these comments) to activate them; dele
 
 ## How to act
 <!-- House rules for everyone Gaia talks to. e.g.:
-- Always confirm before spending money or sending a message on my behalf.
+- Confirm before spending money or anything irreversible.
 - Default to metric units and a 24-hour clock.
 -->
 
