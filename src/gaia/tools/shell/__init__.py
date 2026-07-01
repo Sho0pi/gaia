@@ -13,6 +13,7 @@ from gaia.tools.shell.base import (
     DEFAULT_ALLOWLIST,
     ProcessManager,
     local_spawner,
+    widen_allowlist,
 )
 from gaia.tools.shell.kill import NAME as KILL
 from gaia.tools.shell.kill import make_exec_kill
@@ -35,4 +36,5 @@ __all__ = [
     "make_exec_kill",
     "make_exec_list",
     "make_exec_poll",
+    "widen_allowlist",
 ]

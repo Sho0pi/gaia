@@ -108,6 +108,14 @@ def test_off_mode_allows_anything_not_denylisted() -> None:
     assert check_command("anything goes", security="off", allowlist=()) is None
 
 
+def test_config_allowlist_widens_the_default() -> None:
+    widened = shell.widen_allowlist(["docker"])
+    assert "docker" in widened  # the configured extra is allowed
+    assert "git" in widened  # ...without dropping the built-in commands
+    assert widened.count("git") == 1  # a default passed again isn't duplicated
+    assert shell.widen_allowlist([]) == shell.DEFAULT_ALLOWLIST  # no extra = unchanged
+
+
 def test_ask_mode_points_at_issue_29() -> None:
     error = check_command("echo hi", security="ask", allowlist=())
     assert error is not None and "#29" in error

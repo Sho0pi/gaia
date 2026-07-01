@@ -23,7 +23,7 @@ They make up the `files` capability group.
 Shell access is the `shell` capability and is deliberately guarded - `exec` is not a raw shell:
 
 - **Denylist (always on):** destructive commands are refused - `rm -rf /` or `~`, `dd` onto a device, fork bombs, `shutdown`/`reboot`, `curl … | sh` pipe-to-shell installs.
-- **Allowlist mode (default):** only a curated set of dev tools runs (`ls`, `cat`, `git`, `python`/`python3`, `node`, `bun`/`bunx`, `pip`, `uv`, `pytest`, `grep`, `find`, …). Widen or change it in `gaia.yaml`.
+- **Allowlist mode (default):** only a curated set of dev tools runs (`ls`, `cat`, `git`, `python`/`python3`, `node`, `bun`/`bunx`, `pip`, `uv`, `pytest`, `grep`, `find`, …). Add your own in `gaia.yaml`.
 - **One command per call:** chaining and substitution (`;`, `&&`, `||`, `|`, backticks, `$(…)`) are rejected.
 
 The policy lives in `src/gaia/tools/shell/base.py`; tune the mode and allowlist under `tools.exec` in `gaia.yaml`:
@@ -32,8 +32,8 @@ The policy lives in `src/gaia/tools/shell/base.py`; tune the mode and allowlist 
 # ~/.gaia/gaia.yaml
 tools:
   exec:
-    security: allowlist          # 'allowlist' (default) or 'off' (denylist only)
-    allowlist: [ls, cat, git, python3, uv, pytest, node]   # replaces the built-in set
+    security: allowlist       # 'allowlist' (default) or 'off' (denylist only)
+    allowlist: [docker, cargo, rg]   # ADDS to the built-in set (git/python/uv/… stay)
 ```
 
 The denylist applies in **every** mode. See [Configuration](/guides/configuration/) for the override pattern.

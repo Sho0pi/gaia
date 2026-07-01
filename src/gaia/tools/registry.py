@@ -207,13 +207,14 @@ def _register_shell_tools(registry: ToolRegistry, config: GaiaConfig | None, ser
     """Attach the exec tool + its background-process trio, sharing one ProcessManager.
 
     Safety comes from ``tools.exec.security`` (default ``allowlist``) and an optional
-    ``tools.exec.allowlist`` override, both read from config. The trio (poll/kill/list)
-    is only useful alongside ``exec``, but each stays individually gateable. ``served`` (the
-    shared ServedPorts) lets a background dev server's port be opened by browser_navigate.
+    ``tools.exec.allowlist`` that **widens** the built-in set, both read from config. The trio
+    (poll/kill/list) is only useful alongside ``exec``, but each stays individually gateable.
+    ``served`` (the shared ServedPorts) lets a background dev server's port be opened by
+    browser_navigate.
     """
     security = _tool_setting(config, shell.EXEC, "security") or "allowlist"
-    configured = _tool_setting(config, shell.EXEC, "allowlist")
-    allowlist = tuple(configured) if configured else shell.DEFAULT_ALLOWLIST
+    # Configured commands widen the built-in allowlist (don't replace it).
+    allowlist = shell.widen_allowlist(_tool_setting(config, shell.EXEC, "allowlist") or ())
 
     # One manager per registry, shared by the four tools below (each closure captures
     # it); it cleans up its processes on exit. No module-level singleton.
