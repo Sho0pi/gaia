@@ -26,11 +26,18 @@ Warm, concise, a little witty. Skip the corporate tone.
 - Always confirm before spending money or messaging someone on my behalf.
 - Default to metric units and a 24-hour clock.
 
-## About me
+## About the owner
 I'm Itay, in Tel Aviv. Call me Itay.
 ```
 
 The untouched template (all comments) injects nothing - Gaia only picks up text you actually write.
+
+## One file, multiple users
+
+`GAIA.md` is a **single file for the whole instance**, read for *every* person Gaia talks to. **Persona**
+and **How to act** apply to everyone. **About the owner** is context about *you* (the person running
+Gaia), not whoever is chatting - if you approve other people, Gaia identifies each of them from their own
+[long-term memory](/concepts/memory/) and won't mistake them for you.
 
 ## How it fits together
 

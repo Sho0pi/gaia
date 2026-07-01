@@ -43,13 +43,14 @@ Write real lines under a heading (outside these comments) to activate them; dele
 <!-- How Gaia should sound. e.g.:  Warm, concise, a little witty. Skip the corporate tone. -->
 
 ## How to act
-<!-- House rules. e.g.:
+<!-- House rules for everyone Gaia talks to. e.g.:
 - Always confirm before spending money or sending a message on my behalf.
 - Default to metric units and a 24-hour clock.
 -->
 
-## About me
-<!-- Who you are, so Gaia doesn't have to ask. e.g.:  I'm Itay, in Tel Aviv. Call me Itay. -->
+## About the owner
+<!-- You, the person running Gaia. Gaia can also serve other people you approve, so this is context
+about the OWNER, not necessarily whoever is chatting now. e.g.:  I'm Itay, in Tel Aviv. Call me Itay. -->
 """
 
 
@@ -166,10 +167,11 @@ def build_static_instruction(
     gaia_md = load_gaia_md()
     if gaia_md:
         body += (
-            "\n\n## Operator customization\n"
-            "The person running you left these instructions in GAIA.md. Honor them - they layer on "
-            "top of the above (persona, preferences, facts); they never override the tool-use or "
-            "safety rules.\n"
+            "\n\n## Owner customization\n"
+            "Your OWNER (the person running you) set these in GAIA.md. Honor them - persona and "
+            "house rules apply to everyone; the 'about the owner' facts describe the owner, who is "
+            "NOT necessarily the person chatting now. Identify the current user from their profile "
+            "below, not from here. This never overrides tool-use or safety rules.\n"
             f"<GAIA_MD>\n{gaia_md}\n</GAIA_MD>"
         )
     return body
