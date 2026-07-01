@@ -60,7 +60,12 @@ def resolve_model(
 
     # No native ADK backend for this provider -> hand it to the LiteLLM adapter. LiteLLM needs
     # the provider baked into the model id ("<provider>/<model>") to choose the SDK + env key.
-    lite_id = model if "/" in model else f"{prov}/{model}"
+    # OpenRouter model ids already contain a "/" (e.g. "anthropic/claude-..."), so the generic
+    # "/" check would wrongly skip the prefix and route straight to that vendor — force it.
+    if prov == "openrouter":
+        lite_id = model if model.startswith("openrouter/") else f"openrouter/{model}"
+    else:
+        lite_id = model if "/" in model else f"{prov}/{model}"
     try:
         from google.adk.models.lite_llm import LiteLlm
     except ImportError as exc:  # litellm is the optional 'llm' dep group

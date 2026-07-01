@@ -78,7 +78,8 @@ EngineOpt = Annotated[
 ]
 ApiKeyOpt = Annotated[str | None, typer.Option("--api-key", help="API key (non-interactive).")]
 ProviderOpt = Annotated[
-    str | None, typer.Option("--provider", help="Model provider: openai | gemini.")
+    str | None,
+    typer.Option("--provider", help="Model provider: openai | gemini | anthropic | openrouter."),
 ]
 ModelOpt = Annotated[
     str | None, typer.Option("--model", help="Model id (e.g. gpt-4o, gemini-2.5-flash).")
@@ -246,6 +247,13 @@ def search(ctx: typer.Context, engine: EngineOpt = None, api_key: ApiKeyOpt = No
 _MODELS = {
     "openai": ["gpt-5.5", "gpt-5.4-mini", "gpt-4o", "gpt-4o-mini"],
     "gemini": ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"],
+    "anthropic": ["claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"],
+    "openrouter": [
+        "anthropic/claude-sonnet-4-6",
+        "openai/gpt-5.5",
+        "google/gemini-2.5-flash",
+        "meta-llama/llama-3.3-70b-instruct",
+    ],
 }
 #: ChatGPT-oauth (Codex backend, no /models endpoint) — its own curated list.
 _OAUTH_MODELS = ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini"]
@@ -261,18 +269,29 @@ _UNITS: dict[str, tuple[str, str, str, bool]] = {
     "chatgpt": ("ChatGPT (sign in)", "subscription — no API key", "openai", True),
     "openai": ("OpenAI (API key)", "OPENAI_API_KEY", "openai", False),
     "gemini": ("Google Gemini (API key)", "GEMINI_API_KEY", "gemini", False),
+    "anthropic": ("Anthropic (API key)", "ANTHROPIC_API_KEY", "anthropic", False),
+    "openrouter": ("OpenRouter (API key)", "OPENROUTER_API_KEY", "openrouter", False),
 }
 #: API-key env var + Settings attr for the key-based units.
 _UNIT_KEY = {
     "openai": ("OPENAI_API_KEY", "openai_api_key"),
     "gemini": ("GEMINI_API_KEY", "google_api_key"),
+    "anthropic": ("ANTHROPIC_API_KEY", "anthropic_api_key"),
+    "openrouter": ("OPENROUTER_API_KEY", "openrouter_api_key"),
 }
 #: Provider section headers (display order) + per-unit method label/hint, for the grouped picker.
-_PROVIDER_LABEL = {"openai": "OpenAI", "gemini": "Google Gemini"}
+_PROVIDER_LABEL = {
+    "openai": "OpenAI",
+    "gemini": "Google Gemini",
+    "anthropic": "Anthropic",
+    "openrouter": "OpenRouter",
+}
 _METHOD = {
     "chatgpt": ("Sign in with ChatGPT", "subscription — no API key"),
     "openai": ("API key", "OPENAI_API_KEY"),
     "gemini": ("API key", "GEMINI_API_KEY"),
+    "anthropic": ("API key", "ANTHROPIC_API_KEY"),
+    "openrouter": ("API key", "OPENROUTER_API_KEY"),
 }
 
 
@@ -343,7 +362,7 @@ def _current_unit(provider: str, use_oauth: bool) -> str:
     """The auth unit gaia is currently using (for the 'current' badge)."""
     if provider == "openai":
         return "chatgpt" if use_oauth else "openai"
-    return "gemini"
+    return provider  # gemini/anthropic/openrouter each have one key-unit named after the provider
 
 
 def _configure_unit(
@@ -421,8 +440,9 @@ def model(
     # 1. choose which auth unit(s) to configure
     flag_prov = (provider or "").strip().lower()
     if flag_prov:  # scriptable single-unit path
-        if flag_prov not in ("openai", "gemini"):
-            out.print(f"[red]unknown provider {flag_prov!r}; use openai | gemini[/]")
+        if flag_prov not in _PROVIDER_LABEL:
+            valid = " | ".join(_PROVIDER_LABEL)
+            out.print(f"[red]unknown provider {flag_prov!r}; use {valid}[/]")
             raise typer.Exit(1)
         unit = "chatgpt" if (flag_prov == "openai" and oauth) else flag_prov
         _configure_unit(unit, ctx, settings, env_path, api_key=api_key)
