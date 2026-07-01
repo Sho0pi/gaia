@@ -35,10 +35,14 @@ class GrantCommand(Command):
     capability = "manage_users"
 
     async def run(self, ctx: CommandContext) -> str:
+        from gaia.acl import capability_error
+
         ref, _, cap = ctx.args.partition(" ")
         cap = cap.strip()
         if not ref or not cap:
-            return "Usage: /grant <id|channel:sender> <capability> (e.g. shell, web, *)"
+            return "Usage: /grant <id|channel:sender> <capability> (e.g. shell, web, cron, *)"
+        if err := capability_error(cap):
+            return err  # a typo like 'reminder' is caught here, not stored silently
         user_id = _find(ctx, ref.strip())
         if user_id is None:
             return f"No user matching {ref.strip()!r} (try /user)."
@@ -52,10 +56,14 @@ class RevokeCommand(Command):
     capability = "manage_users"
 
     async def run(self, ctx: CommandContext) -> str:
+        from gaia.acl import capability_error
+
         ref, _, cap = ctx.args.partition(" ")
         cap = cap.strip()
         if not ref or not cap:
             return "Usage: /revoke <id|channel:sender> <capability>"
+        if err := capability_error(cap):
+            return err
         user_id = _find(ctx, ref.strip())
         if user_id is None:
             return f"No user matching {ref.strip()!r} (try /user)."

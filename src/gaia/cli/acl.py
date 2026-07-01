@@ -94,8 +94,12 @@ def perms(ctx: typer.Context, ref: RefArg) -> None:
 @app.command()
 def grant(ctx: typer.Context, ref: RefArg, capability: CapArg) -> None:
     """Grant a user a capability."""
+    from gaia.acl import capability_error
     from gaia.users import UserStore
 
+    if err := capability_error(capability):  # a typo like 'reminder' fails loudly, not silently
+        console().print(f"[red]{err}[/]")
+        raise typer.Exit(1)
     store = UserStore()
     user_id = _resolve(store, ref)
     updated = store.grant(user_id, capability) if user_id else None
@@ -110,8 +114,12 @@ def grant(ctx: typer.Context, ref: RefArg, capability: CapArg) -> None:
 @app.command()
 def revoke(ctx: typer.Context, ref: RefArg, capability: CapArg) -> None:
     """Revoke a capability from a user."""
+    from gaia.acl import capability_error
     from gaia.users import UserStore
 
+    if err := capability_error(capability):
+        console().print(f"[red]{err}[/]")
+        raise typer.Exit(1)
     store = UserStore()
     user_id = _resolve(store, ref)
     updated = store.revoke(user_id, capability) if user_id else None
