@@ -452,19 +452,26 @@ class ConnectorsConfig(BaseModel):
 
 
 class RoleConfig(BaseModel):
-    """Per-role overrides: the capabilities (ACL groups) the role holds.
+    """Per-role ACL: the capabilities (groups / tool ids / ``*``) the role holds.
 
     Empty ``capabilities`` means "use the built-in default" (:data:`gaia.acl.groups.
     DEFAULT_ROLE_CAPS`); set it to override. A capability is a group name (``web``,
     ``shell``, ``manage_users``…), the wildcard ``*``, or a raw tool id.
     """
 
-    llm: LLMConfig = Field(default_factory=LLMConfig)
     capabilities: list[str] = Field(
         default_factory=list,
         description="ACL capabilities this role holds (group names like 'web'/'shell', "
         "'*' for all, or a raw tool id). Empty = built-in default for the role.",
     )
+
+
+def _role_defaults() -> dict[str, RoleConfig]:
+    """The built-in per-role capabilities, surfaced into gaia.yaml so every role's ACL is visible
+    and editable there. Single source: :data:`gaia.acl.groups.DEFAULT_ROLE_CAPS` (lazy-imported)."""
+    from gaia.acl.groups import DEFAULT_ROLE_CAPS
+
+    return {role: RoleConfig(capabilities=list(caps)) for role, caps in DEFAULT_ROLE_CAPS.items()}
 
 
 class ToolConfig(BaseModel):
@@ -645,9 +652,10 @@ class GaiaConfig(BaseModel):
     )
     # Forward-looking, validated-but-unwired sections.
     roles: dict[str, RoleConfig] = Field(
-        default_factory=dict,
-        description="Per-role ACL overrides keyed by role (admin/user/guest), e.g. "
-        "user.capabilities: [web, memory]. Empty = built-in defaults.",
+        default_factory=_role_defaults,
+        description="Per-role ACL, keyed by role (admin/user/guest): the capabilities each holds. "
+        "Pre-filled with the built-in defaults so you see and edit exactly what each role can do. "
+        "A role you drop / leave with empty capabilities falls back to its built-in default.",
     )
     tools: dict[str, ToolConfig] = Field(
         default_factory=dict,

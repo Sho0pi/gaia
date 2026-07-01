@@ -44,8 +44,10 @@ individual grant) holds (`gaia.acl`):
 | `guest` | nothing (and is gated at pairing anyway) |
 
 Capabilities are grouped (`gaia.acl.groups`): a new tool joins a group once, and every role holding
-that group gets it. A role's defaults can be overridden per role in `gaia.yaml`
-(`roles.<role>.capabilities`), and an individual user can carry extra `grants` / `denies`
+that group gets it. Each role's capabilities are laid out in **`gaia.yaml`** under
+`roles.<role>.capabilities` — pre-filled with the built-in defaults, so you can see and edit exactly
+what `admin` / `user` / `guest` may do (a `user` gets `web`, `memory`, `browser`, `tasks`, `cron`, …;
+`admin` is `*`). On top of the role, an individual user can carry extra `grants` / `denies`
 (`/grant`, `/deny`). The effective set is `role defaults ∪ grants − denies` (`gaia.acl.resolve`).
 
 ### Two enforcement points

@@ -44,9 +44,22 @@ def test_role_default_used_when_no_override() -> None:
         "core",
         "images",
         "media",
+        "cron",
     ]
     assert role_capabilities("admin", None) == [ALL]
     assert role_capabilities("guest", None) == []
+
+
+def test_default_config_surfaces_roles_with_cron() -> None:
+    # The role -> capabilities map is now populated in gaia.yaml (visible + editable), and 'cron'
+    # (self-service reminders) is a default 'user' capability.
+    from gaia.config.schema import GaiaConfig
+
+    cfg = GaiaConfig()
+    assert "cron" in cfg.roles["user"].capabilities  # surfaced in the config, not just in code
+    assert cfg.roles["admin"].capabilities == [ALL]
+    assert cfg.roles["guest"].capabilities == []
+    assert "cron" in role_capabilities("user", cfg)  # and it resolves through the config
 
 
 def test_role_override_from_config() -> None:

@@ -83,6 +83,7 @@ DEFAULT_ROLE_CAPS: dict[Role, list[str]] = {
         "core",
         "images",
         "media",
+        "cron",  # schedule your own reminders/jobs — safe self-service
     ],
     "admin": [ALL],
 }
