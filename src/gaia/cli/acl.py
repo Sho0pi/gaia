@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Annotated
 
 import typer
 
+from gaia.cli import _complete
 from gaia.cli._console import console, emit_json
 from gaia.cli._options import state
 from gaia.commands.catalog import summary_of
@@ -23,10 +24,18 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 app = typer.Typer(name="acl", help="Inspect and manage ACL capabilities.", no_args_is_help=True)
 
 RefArg = Annotated[
-    str, typer.Argument(help="A user: canonical id (e.g. 'itay') or 'channel:sender'.")
+    str,
+    typer.Argument(
+        help="A user: canonical id (e.g. 'itay') or 'channel:sender'.",
+        autocompletion=_complete.user_refs,
+    ),
 ]
 CapArg = Annotated[
-    str, typer.Argument(help="A capability: a group (e.g. 'web', 'shell'), a tool id, or '*'.")
+    str,
+    typer.Argument(
+        help="A capability: a group (e.g. 'web', 'shell'), a tool id, or '*'.",
+        autocompletion=_complete.capabilities,
+    ),
 ]
 
 

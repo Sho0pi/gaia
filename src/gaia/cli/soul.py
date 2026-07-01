@@ -18,11 +18,12 @@ from typing import TYPE_CHECKING, Annotated
 import click
 import typer
 
+from gaia.cli import _complete
 from gaia.cli._console import console, emit_json
 from gaia.cli._options import state
 
 # Argument/option types named once so the command signatures below stay readable.
-KeyArg = Annotated[str, typer.Argument(help="The soul key.")]
+KeyArg = Annotated[str, typer.Argument(help="The soul key.", autocompletion=_complete.soul_keys)]
 NameArg = Annotated[str, typer.Argument(help="Human name for the soul (slugified into its key).")]
 DescriptionOpt = Annotated[str | None, typer.Option("--description", help="What the soul is for.")]
 InstructionOpt = Annotated[
@@ -36,10 +37,17 @@ ModelOpt = Annotated[
     str | None, typer.Option("--model", help="Model id (default: config llm.model).")
 ]
 SkillOpt = Annotated[list[str] | None, typer.Option("--skill", help="Skill id (repeatable).")]
-ToolOpt = Annotated[list[str] | None, typer.Option("--tool", help="Tool id to pin (repeatable).")]
+ToolOpt = Annotated[
+    list[str] | None,
+    typer.Option("--tool", help="Tool id to pin (repeatable).", autocompletion=_complete.tool_ids),
+]
 StyleOpt = Annotated[
     str | None,
-    typer.Option("--style", help="Voice (default: config default_communication_style)."),
+    typer.Option(
+        "--style",
+        help="Voice (default: config default_communication_style).",
+        autocompletion=_complete.styles,
+    ),
 ]
 AiOpt = Annotated[
     str | None,

@@ -42,6 +42,7 @@ def main(ctx: typer.Context) -> None:
         ("Memory", memory),
         ("Connectors", connectors),
         ("Tools", tools_step),
+        ("Shell completion", _completion_step),
     ):
         out.print(f"\n[bold cyan]> {label}[/]")
         # Esc/Ctrl-C/decline in any step just skips it and moves on — never aborts the whole wizard.
@@ -53,6 +54,19 @@ def main(ctx: typer.Context) -> None:
         "\n[bold green]✓ setup complete.[/] Run [cyan]gaia doctor[/] to check, "
         "[cyan]gaia start[/] to launch."
     )
+
+
+def _completion_step(ctx: typer.Context) -> None:
+    """Offer to install shell tab-completion (commands, options, and dynamic values)."""
+    if not typer.confirm("Enable shell tab-completion for gaia?", default=True):
+        return
+    try:
+        from gaia.cli.completion import run_install
+
+        shell, path = run_install()
+        console().print(f"  ✓ {shell} completion written to {path} — restart your shell to load it")
+    except Exception:
+        console().print("  [dim]couldn't auto-install — run 'gaia completion install' later[/]")
 
 
 EngineOpt = Annotated[

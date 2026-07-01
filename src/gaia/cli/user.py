@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Annotated
 
 import typer
 
+from gaia.cli import _complete
 from gaia.cli._console import console, emit_json
 from gaia.cli._options import state
 
@@ -24,9 +25,15 @@ app = typer.Typer(
 )
 
 RefArg = Annotated[
-    str, typer.Argument(help="A user: canonical id (e.g. 'itay') or 'channel:sender'.")
+    str,
+    typer.Argument(
+        help="A user: canonical id (e.g. 'itay') or 'channel:sender'.",
+        autocompletion=_complete.user_refs,
+    ),
 ]
-RoleArg = Annotated[str, typer.Argument(help="Role: admin | user | guest.")]
+RoleArg = Annotated[
+    str, typer.Argument(help="Role: admin | user | guest.", autocompletion=_complete.roles)
+]
 NameArg = Annotated[str, typer.Argument(help="Display name.")]
 IdentityArg = Annotated[str, typer.Argument(help="A 'channel:sender' identity to attach.")]
 YesOpt = Annotated[bool, typer.Option("--yes", "-y", help="Skip the confirmation.")]

@@ -14,6 +14,7 @@ from typing import Annotated
 
 import typer
 
+from gaia.cli import _complete
 from gaia.cli._console import console, emit_json
 from gaia.cli._options import state
 
@@ -21,9 +22,14 @@ app = typer.Typer(name="task", help="Inspect the missions task board.", no_args_
 
 # Argument/option types named once so the command signatures below stay readable.
 MissionOpt = Annotated[str, typer.Option("--mission", help="Only this mission's tasks.")]
-StatusOpt = Annotated[str, typer.Option("--status", help="Only tasks in this status.")]
-UserOpt = Annotated[str, typer.Option("--user", help="Only this owner's tasks.")]
-TaskIdArg = Annotated[str, typer.Argument(help="Task id.")]
+StatusOpt = Annotated[
+    str,
+    typer.Option("--status", help="Only tasks in this status.", autocompletion=_complete.statuses),
+]
+UserOpt = Annotated[
+    str, typer.Option("--user", help="Only this owner's tasks.", autocompletion=_complete.user_refs)
+]
+TaskIdArg = Annotated[str, typer.Argument(help="Task id.", autocompletion=_complete.task_ids)]
 
 
 @app.command("list")
