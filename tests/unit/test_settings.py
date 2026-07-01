@@ -23,6 +23,21 @@ def test_openai_key_reads_env_and_configures_adk(monkeypatch: pytest.MonkeyPatch
     assert os.environ["OPENAI_API_KEY"] == "sk-test"
 
 
+def test_anthropic_and_openrouter_keys_bridge_to_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+
+    settings = Settings()
+    assert settings.anthropic_api_key == "sk-ant-test"
+    assert settings.openrouter_api_key == "sk-or-test"
+
+    configure_adk_env(settings)
+    import os
+
+    assert os.environ["ANTHROPIC_API_KEY"] == "sk-ant-test"
+    assert os.environ["OPENROUTER_API_KEY"] == "sk-or-test"
+
+
 def test_configure_adk_env_disables_telemetry(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in ("DO_NOT_TRACK", "OTEL_SDK_DISABLED", "ANONYMIZED_TELEMETRY", "MEM0_TELEMETRY"):
         monkeypatch.delenv(name, raising=False)

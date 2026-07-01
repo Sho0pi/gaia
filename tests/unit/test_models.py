@@ -41,6 +41,18 @@ def test_already_prefixed_id_kept(lite: dict[str, Any]) -> None:
     assert lite["model"] == "openai/gpt-4o-mini"  # not doubled
 
 
+def test_openrouter_prefixes_even_when_model_has_a_slash(lite: dict[str, Any]) -> None:
+    # OpenRouter model ids carry a vendor slash; the openrouter/ prefix must still be added,
+    # else litellm routes straight to the vendor instead of through OpenRouter.
+    resolve_model("anthropic/claude-sonnet-4-6", "openrouter")
+    assert lite["model"] == "openrouter/anthropic/claude-sonnet-4-6"
+
+
+def test_openrouter_prefix_not_doubled(lite: dict[str, Any]) -> None:
+    resolve_model("openrouter/anthropic/claude-sonnet-4-6", "openrouter")
+    assert lite["model"] == "openrouter/anthropic/claude-sonnet-4-6"
+
+
 def test_openai_api_key_default_uses_litellm(lite: dict[str, Any]) -> None:
     out = resolve_model("gpt-4o", "openai")  # use_oauth defaults False
 

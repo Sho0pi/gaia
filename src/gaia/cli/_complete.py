@@ -197,5 +197,5 @@ def _static(*values: str) -> Any:
 
 channels = _static("telegram", "whatsapp", "cli")
 styles = _static("human", "caveman", "ai")
-providers = _static("gemini", "openai")
+providers = _static("gemini", "openai", "anthropic", "openrouter")
 roles = _static("admin", "user", "guest")

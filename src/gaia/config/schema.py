@@ -35,11 +35,14 @@ class LLMConfig(BaseModel):
 
     provider: str = Field(
         default="gemini",
-        description="LLM provider: gemini (GEMINI_API_KEY) or openai (needs the 'llm' dep group). "
-        "Other litellm providers also work. Keys live in env.",
+        description="LLM provider: gemini (GEMINI_API_KEY), openai (OPENAI_API_KEY), anthropic "
+        "(ANTHROPIC_API_KEY), or openrouter (OPENROUTER_API_KEY) — all but gemini need the 'llm' "
+        "dep group. Other litellm providers also work. Keys live in env.",
     )
     model: str = Field(
-        default="gemini-2.0-flash", description="Model id, e.g. gemini-2.5-flash or gpt-4o."
+        default="gemini-2.0-flash",
+        description="Model id, e.g. gemini-2.5-flash, gpt-4o, claude-sonnet-4-6, or (openrouter) "
+        "anthropic/claude-sonnet-4-6.",
     )
     effort: str = Field(
         default="",

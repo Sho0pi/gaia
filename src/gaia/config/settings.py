@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     google_api_key: str | None = Field(default=None, validation_alias="GEMINI_API_KEY")
     # OpenAI key for GPT models (provider: openai); read by litellm from the env.
     openai_api_key: str | None = Field(default=None, validation_alias="OPENAI_API_KEY")
+    # Anthropic (provider: anthropic) and OpenRouter (provider: openrouter) keys; litellm reads
+    # them from the env, we just bridge them from gaia's .env in configure_adk_env.
+    anthropic_api_key: str | None = Field(default=None, validation_alias="ANTHROPIC_API_KEY")
+    openrouter_api_key: str | None = Field(default=None, validation_alias="OPENROUTER_API_KEY")
 
     # Path fields use ``default_factory`` so they read ``constants`` at *construction*, not at
     # class-definition: a test that redirects the home (see tests/conftest.py ``_isolate_home``)
@@ -133,10 +137,10 @@ _TELEMETRY_OFF = {
 def configure_adk_env(settings: Settings) -> None:
     """Bridge our keys into the env vars the model backends expect, and silence telemetry.
 
-    ADK / google-genai read ``GOOGLE_API_KEY``; litellm (GPT models) reads
-    ``OPENAI_API_KEY``. Each is exported only when present. Telemetry kill-switches
-    (:data:`_TELEMETRY_OFF`) are set first so no dependency phones home; all via
-    ``setdefault`` so an operator who explicitly sets one wins.
+    ADK / google-genai read ``GOOGLE_API_KEY``; litellm reads ``OPENAI_API_KEY`` /
+    ``ANTHROPIC_API_KEY`` / ``OPENROUTER_API_KEY``. Each is exported only when present.
+    Telemetry kill-switches (:data:`_TELEMETRY_OFF`) are set first so no dependency phones
+    home; all via ``setdefault`` so an operator who explicitly sets one wins.
     """
     for name, value in _TELEMETRY_OFF.items():
         os.environ.setdefault(name, value)
@@ -144,5 +148,9 @@ def configure_adk_env(settings: Settings) -> None:
         os.environ.setdefault("GOOGLE_API_KEY", settings.google_api_key)
     if settings.openai_api_key:
         os.environ.setdefault("OPENAI_API_KEY", settings.openai_api_key)
+    if settings.anthropic_api_key:
+        os.environ.setdefault("ANTHROPIC_API_KEY", settings.anthropic_api_key)
+    if settings.openrouter_api_key:
+        os.environ.setdefault("OPENROUTER_API_KEY", settings.openrouter_api_key)
     if settings.cloudflare_ai_token:
         os.environ.setdefault("CLOUDFLARE_AI_TOKEN", settings.cloudflare_ai_token)
