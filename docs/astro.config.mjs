@@ -12,6 +12,7 @@ export default defineConfig({
 			logo: { src: './src/assets/gaia-icon.png', alt: 'Gaia' },
 			favicon: '/favicon.svg',
 			customCss: ['./src/styles/brand.css'],
+			components: { Header: './src/components/Header.astro' },
 			// Generates /llms.txt (page index) + /llms-full.txt (full corpus) so an agent — gaia
 			// included — can discover and read these docs. See AGENTS.md.
 			plugins: [
