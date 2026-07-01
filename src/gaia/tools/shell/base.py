@@ -23,7 +23,7 @@ import asyncio
 import atexit
 import re
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -79,6 +79,15 @@ DEFAULT_ALLOWLIST = (
     "ls", "cat", "echo", "pwd", "git", "python", "python3", "node", "bun", "bunx",
     "pip", "pip3", "uv", "pytest", "grep", "find", "head", "tail", "wc", "make",
 )  # fmt: skip
+
+
+def widen_allowlist(extra: Iterable[str]) -> tuple[str, ...]:
+    """The built-in allowlist plus any configured commands - a widen, not a replace.
+
+    So allowing one extra tool via ``tools.exec.allowlist`` never silently drops
+    git/python/uv/… from the default set. Duplicates are collapsed.
+    """
+    return DEFAULT_ALLOWLIST + tuple(c for c in extra if c not in DEFAULT_ALLOWLIST)
 
 
 def check_command(command: str, *, security: str, allowlist: tuple[str, ...]) -> str | None:

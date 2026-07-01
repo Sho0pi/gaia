@@ -31,6 +31,18 @@ Replies are plain text and files are shown as paths (the terminal has no rich me
 
 It's the same gaia, so a fact you tell it in the terminal is remembered when you message it later on Telegram or WhatsApp.
 
+## Configure it
+
+```yaml
+# ~/.gaia/gaia.yaml
+connectors:
+  cli:
+    enabled: false      # `gaia` attaches on demand, so this is off by default
+    default_role: admin # the local operator is admin
+```
+
+Editing by hand: [Configuration](/guides/configuration/).
+
 ## Drive gaia from the CLI
 
 Beyond chatting, the `gaia` CLI inspects and manages everything from the terminal - souls, tasks, users, memory, skills, config.

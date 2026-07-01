@@ -30,3 +30,16 @@ The native backend runs gaia's SSRF check (`validate_url`) on every navigation *
 Each agent gets its own page, so souls don't share cookies or tabs.
 
 Backend and flags are read once at startup - change them in `gaia.yaml` and `gaia restart`.
+
+## Configure it
+
+```yaml
+# ~/.gaia/gaia.yaml
+browser:
+  backend: native       # or 'mcp' (Microsoft playwright-mcp via bunx)
+  engine: camoufox      # native backend: 'camoufox' (anti-detect) or 'chromium'
+  headless: true        # or 'virtual' on Linux (Xvfb) for stronger stealth
+  viewport: 1280x1600
+```
+
+All keys (mcp origins, humanize, geoip, …): [Reference → Config](/reference/config/).

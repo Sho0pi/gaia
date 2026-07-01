@@ -36,6 +36,18 @@ Change the default with `connectors.telegram.default_role` (`guest` / `user` / `
 
 To use the same identity (and memory) as another channel, link them: `/link <your-id> telegram:<your-telegram-id>`.
 
+## Configure it
+
+```yaml
+# ~/.gaia/gaia.yaml (the token is env-only - see above)
+connectors:
+  telegram:
+    enabled: true
+    default_role: guest   # role for a first-seen sender
+```
+
+All keys: [Reference → Config](/reference/config/); editing by hand: [Configuration](/guides/configuration/).
+
 ## Notes + limits
 
 - It uses long-polling, so the daemon needs outbound internet; a brief network blip just retries.
