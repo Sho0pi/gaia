@@ -21,7 +21,7 @@ gaia acl grant <ref> <capability>
 
 ### `gaia acl list`
 
-List the capability groups and the tools each grants.
+List the ACL capability groups and the tools each grants.
 
 ```
 gaia acl list

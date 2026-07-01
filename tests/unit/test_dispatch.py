@@ -213,3 +213,64 @@ async def test_flush_all_drains_every_handler(tmp_path: Path, built: list[_FakeH
     await d.flush_all()
 
     assert built[0].flushed == 1
+
+
+def _gaia_allow(tmp_path: Path, allow: list[str]) -> Any:
+    """A Gaia stand-in whose whatsapp connector carries a config ``allow`` list."""
+    connectors = SimpleNamespace(
+        whatsapp=SimpleNamespace(default_role="guest", allow=allow),
+        telegram=SimpleNamespace(default_role="guest", allow=[]),
+        cli=SimpleNamespace(default_role="admin", allow=[]),
+    )
+    return SimpleNamespace(
+        users=UserStore(tmp_path / "users.json"),
+        config=SimpleNamespace(connectors=connectors),
+    )
+
+
+async def test_config_allowlist_admits_new_sender_as_user(
+    tmp_path: Path, built: list[_FakeHandler]
+) -> None:
+    # A messy allow-list entry must still match the inbound jid (forgiving normalisation).
+    gaia = _gaia_allow(tmp_path, allow=["+972 50-123-4567"])
+    gaia.users.register("whatsapp", "owner@s.whatsapp.net", "Owner", "admin")  # admin exists
+    d = Dispatcher(gaia)
+
+    await d.for_channel("whatsapp")(
+        "972501234567@s.whatsapp.net", "Grace", Inbound(text="hi"), await _send_collect([])
+    )
+
+    user = gaia.users.resolve("whatsapp", "972501234567@s.whatsapp.net")
+    assert user is not None and user.role == "user"  # pre-approved, not gated
+    assert built  # reached the model
+
+
+async def test_config_allowlist_promotes_an_existing_guest(
+    tmp_path: Path, built: list[_FakeHandler]
+) -> None:
+    gaia = _gaia_allow(tmp_path, allow=["972501234567"])
+    gaia.users.register("whatsapp", "owner@s.whatsapp.net", "Owner", "admin")
+    gaia.users.register("whatsapp", "972501234567@s.whatsapp.net", "Grace", "guest")
+    d = Dispatcher(gaia)
+
+    await d.for_channel("whatsapp")(
+        "972501234567@s.whatsapp.net", "Grace", Inbound(text="hi"), await _send_collect([])
+    )
+
+    user = gaia.users.resolve("whatsapp", "972501234567@s.whatsapp.net")
+    assert user is not None and user.role == "user"  # promoted in place
+    assert built
+
+
+async def test_sender_not_in_allowlist_is_still_gated(
+    tmp_path: Path, built: list[_FakeHandler]
+) -> None:
+    gaia = _gaia_allow(tmp_path, allow=["972501234567"])
+    gaia.users.register("whatsapp", "owner@s.whatsapp.net", "Owner", "admin")
+    d = Dispatcher(gaia)
+
+    await d.for_channel("whatsapp")(
+        "999@s.whatsapp.net", "Stranger", Inbound(text="hi"), await _send_collect([])
+    )
+
+    assert built == []  # not listed → gated as guest

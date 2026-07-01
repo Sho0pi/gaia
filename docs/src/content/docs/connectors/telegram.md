@@ -43,10 +43,11 @@ To use the same identity (and memory) as another channel, link them: `/link <you
 connectors:
   telegram:
     enabled: true
-    default_role: guest   # role for a first-seen sender
+    default_role: guest      # role for a first-seen sender
+    allow: ["12345678"]      # pre-approve numeric Telegram ids past the gate
 ```
 
-All keys: [Reference → Config](/reference/config/); editing by hand: [Configuration](/guides/configuration/).
+`allow` pre-approves specific senders as **users** (additive; revoke with `/approve <id> guest`). All keys: [Reference → Config](/reference/config/); editing by hand: [Configuration](/guides/configuration/).
 
 ## Notes + limits
 

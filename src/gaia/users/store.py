@@ -41,6 +41,20 @@ def slugify(name: str) -> str:
     return slug or "user"
 
 
+def normalize_wa_number(raw: str) -> str | None:
+    """A WhatsApp sender jid from any human number format, or ``None`` if there are no digits.
+
+    Forgiving on purpose: everything but digits is stripped, so ``+972 50-123-4567``,
+    ``(972) 50 123 4567`` and ``972501234567`` all collapse to the same jid. A value that already
+    looks like a jid (contains ``@``) passes through untouched.
+    """
+    raw = raw.strip()
+    if "@" in raw:
+        return raw
+    digits = "".join(c for c in raw if c.isdigit())
+    return f"{digits}@s.whatsapp.net" if digits else None
+
+
 class User(BaseModel):
     """One person: a canonical id + display name + role + the ids that reach them."""
 
