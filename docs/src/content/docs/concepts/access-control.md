@@ -26,9 +26,9 @@ sender at the connector's `default_role`:
 - **The local CLI** is **always `admin`**, regardless of config — the operator owns the machine, so a
   mis-set `default_role` can never lock them out of their own terminal.
 
-This is *pairing*, not a static allow-list: strangers are gated by default, and an admin promotes
-them with the `/user` commands (`/user approve …`, `/user role …`). There is no separate
-`connectors.*.allow` field — roles + guest-gating are the access policy.
+This is *pairing*: strangers are gated by default, and an admin promotes them with the `/user`
+commands (`/user approve …`, `/user role …`). To pre-approve senders straight from config, list them
+under `connectors.<channel>.allow` (see below) — a convenience on top of pairing, not a replacement.
 
 To seed the first admin(s), list their ids under the top-level `admin:` in `gaia.yaml`.
 
@@ -60,9 +60,16 @@ that group gets it. A role's defaults can be overridden per role in `gaia.yaml`
 An **unresolved** caller (cron jobs, the single-user/local path, tests) is trusted — there's no person
 to scope to, and these run on the operator's own machine.
 
-## Why not a static allow-list?
+## The `allow` list vs. an authoritative allow-list
 
-A per-connector "only these ids may message" list is redundant with guest-gating (strangers are
-already dropped) and easy to get wrong (one typo locks everyone out). Gaia deliberately uses the
-role + pairing model instead — the same approach as openclaw's pairing mode, with a finer-grained
-capability ACL on top.
+`connectors.<channel>.allow` in `gaia.yaml` pre-approves specific senders past the guest gate as
+`user` — handy for provisioning a number without waiting for first contact, and forgiving on format
+(`+972 50-123-4567`, `972501234567`, a full jid — all match). It is **additive**: adding an id grants
+access; removing it does **not** revoke (use `/user role <id> guest`).
+
+It is deliberately *not* an authoritative "only these ids may message, everyone else locked out" list.
+That kind of list is a footgun (one typo locks everyone out) and would fight the runtime `/approve`.
+The gate stays **pairing + roles** (openclaw's model) with a finer-grained capability ACL on top;
+`allow` is just a config shortcut for the common "let this number in" case. Everything else about a
+person — their linked channels, per-user `grants`/`denies`, and the memory key — stays in the runtime
+`users.json`, because it's a mutable identity graph a flat config list can't hold.

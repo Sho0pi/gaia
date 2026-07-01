@@ -9,26 +9,26 @@ Type these in any gaia chat (terminal, Telegram, WhatsApp). Some need a capabili
 
 | Command | Aliases | Usage | What it does | Requires |
 |---|---|---|---|---|
-| `/acl` | — | `/acl` | List the available ACL capability groups and the tools each grants. | — |
-| `/approve` | `/role` | `/approve <id|channel:sender> <role>` | Set a user's role (approve a guest). Usage: /approve <id|channel:sender> <role>. | manage_users |
-| `/effort` | — | `/effort [minimal|low|medium|high|off]` | Show or set the model's reasoning effort (/effort <minimal|low|medium|high>). | manage_users |
-| `/forget` | — | `/forget [yes]` | Wipe your long-term memory. Send '/forget yes' to confirm. | manage_users |
-| `/grant` | — | `/grant <id|channel:sender> <capability>` | Grant a user an ACL capability. Usage: /grant <id|channel:sender> <capability>. | manage_users |
-| `/grow` | — | `/grow` | List the skills/souls gaia changed (its own learning history). | — |
-| `/help` | — | `/help` | Show this list of commands. | — |
-| `/link` | — | `/link <id> <channel:sender>` | Attach another channel id to a user. Usage: /link <id> <channel:sender>. | manage_users |
-| `/memory` | — | `/memory` | List what Gaia remembers about you long-term. | — |
-| `/model` | — | `/model [model-id]` | Show the active model, or switch it (/model <id>). | manage_users |
-| `/name` | — | `/name <id|channel:sender> <name>` | Set a user's display name. Usage: /name <id|channel:sender> <name>. | manage_users |
-| `/perms` | `/permissions` | `/perms [id|channel:sender]` | Show a user's effective ACL capabilities. Usage: /perms [id|channel:sender]. | — |
+| `/acl` | — | `/acl` | List the ACL capability groups and the tools each grants. | — |
+| `/approve` | `/role` | `/approve <id|channel:sender> <role>` | Set a user's role (approve a guest to user/admin). | manage_users |
+| `/effort` | — | `/effort [minimal|low|medium|high|off]` | Show or set the model's reasoning effort. | manage_users |
+| `/forget` | — | `/forget [yes]` | Wipe your long-term memory (confirm with 'yes'). | — |
+| `/grant` | — | `/grant <id|channel:sender> <capability>` | Grant a user an ACL capability. | manage_users |
+| `/grow` | — | `/grow` | List the skills/souls Gaia changed (its learning history). | — |
+| `/help` | — | `/help [command]` | Show the commands, or details for one. | — |
+| `/link` | — | `/link <id> <channel:sender>` | Attach another channel id to an existing user. | manage_users |
+| `/memory` | — | `/memory [on|off|gemini|openai]` | List what Gaia remembers, or turn memory on/off. | — |
+| `/model` | — | `/model [model-id]` | Show the active model, or switch it. | manage_users |
+| `/name` | — | `/name <id|channel:sender> <name>` | Set a user's display name. | manage_users |
+| `/perms` | `/permissions` | `/perms [id|channel:sender]` | Show a user's effective ACL capabilities. | — |
 | `/remember` | — | `/remember <fact>` | Save a fact to long-term memory. | — |
-| `/remove` | `/deluser` | `/remove <id|channel:sender>` | Delete a user from the store. Usage: /remove <id|channel:sender> (admin). | manage_users |
-| `/reset` | `/clear`, `/new` | `/reset` | Start fresh: clear this conversation (keeps long-term memory). | — |
-| `/revoke` | — | `/revoke <id|channel:sender> <capability>` | Revoke an ACL capability from a user. Usage: /revoke <id|channel:sender> <cap>. | manage_users |
-| `/skill` | — | `/skill <list|show|search|install|remove> [args]` | Manage skills: list, show, search, install, remove (id/glob/all). | skills |
-| `/soul` | — | `/soul` | List the souls Gaia has learned, and the ones live right now (warm sessions). | — |
-| `/status` | `/stats` | `/status` | Show model, memory settings, and registered counts. | — |
-| `/style` | — | `/style [human|caveman|ai]` | Show or set Gaia's voice (/style <human|caveman|ai>). | manage_users |
-| `/task` | — | `/task [approve|reject <id> | answer <id> <text>]` | List your open missions/tasks. Usage: /task [approve|reject|answer <id> …]. | — |
-| `/user` | — | `/user` | List known users, their roles, and the channels that reach them (admin). | manage_users |
+| `/remove` | `/deluser` | `/remove <id|channel:sender>` | Delete a user from the store. | manage_users |
+| `/reset` | `/clear`, `/new` | `/reset` | Start fresh — clear this conversation (keeps long-term memory). | — |
+| `/revoke` | — | `/revoke <id|channel:sender> <capability>` | Revoke an ACL capability from a user. | manage_users |
+| `/skill` | — | `/skill <list|show|search|install|remove> [args]` | Manage skills — list, show, search, install, remove. | skills |
+| `/soul` | — | `/soul` | List the souls Gaia has learned (and which are live now). | — |
+| `/status` | `/stats` | `/status` | Show the model, memory settings, and registered counts. | — |
+| `/style` | — | `/style [human|caveman|ai]` | Show or set Gaia's voice (human / caveman / ai). | manage_users |
+| `/task` | — | `/task [approve|reject <id> | answer <id> <text>]` | List your missions; approve, reject, or answer one. | — |
+| `/user` | — | `/user` | List known users — their roles and the channels that reach them. | manage_users |
 | `/whoami` | — | `/whoami` | Show your user/session id, model, and memory state. | — |

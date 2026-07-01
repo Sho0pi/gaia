@@ -38,6 +38,8 @@ connectors:
     show_active: true
     # Role for a first-seen sender (admin/user/guest). 'guest' is gated until an admin approves; seed admins via the top-level 'admin' list.
     default_role: guest
+    # Senders pre-allowed past the guest gate as 'user'. Any number format (digits, +, spaces, dashes) or a full '…@s.whatsapp.net' jid. Additive: adding pre-approves, removing does NOT demote (revoke with '/approve <id> guest').
+    allow: []
   cli:
     # Run the local terminal chat; foreground-exclusive.
     enabled: false
@@ -46,10 +48,10 @@ connectors:
   telegram:
     # Run the Telegram connector.
     enabled: false
-    # Bot token; set via env GAIA_TELEGRAM_BOT_TOKEN, not here.
-    token: null
     # Role for a first-seen sender (admin/user/guest). 'guest' is gated until an admin approves; seed admins via the top-level 'admin' list.
     default_role: guest
+    # Sender ids (numeric Telegram ids) pre-allowed past the guest gate as 'user'. Additive: adding pre-approves, removing won't demote (revoke via /approve <id> guest).
+    allow: []
 memory:
   # Run long-term memory (mem0). Off = session-only, no cross-session recall.
   enabled: true

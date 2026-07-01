@@ -57,6 +57,8 @@ class Dispatcher:
             # DM-only so a stranger in a group can't grab admin if gaia is added to one first.
             # Only when truly admin-less; then the normal guest gate applies. (cli is always admin.)
             role = self._default_role(channel)
+            if role == "guest" and self._allowed(channel, sender_id):
+                role = "user"  # pre-approved in the connector's config allow-list
             if role != "admin" and not inbound.is_group and not users.has_admin():
                 role = "admin"
                 logger.warning(
@@ -70,16 +72,21 @@ class Dispatcher:
             )
 
         if user.role == "guest":
-            # Silently drop guest messages — the model never sees them and nothing
-            # goes back over the wire. Approval is out-of-band: the guest reaches the
-            # admin directly (DM, etc), the admin promotes them via the user command.
-            logger.info(
-                "dropped message from guest %s:%s (id=%s) — awaiting admin approval",
-                channel,
-                sender_id,
-                user.id,
-            )
-            return
+            if self._allowed(channel, sender_id):
+                # Listed in the connector's config allow-list after they were first seen —
+                # promote in place so they're a full user from here on.
+                user = users.set_role(user.id, "user") or user
+            else:
+                # Silently drop guest messages — the model never sees them and nothing
+                # goes back over the wire. Approval is out-of-band: the guest reaches the
+                # admin directly (DM, etc), the admin promotes them via the user command.
+                logger.info(
+                    "dropped message from guest %s:%s (id=%s) — awaiting admin approval",
+                    channel,
+                    sender_id,
+                    user.id,
+                )
+                return
 
         await self._handler_for(user, channel)(inbound, send)
 
@@ -114,6 +121,24 @@ class Dispatcher:
         cfg = getattr(connectors, channel, None)
         role = getattr(cfg, "default_role", "guest")
         return role if role in ("admin", "user", "guest") else "guest"  # type: ignore[return-value]
+
+    def _allowed(self, channel: str, sender_id: str) -> bool:
+        """Whether ``sender_id`` is pre-approved in the connector's config ``allow`` list.
+
+        Read live (config is hot-reloaded), so editing ``gaia.yaml`` takes effect without a
+        restart. WhatsApp entries are normalised (any number format → the jid) so ``972…`` and
+        ``+972 50-123`` match the inbound jid; other channels compare the id as-is.
+        """
+        cfg = getattr(self._gaia.config.connectors, channel, None)
+        allow = getattr(cfg, "allow", None) or []
+        if not allow:
+            return False
+        if channel == "whatsapp":
+            from gaia.users import normalize_wa_number
+
+            target = normalize_wa_number(sender_id)
+            return target is not None and any(normalize_wa_number(a) == target for a in allow)
+        return sender_id in {str(a) for a in allow}
 
 
 def build_dispatcher(gaia: Gaia) -> Dispatcher:

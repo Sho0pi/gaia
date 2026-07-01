@@ -228,10 +228,11 @@ def _connect_whatsapp(settings: Settings, *, timeout: int) -> bool:
 def _prompt_allowed_users(out: Any) -> None:
     """Pre-allow other people as (non-admin) users; seed them past the guest gate."""
     from gaia import constants
-    from gaia.users import UserStore
+    from gaia.users import UserStore, normalize_wa_number
 
     raw = typer.prompt(
-        "Pre-allow other numbers as users (comma-separated, country code, digits only; blank=none)",
+        "Pre-allow other numbers as users (any format — '+972 50-123-4567', '972501234567', "
+        "spaces/dashes fine; comma-separated; blank = none)",
         default="",
         show_default=False,
     ).strip()
@@ -240,12 +241,11 @@ def _prompt_allowed_users(out: Any) -> None:
     store = UserStore(constants.USERS_FILE)
     added = 0
     for token in raw.split(","):
-        digits = "".join(c for c in token if c.isdigit())
-        if not digits:
+        jid = normalize_wa_number(token)
+        if jid is None:
             continue
-        jid = f"{digits}@s.whatsapp.net"
         if store.resolve("whatsapp", jid) is None:
-            store.register("whatsapp", jid, name=digits, role="user")
+            store.register("whatsapp", jid, name=jid.split("@")[0], role="user")
             added += 1
     if added:
         out.print(f"allowed [bold]{added}[/] number(s) as users.")

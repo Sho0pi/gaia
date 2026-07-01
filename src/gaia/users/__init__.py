@@ -9,6 +9,6 @@ mapping to ``~/.gaia/users.json``.
 
 from __future__ import annotations
 
-from gaia.users.store import Role, User, UserStore, qualify, slugify
+from gaia.users.store import Role, User, UserStore, normalize_wa_number, qualify, slugify
 
-__all__ = ["Role", "User", "UserStore", "qualify", "slugify"]
+__all__ = ["Role", "User", "UserStore", "normalize_wa_number", "qualify", "slugify"]

@@ -382,7 +382,9 @@ class WhatsAppConnectorConfig(BaseModel):
     """WhatsApp connector toggle + access policy.
 
     Access is governed by roles + guest-gating (a first-seen remote sender is a gated ``guest``
-    until an admin approves), not a per-connector allow-list — see the access-control concept doc.
+    until an admin approves). ``allow`` pre-approves specific senders past that gate from config;
+    the rest of the identity graph (linked ids, per-user ACL) stays in ``users.json`` — see the
+    access-control concept doc.
     """
 
     enabled: bool = Field(default=False, description="Run the WhatsApp connector.")
@@ -396,6 +398,12 @@ class WhatsAppConnectorConfig(BaseModel):
         default="guest",
         description="Role for a first-seen sender (admin/user/guest). 'guest' is gated "
         "until an admin approves; seed admins via the top-level 'admin' list.",
+    )
+    allow: list[str] = Field(
+        default_factory=list,
+        description="Senders pre-allowed past the guest gate as 'user'. Any number format "
+        "(digits, +, spaces, dashes) or a full '…@s.whatsapp.net' jid. Additive: adding "
+        "pre-approves, removing does NOT demote (revoke with '/approve <id> guest').",
     )
 
 
@@ -419,6 +427,11 @@ class TelegramConnectorConfig(BaseModel):
         default="guest",
         description="Role for a first-seen sender (admin/user/guest). 'guest' is gated "
         "until an admin approves; seed admins via the top-level 'admin' list.",
+    )
+    allow: list[str] = Field(
+        default_factory=list,
+        description="Sender ids (numeric Telegram ids) pre-allowed past the guest gate as 'user'. "
+        "Additive: adding pre-approves, removing won't demote (revoke via /approve <id> guest).",
     )
 
 

@@ -47,11 +47,14 @@ connectors:
   whatsapp:
     enabled: true
     default_role: guest
+    allow: ["+972 50-123-4567"] # pre-approve numbers past the gate (any format)
     show_active: true          # blue-tick + "typing…" while working
     group_trigger:
       respond_in_groups: true
       mention_only: true       # in groups, only when @mentioned or replied to
 ```
+
+`allow` pre-approves specific senders as **users** without waiting for `/approve` - any number format works (`+`, spaces, dashes fine). It's additive; remove-to-revoke is `/approve <id> guest`. Everything else about who you are (linked channels, per-user permissions) stays in `users.json` - see [Access control](/concepts/access-control/).
 
 All keys: [Reference → Config](/reference/config/); editing by hand: [Configuration](/guides/configuration/).
 

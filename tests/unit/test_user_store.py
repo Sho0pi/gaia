@@ -5,11 +5,20 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from gaia.users import UserStore
+from gaia.users import UserStore, normalize_wa_number
 
 
 def _store(tmp_path: Path) -> UserStore:
     return UserStore(tmp_path / "users.json")
+
+
+def test_normalize_wa_number_is_forgiving() -> None:
+    jid = "972501234567@s.whatsapp.net"
+    assert normalize_wa_number("+972 50-123-4567") == jid
+    assert normalize_wa_number("972501234567") == jid
+    assert normalize_wa_number("(972) 50 123 4567") == jid
+    assert normalize_wa_number(jid) == jid  # a full jid passes through
+    assert normalize_wa_number("  no digits  ") is None
 
 
 def test_register_and_resolve_round_trip(tmp_path: Path) -> None:
