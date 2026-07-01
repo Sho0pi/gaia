@@ -8,7 +8,14 @@ in :mod:`gaia.core.agent` / :mod:`gaia.agents.factory`.
 
 from __future__ import annotations
 
-from gaia.acl.groups import ALL, DEFAULT_ROLE_CAPS, GROUPS, MANAGE_USERS
+from gaia.acl.groups import (
+    ALL,
+    DEFAULT_ROLE_CAPS,
+    GROUPS,
+    MANAGE_USERS,
+    capability_error,
+    known_capabilities,
+)
 from gaia.acl.resolve import (
     allowed_tool_ids,
     can,
@@ -23,6 +30,8 @@ __all__ = [
     "MANAGE_USERS",
     "allowed_tool_ids",
     "can",
+    "capability_error",
     "effective_capabilities",
+    "known_capabilities",
     "role_capabilities",
 ]

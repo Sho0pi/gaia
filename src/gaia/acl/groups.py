@@ -67,6 +67,25 @@ GROUPS: dict[str, frozenset[str]] = {
 #: playwright-mcp) all fall under the ``browser`` cap. Checked in addition to GROUPS.
 GROUP_PREFIXES: dict[str, str] = {"browser_": "browser"}
 
+
+def known_capabilities() -> set[str]:
+    """Every token ``/grant`` / ``/revoke`` accept: a group name, an individual tool id, or ``*``."""
+    tools = {tool for members in GROUPS.values() for tool in members}
+    return set(GROUPS) | tools | {ALL}
+
+
+def capability_error(cap: str) -> str | None:
+    """A helpful message when ``cap`` isn't a valid capability, else ``None`` (it is valid).
+
+    Catches a typo / wrong name (e.g. ``reminder`` for ``cron``) that would otherwise be stored
+    silently and grant nothing.
+    """
+    if cap in known_capabilities():
+        return None
+    groups = ", ".join(sorted(GROUPS))
+    return f"Unknown capability {cap!r}. Valid: {groups} (or a tool id, or '{ALL}')."
+
+
 #: Built-in capabilities each role holds before per-user grants. Overridable per-role in
 #: ``gaia.yaml`` (``roles.<role>.capabilities``). ``guest`` holds nothing — guests are
 #: dropped at dispatch anyway; this keeps them tool-less if that ever changes.
