@@ -458,7 +458,7 @@ async def execute_decision(
     # Every soul run can ask an expert (consult_soul); it needs the live gaia, so it's
     # threaded in per build rather than living in the static tool registry.
     soul = gaia.factory.create_or_reuse(
-        spec, effort=gaia.config.llm.effort, extra_tools=[make_consult_soul(gaia)]
+        spec, effort=gaia.config.llm.effort, extra_tools=[make_consult_soul(gaia)], user_id=user_id
     )
     # Resolve the project dir, converging on an existing one so one app doesn't fork into a new
     # workspace every turn (see resolve_project). Scope the whole run to it: set the contextvar
@@ -614,7 +614,10 @@ async def resume_soul(gaia: Gaia, pending: SoulPending, answer: str) -> SoulRun:
             False, pending.soul_key, pending.soul_name, False, error="soul no longer exists"
         )
     soul = gaia.factory.create_or_reuse(
-        spec, effort=gaia.config.llm.effort, extra_tools=[make_consult_soul(gaia)]
+        spec,
+        effort=gaia.config.llm.effort,
+        extra_tools=[make_consult_soul(gaia)],
+        user_id=pending.user_id,
     )
     token = current_project.set(pending.project)
     agent_token = current_agent.set(spec.key)

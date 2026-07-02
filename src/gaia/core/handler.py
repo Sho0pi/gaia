@@ -113,6 +113,11 @@ class GaiaHandler:
         self._inbox: list[Inbound] = []
         self._inbox_send: Send | None = None
 
+    @property
+    def user_id(self) -> str:
+        """The canonical id of the user this conversation belongs to (scopes per-user MCP)."""
+        return self._user_id
+
     async def _profile_block(self) -> str | None:
         """The user's distilled profile to bake into the prompt, or None.
 
@@ -271,16 +276,15 @@ class GaiaHandler:
             return
 
         if pending.save_env:
-            # A save_secret pause: write the pasted value to .env (and the live env, so it's usable
-            # this session without a restart) and hand the model back only a confirmation — never
-            # the secret. secret=True already keeps this turn out of memory/logs.
-            import os
-
-            from gaia import constants
+            # A save_secret pause: write the pasted value to THIS user's secret store (so it's
+            # private to them), then invalidate the MCP toolset cache so their next build reads it —
+            # no restart. The model gets back only a confirmation, never the secret; secret=True
+            # already keeps this turn out of memory/logs.
             from gaia.cli._envfile import set_env_var
+            from gaia.mcp import user_secret_path
 
-            set_env_var(constants.ENV_FILE, pending.save_env, answer)
-            os.environ[pending.save_env] = answer
+            set_env_var(user_secret_path(self._user_id), pending.save_env, answer)
+            await self._gaia.container.mcp_toolsets_manager().invalidate_all()
             tool_name, response = SAVE_SECRET_TOOL, {"saved": pending.save_env}
         else:
             tool_name, response = ASK_USER_TOOL, {"answer": answer}

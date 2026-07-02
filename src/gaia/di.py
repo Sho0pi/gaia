@@ -37,16 +37,18 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from pathlib import Path
 
     from google.adk.tools.base_toolset import BaseToolset
-    from google.adk.tools.mcp_tool import McpToolset
 
     from gaia.config import GaiaConfig, Settings
     from gaia.config.store import ConfigSupplier
+    from gaia.mcp import McpToolsetManager
     from gaia.memory import Mem0MemoryService
     from gaia.souls.sessions import SoulSessionManager
     from gaia.tools import ToolRegistry
     from gaia.voice import Transcriber
 
     ToolsetProvider = Callable[[], list[Any]]
+    #: The per-user MCP manager provider handed to the factory (souls call ``.for_user(user_id)``).
+    McpManagerProvider = Callable[[], McpToolsetManager]
 
 logger = logging.getLogger(__name__)
 
@@ -95,15 +97,15 @@ def _build_factory(
     settings: Settings,
     config: GaiaConfig,
     tools: ToolRegistry,
-    mcp_toolsets_provider: ToolsetProvider,
+    mcp_manager_provider: McpManagerProvider,
     skill_toolset_provider: ToolsetProvider,
 ) -> AgentFactory:
     """Assemble the :class:`AgentFactory`.
 
     A small builder rather than a pure provider expression because the
-    ``config.llm.model or settings.model`` fallback can't be written as one. The two
-    toolset *providers* arrive via container provider-delegation, so the factory keeps
-    its lazy ``Callable[[], list]`` contract.
+    ``config.llm.model or settings.model`` fallback can't be written as one. The MCP *manager* and
+    skill toolset *provider* arrive via container provider-delegation, so souls still build lazily —
+    the factory calls ``manager.for_user(user_id)`` per soul so each gets that user's servers.
     """
     return AgentFactory(
         souls,
@@ -113,7 +115,7 @@ def _build_factory(
         skills_dir=resolve_skills_dir(config),
         default_communication_style=config.default_communication_style,
         tool_registry=tools,
-        mcp_toolsets_provider=mcp_toolsets_provider,
+        mcp_manager_provider=mcp_manager_provider,
         skill_toolset_provider=skill_toolset_provider,
     )
 
@@ -158,29 +160,19 @@ def _build_session_service() -> Any:
     return DatabaseSessionService(f"sqlite+aiosqlite:///{constants.SESSIONS_DB}")
 
 
-def _build_mcp_toolsets(config: GaiaConfig, lifecycle: LifecycleManager) -> list[McpToolset]:
-    """The MCP toolsets, plus playwright-mcp when ``browser.backend`` resolves to ``mcp``.
+def _build_mcp_manager(
+    config_provider: Callable[[], GaiaConfig], lifecycle: LifecycleManager
+) -> McpToolsetManager:
+    """The per-user MCP toolset manager; reads live config each build (yaml hot-reload).
 
-    Registers the async ``close_mcp_toolsets`` call with ``lifecycle`` so
-    ``Gaia.close()`` tears down the stdio child processes on shutdown.
+    Registers the manager's ``close_all`` with ``lifecycle`` so ``Gaia.close()`` tears down every
+    user's stdio child processes on shutdown.
     """
-    from gaia.config.schema import MCPConfig
-    from gaia.mcp import (
-        build_mcp_toolsets,
-        close_mcp_toolsets,
-        playwright_mcp_server,
-        resolve_browser_backend,
-    )
+    from gaia.mcp import McpToolsetManager
 
-    servers = list(config.mcp.servers)
-    if resolve_browser_backend(config.browser) == "mcp" and not any(
-        s.name == "playwright" for s in servers
-    ):
-        servers.append(playwright_mcp_server(config.browser))
-    toolsets = build_mcp_toolsets(MCPConfig(servers=servers))
-    if toolsets:
-        lifecycle.add(lambda: close_mcp_toolsets(toolsets))
-    return toolsets
+    manager = McpToolsetManager(config_provider)
+    lifecycle.add(manager.close_all)
+    return manager
 
 
 def _build_skill_toolsets(config: GaiaConfig, lifecycle: LifecycleManager) -> list[BaseToolset]:
@@ -253,8 +245,8 @@ class Container(containers.DeclarativeContainer):
     # Durable conversation sessions (ADK DatabaseSessionService) — one shared store for all
     # handlers + souls; survives restarts, idle-consolidated into mem0 (#76).
     session_service: providers.Singleton[Any] = providers.Singleton(_build_session_service)
-    mcp_toolsets: providers.Singleton[list[McpToolset]] = providers.Singleton(
-        _build_mcp_toolsets, config, lifecycle
+    mcp_toolsets_manager: providers.Singleton[McpToolsetManager] = providers.Singleton(
+        _build_mcp_manager, config.provider, lifecycle
     )
     skill_toolsets: providers.Singleton[list[BaseToolset]] = providers.Singleton(
         _build_skill_toolsets, config, lifecycle
@@ -268,6 +260,6 @@ class Container(containers.DeclarativeContainer):
         settings,
         config,
         tools,
-        mcp_toolsets.provider,
+        mcp_toolsets_manager.provider,
         skill_toolsets.provider,
     )

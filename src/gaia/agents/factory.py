@@ -51,7 +51,7 @@ class AgentFactory:
         skills_dir: Path | None = None,
         default_communication_style: str = DEFAULT_COMMUNICATION_STYLE,
         tool_registry: ToolRegistry | None = None,
-        mcp_toolsets_provider: Callable[[], list[Any]] | None = None,
+        mcp_manager_provider: Callable[[], Any] | None = None,
         skill_toolset_provider: Callable[[], list[Any]] | None = None,
     ) -> None:
         self._registry = registry
@@ -61,13 +61,18 @@ class AgentFactory:
         self._skills_dir = skills_dir
         self._default_communication_style = default_communication_style
         self._tool_registry = tool_registry
-        # Built lazily at agent-build time (where ADK is already imported); souls get the
-        # same configured MCP toolsets and on-demand skills toolset as the root. Default: none.
-        self._mcp_toolsets_provider = mcp_toolsets_provider or (lambda: [])
+        # Resolved lazily at agent-build time. The MCP manager yields *this user's* servers
+        # (shared + their own) via for_user(user_id); the skill toolset is on-demand. Default none.
+        self._mcp_manager_provider = mcp_manager_provider
         self._skill_toolset_provider = skill_toolset_provider or (lambda: [])
 
     def create_or_reuse(
-        self, spec: AgentSpec, *, effort: str = "", extra_tools: list[Any] | None = None
+        self,
+        spec: AgentSpec,
+        *,
+        effort: str = "",
+        extra_tools: list[Any] | None = None,
+        user_id: str = "",
     ) -> LlmAgent:
         """Return an ADK agent for ``spec``, loading from the registry if present.
 
@@ -76,17 +81,23 @@ class AgentFactory:
         passes ``consult_soul`` here (it needs the live ``gaia``, so it can't sit in the
         static registry and must be threaded in per build). ``effort`` is the live
         ``llm.effort`` (passed by the caller, which has the live config) so souls reason at the
-        configured level without a restart.
+        configured level without a restart. ``user_id`` scopes the soul's MCP servers to the acting
+        user (shared + their own) — empty gets shared only.
         """
         stored = self._registry.get(spec.key)
         if stored is not None:
             spec = stored
         else:
             self._registry.save(spec)
-        return self._build_llm_agent(spec, effort=effort, extra_tools=extra_tools)
+        return self._build_llm_agent(spec, effort=effort, extra_tools=extra_tools, user_id=user_id)
 
     def _build_llm_agent(
-        self, spec: AgentSpec, *, effort: str = "", extra_tools: list[Any] | None = None
+        self,
+        spec: AgentSpec,
+        *,
+        effort: str = "",
+        extra_tools: list[Any] | None = None,
+        user_id: str = "",
     ) -> LlmAgent:
         """Construct the concrete ADK agent. Imports ADK lazily on purpose."""
         from google.adk.agents import LlmAgent
@@ -105,9 +116,12 @@ class AgentFactory:
             )
         # Configured external MCP servers attach to every soul too (not in the registry,
         # so AgentSpec.tools can't pin them — they're all-or-nothing per server config).
+        mcp_toolsets = (
+            self._mcp_manager_provider().for_user(user_id) if self._mcp_manager_provider else []
+        )
         tools = [
             *tools,
-            *self._mcp_toolsets_provider(),
+            *mcp_toolsets,
             *self._skill_toolset_provider(),
             *(extra_tools or []),
         ]

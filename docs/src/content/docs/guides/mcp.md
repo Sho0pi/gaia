@@ -16,14 +16,24 @@ The easy path: tell Gaia what you want, in chat.
 Gaia (an admin only) will research the server, confirm the exact one with you before adding (it's
 third-party code), and wire it up. It attaches on your **next message** - no restart.
 
-If it needs an API key, Gaia just asks you to **paste it** - the value goes straight into
-`~/.gaia/.env` and never passes through the model or the logs (it only sees a "saved" confirmation).
+If it needs an API key, Gaia just asks you to **paste it** - the value goes into **your** secret
+store and never passes through the model or the logs (it only sees a "saved" confirmation).
 So the whole thing is one conversation:
 
 > **you:** add ticktick mcp so I can manage my todos
 > **gaia:** Found TickTick's official server. It needs a token - paste it here 👇
 > **you:** *(paste)*
 > **gaia:** Saved and wired. Ask me about your tasks anytime.
+
+## Private by default
+
+A server you add is **private to you** - it attaches only to your agent, and its token lives in your
+own secret store (`~/.gaia/secrets/<you>.env`). So if you share Gaia with others, your ticktick stays
+yours; they can't see or use it. Two people can each add the same integration with their own token,
+and each only sees their own tasks.
+
+Keyless utilities everyone should share (e.g. a time server) can be marked shared - just tell Gaia
+"add it for everyone", or use `gaia mcp` (the CLI adds shared by default, being operator-level).
 
 ## Manage them manually
 
@@ -53,7 +63,8 @@ mcp:
       transport: stdio
       command: uvx
       args: ["ticktick-mcp"]
-      env_passthrough: ["TICKTICK_TOKEN"]   # var NAMES only - value goes in .env
+      env_passthrough: ["TICKTICK_TOKEN"]   # var NAMES only - value goes in a secret store
+      owner: itay                           # private to this user; omit/empty = shared
       # tool_filter: ["create_task", "list_tasks"]   # optional: only these tools
       # tool_prefix: "tt"                             # optional: avoid name collisions
 
@@ -61,13 +72,14 @@ mcp:
     # - name: ticktick
     #   transport: http
     #   url: "https://mcp.ticktick.com"
-    #   headers: { Authorization: "Bearer ${TICKTICK_TOKEN}" }   # ${VAR} is read from .env
+    #   headers: { Authorization: "Bearer ${TICKTICK_TOKEN}" }   # ${VAR} resolved per-user
+    #   owner: itay
 ```
 
 Secrets stay out of `gaia.yaml`: for stdio, list the env var **names** in `env_passthrough`; for a
-remote server, reference them as `${VAR}` inside `headers`. Either way the value lives in
-`~/.gaia/.env` (e.g. `TICKTICK_TOKEN=…`) - gaia reads it from the environment at launch, and any key
-you add to `.env` is available this way.
+remote server, reference them as `${VAR}` inside `headers`. The value lives in the owner's secret
+store `~/.gaia/secrets/<owner>.env` (a shared server falls back to the global `~/.gaia/.env`) - gaia
+resolves it per-user at launch, so two people can hold their own token for the same server.
 
 You can also manage servers from the shell with `gaia tools`.
 

@@ -35,6 +35,20 @@ def unset_env_var(path: Path, key: str) -> None:
     os.chmod(path, 0o600)
 
 
+def load_env_file(path: Path) -> dict[str, str]:
+    """All ``KEY=VALUE`` pairs in an env file (quotes stripped, comments/blanks skipped)."""
+    pairs: dict[str, str] = {}
+    if not path.exists():
+        return pairs
+    for line in path.read_text().splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, _, value = stripped.partition("=")
+        pairs[key.strip()] = value.strip().strip("'\"")
+    return pairs
+
+
 def set_env_var(path: Path, key: str, value: str) -> None:
     """Set ``key=value`` in the env file: update in place or append; create ``0600``."""
     pattern = re.compile(rf"^\s*{re.escape(key)}\s*=")

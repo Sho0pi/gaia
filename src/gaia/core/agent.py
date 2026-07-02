@@ -214,7 +214,9 @@ class Gaia:
                 make_send_file(),
                 *save_skill,
                 *task_plan,
-                *self.container.mcp_toolsets(),
+                # MCP toolsets scoped to the current user: shared + their own private servers
+                # (handler-free callers like the dev web UI get shared only).
+                *self.container.mcp_toolsets_manager().for_user(handler.user_id if handler else ""),
                 *self.container.skill_toolsets(),
             ],
         )

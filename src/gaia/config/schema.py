@@ -69,6 +69,12 @@ class MCPServerConfig(BaseModel):
 
     name: str = Field(description="A short id for this server (used in logs / tool prefix).")
     enabled: bool = Field(default=True, description="Attach this server's tools.")
+    owner: str = Field(
+        default="",
+        description="Canonical user id this server is private to; empty = shared with everyone. A "
+        "user's agent gets only shared + their own servers, so a personal integration (with a "
+        "personal token) stays private to whoever added it.",
+    )
     transport: Literal["stdio", "sse", "http"] = Field(
         default="stdio", description="How to reach the server: stdio (local process), sse, or http."
     )

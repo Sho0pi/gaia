@@ -33,6 +33,9 @@ LOG_DIR = HOME_DIR / "logs"
 # Redacted crash reports (one JSON per fatal daemon failure) — surfaced by `gaia report`.
 CRASHES_DIR = HOME_DIR / "crashes"
 SKILLS_DIR = HOME_DIR / "skills"
+# Per-user secret stores (0600): SECRETS_DIR/<user-id>.env — an MCP server owned by a user reads
+# its ${VAR}/env_passthrough from here, so two users can hold their own token for the same server.
+SECRETS_DIR = HOME_DIR / "secrets"
 SESSION_DB = HOME_DIR / "whatsapp.db"
 # ADK conversation sessions (durable, sliding-window) — survive restarts; idle-consolidated to mem0.
 SESSIONS_DB = HOME_DIR / "sessions.db"

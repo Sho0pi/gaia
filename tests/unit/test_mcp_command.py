@@ -10,56 +10,68 @@ from gaia.commands.base import CommandContext
 from gaia.commands.mcp import MCPCommand
 
 
-class _Reset:
+class _Manager:
     def __init__(self) -> None:
-        self.calls = 0
+        self.invalidations = 0
 
-    def reset(self) -> None:
-        self.calls += 1
+    async def invalidate_all(self) -> None:
+        self.invalidations += 1
 
 
-def _harness(tmp_path: Path) -> tuple[Path, _Reset]:
+def _harness(tmp_path: Path) -> tuple[Path, _Manager]:
     cfg = tmp_path / "gaia.yaml"
     cfg.write_text("mcp:\n  servers: []\n")
-    return cfg, _Reset()
+    return cfg, _Manager()
 
 
-def _ctx(cfg: Path, reset: _Reset, args: str) -> CommandContext:
+def _ctx(cfg: Path, manager: _Manager, args: str, *, user_id: str = "itay") -> CommandContext:
     gaia = SimpleNamespace(
         settings=SimpleNamespace(config_path=cfg),
-        container=SimpleNamespace(mcp_toolsets=reset),
+        container=SimpleNamespace(mcp_toolsets_manager=lambda: manager),
     )
     return CommandContext(
         args=args,
         gaia=gaia,  # type: ignore[arg-type]
         handler=SimpleNamespace(),  # type: ignore[arg-type]
         registry=default_registry(),
-        user_id="itay",
+        user_id=user_id,
         session_id="s",
         role="admin",
     )
 
 
 async def test_add_list_remove(tmp_path: Path) -> None:
-    cfg, reset = _harness(tmp_path)
+    cfg, manager = _harness(tmp_path)
     cmd = MCPCommand()
 
-    added = await cmd.run(_ctx(cfg, reset, "add time uvx mcp-server-time"))
-    assert "Added" in added and reset.calls == 1
+    added = await cmd.run(_ctx(cfg, manager, "add time uvx mcp-server-time"))
+    assert "Added" in added and manager.invalidations == 1
 
-    listed = await cmd.run(_ctx(cfg, reset, "list"))
+    listed = await cmd.run(_ctx(cfg, manager, "list"))
     assert "time" in listed and "stdio" in listed
 
-    empty_args = await cmd.run(_ctx(cfg, reset, ""))  # no args -> list
+    empty_args = await cmd.run(_ctx(cfg, manager, ""))  # no args -> list
     assert "time" in empty_args
 
-    removed = await cmd.run(_ctx(cfg, reset, "remove time"))
-    assert "Removed" in removed and reset.calls == 2
+    removed = await cmd.run(_ctx(cfg, manager, "remove time"))
+    assert "Removed" in removed and manager.invalidations == 2
+
+
+async def test_add_is_private_and_hidden_from_others(tmp_path: Path) -> None:
+    cfg, manager = _harness(tmp_path)
+    cmd = MCPCommand()
+    await cmd.run(_ctx(cfg, manager, "add tick uvx tick-mcp", user_id="itay"))
+    from gaia import mcp as mcp_cfg
+
+    assert mcp_cfg.read_servers(cfg)[0].owner == "itay"  # private to the adder
+    # another user's /mcp list doesn't show it
+    listed = await cmd.run(_ctx(cfg, manager, "list", user_id="grace"))
+    assert "tick" not in listed
 
 
 async def test_add_remote_url(tmp_path: Path) -> None:
-    cfg, reset = _harness(tmp_path)
-    out = await MCPCommand().run(_ctx(cfg, reset, "add tt https://mcp.ticktick.com"))
+    cfg, manager = _harness(tmp_path)
+    out = await MCPCommand().run(_ctx(cfg, manager, "add tt https://mcp.ticktick.com"))
     assert "Added" in out
     from gaia import mcp as mcp_cfg
 
@@ -68,6 +80,6 @@ async def test_add_remote_url(tmp_path: Path) -> None:
 
 
 async def test_remove_unknown(tmp_path: Path) -> None:
-    cfg, reset = _harness(tmp_path)
-    out = await MCPCommand().run(_ctx(cfg, reset, "remove nope"))
-    assert "No MCP server" in out and reset.calls == 0
+    cfg, manager = _harness(tmp_path)
+    out = await MCPCommand().run(_ctx(cfg, manager, "remove nope"))
+    assert "No MCP server" in out and manager.invalidations == 0

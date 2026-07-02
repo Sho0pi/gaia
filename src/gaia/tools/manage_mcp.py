@@ -40,6 +40,7 @@ def make_manage_mcp(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any]]]:
         headers: dict[str, str] | None = None,
         tool_filter: list[str] | None = None,
         tool_prefix: str = "",
+        shared: bool = False,
         *,
         tool_context: ToolContext,
     ) -> dict[str, Any]:
@@ -65,8 +66,10 @@ def make_manage_mcp(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any]]]:
            the user; it stores the value in ~/.gaia/.env and the live env, and you never see it,
            and it's usable immediately (no restart). Then reference it as ${TICKTICK_TOKEN} in the
            header above (or env_passthrough for stdio). Never ask for the raw secret in plain chat.
-        The server attaches on the user's NEXT message (no restart). action="list" shows what's
-        wired; action="remove" drops one by name.
+        A server is PRIVATE to the caller by default (only their agent gets it) — right for a
+        personal integration with a personal token. Pass shared=True only for a keyless/public
+        utility everyone should share (e.g. a time server). The server attaches on the user's NEXT
+        message (no restart). action="list" shows what's wired; action="remove" drops one by name.
 
         Args:
             action: "add", "list", or "remove".
@@ -80,6 +83,7 @@ def make_manage_mcp(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any]]]:
             headers: http/sse only — request headers; use ${VAR} for a secret (e.g. a Bearer token).
             tool_filter: only load these tool names from the server (empty = all).
             tool_prefix: prefix the server's tool names to avoid collisions.
+            shared: make it available to everyone (default False = private to you).
         """
         from gaia import mcp as mcp_cfg
         from gaia.acl import MANAGE_USERS, can
@@ -101,8 +105,10 @@ def make_manage_mcp(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any]]]:
                         "transport": s.transport,
                         "enabled": s.enabled,
                         "ready": mcp_cfg._runtime_available(s),
+                        "scope": "shared" if not s.owner else "yours",
                     }
                     for s in mcp_cfg.read_servers(cfg_path)
+                    if s.owner in ("", caller_id)  # a caller only sees shared + their own
                 ]
             )
 
@@ -112,12 +118,15 @@ def make_manage_mcp(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any]]]:
                 return err("name is required to remove a server")
             if not mcp_cfg.remove_server(cfg_path, nm):
                 return err(f"no MCP server named {nm!r} (try action='list')")
-            gaia.container.mcp_toolsets.reset()
+            await gaia.container.mcp_toolsets_manager().invalidate_all()
             return ok(removed=nm, message=f"removed {nm!r}; gone on your next message")
 
         if act != "add":
             return err("action must be 'add', 'list', or 'remove'")
 
+        # Private by default: a personal integration is owned by the caller so it attaches only to
+        # their agent. `shared=True` (keyless/public utilities) makes it available to everyone.
+        owner = "" if shared or not caller_id else caller_id
         try:
             server = mcp_cfg.add_server(
                 cfg_path,
@@ -131,19 +140,19 @@ def make_manage_mcp(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any]]]:
                 headers=headers,
                 tool_filter=tool_filter,
                 tool_prefix=tool_prefix.strip() or None,
+                owner=owner,
             )
         except ValueError as exc:
             return err(str(exc))
         except Exception as exc:  # pydantic ValidationError et al. — never raise to the model
             return err(f"invalid MCP server config: {exc}")
 
-        gaia.container.mcp_toolsets.reset()  # next agent build rebuilds toolsets from new config
-        # ponytail: the old toolsets' subprocesses linger until shutdown (their lifecycle closer
-        # still fires); explicit close-on-reset is a follow-up if it leaks.
+        await gaia.container.mcp_toolsets_manager().invalidate_all()  # next build rebuilds fresh
         needs = mcp_cfg.env_refs(server)
-        message = f"added {server.name!r}; it attaches on your next message."
+        scope = "shared" if not owner else "private to you"
+        message = f"added {server.name!r} ({scope}); it attaches on your next message."
         if needs:
-            message += f" First put {', '.join(needs)} in ~/.gaia/.env."
-        return ok(added=server.name, needs_env=needs, message=message)
+            message += " First save the key with save_secret."
+        return ok(added=server.name, needs_env=needs, scope=scope, message=message)
 
     return manage_mcp

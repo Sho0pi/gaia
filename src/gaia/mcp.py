@@ -18,6 +18,7 @@ import logging
 import os
 import re
 import shutil
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
@@ -32,7 +33,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
         StreamableHTTPConnectionParams,
     )
 
-    from gaia.config.schema import BrowserConfig, MCPConfig
+    from gaia.config.schema import BrowserConfig, GaiaConfig, MCPConfig
 
 logger = logging.getLogger(__name__)
 
@@ -56,33 +57,42 @@ def _resolve_runtime(name: str) -> str | None:
     return None
 
 
-def _stdio_env(server: MCPServerConfig) -> dict[str, str]:
+def _secrets(secrets: Mapping[str, str] | None) -> Mapping[str, str]:
+    """The secret source to resolve against — an explicit per-user map, else the process env."""
+    return secrets if secrets is not None else os.environ
+
+
+def _stdio_env(server: MCPServerConfig, secrets: Mapping[str, str] | None = None) -> dict[str, str]:
     """The env a stdio server runs with: literal ``env`` + copied ``env_passthrough``.
 
-    Secrets stay in the process environment and are copied by name — never written into
-    gaia.yaml.
+    ``env_passthrough`` names are copied from ``secrets`` (the acting user's merged view — see
+    :class:`McpToolsetManager`) — never written into gaia.yaml.
     """
-    passed = {k: os.environ[k] for k in server.env_passthrough if k in os.environ}
+    src = _secrets(secrets)
+    passed = {k: src[k] for k in server.env_passthrough if k in src}
     return {**server.env, **passed}
 
 
 _ENV_REF = re.compile(r"\$\{(\w+)\}")
 
 
-def _expand_env(value: str) -> str:
-    """Replace ``${VAR}`` in a string with its env value (empty if unset).
+def _expand_env(value: str, secrets: Mapping[str, str] | None = None) -> str:
+    """Replace ``${VAR}`` in a string with its value from ``secrets`` (empty if unset).
 
     Lets a remote server carry ``Authorization: Bearer ${TICKTICK_TOKEN}`` in gaia.yaml while the
-    actual token lives in ``~/.gaia/.env`` — the secret never touches the config file.
+    actual token lives in a secret store — the secret never touches the config file.
     """
-    return _ENV_REF.sub(lambda m: os.environ.get(m.group(1), ""), value)
+    src = _secrets(secrets)
+    return _ENV_REF.sub(lambda m: src.get(m.group(1), ""), value)
 
 
-def _headers(server: MCPServerConfig) -> dict[str, str] | None:
-    """Request headers for an sse/http server, with ``${VAR}`` expanded from the env."""
+def _headers(
+    server: MCPServerConfig, secrets: Mapping[str, str] | None = None
+) -> dict[str, str] | None:
+    """Request headers for an sse/http server, with ``${VAR}`` expanded from ``secrets``."""
     if not server.headers:
         return None
-    return {k: _expand_env(v) for k, v in server.headers.items()}
+    return {k: _expand_env(v, secrets) for k, v in server.headers.items()}
 
 
 # --- config CRUD (shared by the manage_mcp tool, the /mcp command, and `gaia mcp`) ------------
@@ -114,8 +124,12 @@ def add_server(
     headers: dict[str, str] | None = None,
     tool_filter: list[str] | None = None,
     tool_prefix: str | None = None,
+    owner: str = "",
 ) -> MCPServerConfig:
-    """Validate + append an MCP server to gaia.yaml. Raises ValueError on bad config / dup name."""
+    """Validate + append an MCP server to gaia.yaml. Raises ValueError on bad config / dup name.
+
+    ``owner`` scopes the server to a user (empty = shared with everyone).
+    """
     server = MCPServerConfig(
         name=name,
         transport=transport,  # type: ignore[arg-type]  # validated by the model
@@ -127,6 +141,7 @@ def add_server(
         headers=headers or {},
         tool_filter=tool_filter or [],
         tool_prefix=tool_prefix or None,
+        owner=owner,
     )
     if server.transport == "stdio" and not server.command:
         raise ValueError("stdio transport needs a command (e.g. 'uvx', 'npx', 'bunx')")
@@ -163,12 +178,13 @@ def remove_server(cfg_path: Path, name: str) -> bool:
 
 
 def server_to_params(
-    server: MCPServerConfig,
+    server: MCPServerConfig, secrets: Mapping[str, str] | None = None
 ) -> StdioConnectionParams | SseConnectionParams | StreamableHTTPConnectionParams:
     """Map a :class:`MCPServerConfig` to the matching ADK connection-params object.
 
-    Imports ADK's mcp_tool lazily (it needs the ``mcp`` package). Raises ``ValueError``
-    for a misconfigured server (e.g. stdio without a command, sse/http without a url).
+    ``secrets`` resolves ``env_passthrough`` / ``${VAR}`` headers (the acting user's view; defaults
+    to the process env). Imports ADK's mcp_tool lazily. Raises ``ValueError`` for a misconfigured
+    server (stdio without a command, sse/http without a url).
     """
     from google.adk.tools.mcp_tool import (
         SseConnectionParams,
@@ -186,14 +202,14 @@ def server_to_params(
         command = _resolve_runtime(server.command) or server.command
         return StdioConnectionParams(
             server_params=StdioServerParameters(
-                command=command, args=server.args, env=_stdio_env(server), cwd=server.cwd
+                command=command, args=server.args, env=_stdio_env(server, secrets), cwd=server.cwd
             )
         )
     if not server.url:
         raise ValueError(f"mcp server {server.name!r}: {server.transport} transport needs a 'url'")
     if server.transport == "sse":
-        return SseConnectionParams(url=server.url, headers=_headers(server))
-    return StreamableHTTPConnectionParams(url=server.url, headers=_headers(server))
+        return SseConnectionParams(url=server.url, headers=_headers(server, secrets))
+    return StreamableHTTPConnectionParams(url=server.url, headers=_headers(server, secrets))
 
 
 def _runtime_available(server: MCPServerConfig) -> bool:
@@ -209,12 +225,15 @@ def _runtime_available(server: MCPServerConfig) -> bool:
     return True
 
 
-def build_mcp_toolsets(config: MCPConfig) -> list[McpToolset]:
+def build_mcp_toolsets(
+    config: MCPConfig, secrets: Mapping[str, str] | None = None
+) -> list[McpToolset]:
     """Build one ``McpToolset`` per enabled, reachable server in ``config``.
 
-    Returns ``[]`` (no import) when nothing is configured. If servers are configured but
-    the ``mcp`` package is absent, warns and returns ``[]`` — the rest of gaia keeps
-    working. A single misconfigured server is skipped with a warning, not fatal.
+    ``secrets`` (the acting user's merged view; defaults to the process env) resolves each server's
+    ``env_passthrough`` / ``${VAR}`` headers. Returns ``[]`` (no import) when nothing is configured.
+    If servers are configured but the ``mcp`` package is absent, warns and returns ``[]``. A single
+    misconfigured server is skipped with a warning, not fatal.
     """
     servers = [s for s in config.servers if s.enabled]
     if not servers:
@@ -234,7 +253,7 @@ def build_mcp_toolsets(config: MCPConfig) -> list[McpToolset]:
             continue
         try:
             toolset = McpToolset(
-                connection_params=server_to_params(server),
+                connection_params=server_to_params(server, secrets),
                 tool_filter=server.tool_filter or None,
                 tool_name_prefix=server.tool_prefix or None,
             )
@@ -255,6 +274,69 @@ async def close_mcp_toolsets(toolsets: list[McpToolset]) -> None:
             await close()
         except Exception:  # pragma: no cover - shutdown best-effort
             logger.debug("mcp toolset close failed", exc_info=True)
+
+
+# --- per-user secrets + per-user toolsets ------------------------------------------------------
+
+
+def user_secret_path(user_id: str) -> Path:
+    """The per-user secret store path (``SECRETS_DIR/<user-id>.env``)."""
+    return constants.SECRETS_DIR / f"{user_id}.env"
+
+
+def user_secrets(user_id: str) -> dict[str, str]:
+    """The acting user's secret view: the shared process env overlaid with the user's own store.
+
+    A private server (owned by the user) resolves ``${VAR}`` / ``env_passthrough`` from their store;
+    a shared server falls back to the global env. Empty ``user_id`` → just the global env.
+    """
+    from gaia.cli._envfile import load_env_file
+
+    merged: dict[str, str] = dict(os.environ)
+    if user_id:
+        merged.update(load_env_file(user_secret_path(user_id)))
+    return merged
+
+
+class McpToolsetManager:
+    """Per-user MCP toolsets: shared + the user's own servers, built with the user's secrets.
+
+    One per :class:`~gaia.core.agent.Gaia` (a DI singleton), mirroring
+    :class:`~gaia.souls.sessions.SoulSessionManager`: a lazily-built keyed cache, closed together on
+    shutdown and cleared (terminating stdio subprocesses) whenever a server or secret changes. Reads
+    the live config each build, so a gaia.yaml edit is picked up on the next post-invalidate build.
+    """
+
+    def __init__(self, config_provider: Callable[[], GaiaConfig]) -> None:
+        self._config = config_provider
+        self._cache: dict[str, list[McpToolset]] = {}
+
+    def for_user(self, user_id: str) -> list[McpToolset]:
+        """The toolsets a ``user_id``'s agent gets (shared + their own), built + cached per user."""
+        if user_id not in self._cache:
+            self._cache[user_id] = self._build(user_id)
+        return self._cache[user_id]
+
+    def _build(self, user_id: str) -> list[McpToolset]:
+        from gaia.config.schema import MCPConfig
+
+        config = self._config()
+        servers = [s for s in config.mcp.servers if s.owner in ("", user_id)]
+        if resolve_browser_backend(config.browser) == "mcp" and not any(
+            s.name == "playwright" for s in servers
+        ):
+            servers.append(playwright_mcp_server(config.browser))  # the browser is shared
+        return build_mcp_toolsets(MCPConfig(servers=servers), user_secrets(user_id))
+
+    async def invalidate_all(self) -> None:
+        """Close + drop every cached user's toolsets; the next ``for_user`` rebuilds from config."""
+        for toolsets in list(self._cache.values()):
+            await close_mcp_toolsets(toolsets)
+        self._cache.clear()
+
+    async def close_all(self) -> None:
+        """Shutdown hook, registered with LifecycleManager."""
+        await self.invalidate_all()
 
 
 # --- Browser backend: Microsoft playwright-mcp as a synthesized MCP server ---------------
