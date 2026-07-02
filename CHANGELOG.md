@@ -7,6 +7,20 @@ in `src/gaia/__init__.py`; the GitHub Release for each tag is cut from the match
 
 ## [Unreleased]
 
+### Added
+- **Anthropic + OpenRouter models** - run Gaia on Claude (`provider: anthropic`) or route through
+  OpenRouter (`provider: openrouter`); keys live in env, and both show up in the `gaia model` picker
+  and shell completion.
+- **MCP integrations, self-service** - just ask Gaia "add the ticktick mcp" and it researches the
+  server, confirms the exact one with you (it's third-party code), and wires it up - live on your
+  next message, no restart. If it needs an API key, Gaia asks you to paste it and stores it in your
+  secret store without the value ever passing through the model or the logs. Manage servers manually
+  with the `/mcp` command or the `gaia mcp` CLI, or by hand in `mcp.servers`.
+- **Per-user MCP isolation** - a server you add is private to you (attached only to your agent, with
+  your own token), so integrations aren't shared across everyone on the instance. Two people can
+  each add the same integration with their own token and see only their own data; keyless utilities
+  can be marked shared.
+
 ## [0.1.0a1] - 2026-07-01
 
 First open alpha.
