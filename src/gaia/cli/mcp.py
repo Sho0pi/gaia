@@ -46,7 +46,7 @@ def list_(ctx: typer.Context) -> None:
     for s in servers:
         off = "" if s.enabled else " [dim]· off[/]"
         ready = "" if mcp_cfg._runtime_available(s) else " [yellow]· not ready[/]"
-        console().print(f"- [bold]{s.name}[/] [{s.transport}]{off}{ready}")
+        console().print(f"- [bold]{s.name}[/] ({s.transport}){off}{ready}")
 
 
 @app.command()
