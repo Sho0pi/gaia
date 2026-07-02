@@ -18,6 +18,7 @@ from gaia.connectors.base import Inbound, Question, Send, inbound_attachments
 from gaia.core.elicit import (
     ASK_USER_TOOL,
     DELEGATE_TOOL,
+    SAVE_SECRET_TOOL,
     Pending,
     SoulPending,
     resolve_answer,
@@ -269,12 +270,26 @@ class GaiaHandler:
             await self._resume_soul(pending, answer, send)
             return
 
+        if pending.save_env:
+            # A save_secret pause: write the pasted value to .env (and the live env, so it's usable
+            # this session without a restart) and hand the model back only a confirmation — never
+            # the secret. secret=True already keeps this turn out of memory/logs.
+            import os
+
+            from gaia import constants
+            from gaia.cli._envfile import set_env_var
+
+            set_env_var(constants.ENV_FILE, pending.save_env, answer)
+            os.environ[pending.save_env] = answer
+            tool_name, response = SAVE_SECRET_TOOL, {"saved": pending.save_env}
+        else:
+            tool_name, response = ASK_USER_TOOL, {"answer": answer}
         content = types.Content(
             role="user",
             parts=[
                 types.Part(
                     function_response=types.FunctionResponse(
-                        id=pending.fc_id, name=ASK_USER_TOOL, response={"answer": answer}
+                        id=pending.fc_id, name=tool_name, response=response
                     )
                 )
             ],
@@ -461,7 +476,11 @@ class GaiaHandler:
             return None
         for part in event.content.parts:
             call = getattr(part, "function_call", None)
-            if call is not None and call.id in ids and call.name in (ASK_USER_TOOL, DELEGATE_TOOL):
+            if call is not None and call.id in ids and call.name in (
+                ASK_USER_TOOL,
+                DELEGATE_TOOL,
+                SAVE_SECRET_TOOL,
+            ):
                 return call
         return None
 
@@ -514,6 +533,16 @@ class GaiaHandler:
         per-turn sink in :meth:`_drive`, since the question lives in the soul, not this call.)
         """
         args = call.args or {}
+        if call.name == SAVE_SECRET_TOOL:
+            env_var = str(args.get("env_var", "")).strip()
+            reason = str(args.get("reason", "")).strip()
+            self._pending = Pending(fc_id=call.id, secret=True, save_env=env_var)
+            log_event("elicit_asked", user=self._user_id, secret=True, save_env=env_var)
+            prompt = f"Paste the value for {env_var} — it goes to your .env, I won't see it."
+            if reason:
+                prompt = f"{reason}\n{prompt}"
+            await send(Question(text=prompt, options=(), secret=True))
+            return
         options = tuple(args.get("options") or ())
         secret = bool(args.get("secret", False))
         self._pending = Pending(fc_id=call.id, options=options, secret=secret)

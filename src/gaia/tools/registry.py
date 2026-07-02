@@ -26,6 +26,8 @@ from gaia.tools.download_media import NAME as DOWNLOAD_MEDIA
 from gaia.tools.download_media import make_download_media
 from gaia.tools.remember import NAME as REMEMBER
 from gaia.tools.remember import make_remember
+from gaia.tools.save_secret import NAME as SAVE_SECRET
+from gaia.tools.save_secret import make_save_secret
 from gaia.tools.set_communication_style import NAME as SET_STYLE
 from gaia.tools.set_communication_style import make_set_communication_style
 from gaia.tools.task import (
@@ -355,6 +357,8 @@ def default_registry(
     # resumes on their reply; the handler surfaces the question and routes the answer.
     if _is_enabled(config, ASK_USER):
         registry.register(ASK_USER, make_ask_user())
+    if _is_enabled(config, SAVE_SECRET):
+        registry.register(SAVE_SECRET, make_save_secret())
 
     # Missions task board (P1): the five task_* tools share one TaskStore so they all hit
     # the same ~/.gaia/tasks.db. Gaia-only for now; souls get them in P3.

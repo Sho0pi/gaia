@@ -14,10 +14,16 @@ The easy path: tell Gaia what you want, in chat.
 > "Add the ticktick mcp so we can update my todos."
 
 Gaia (an admin only) will research the server, confirm the exact one with you before adding (it's
-third-party code), wire it up, and tell you if it needs an API key.
-It attaches on your **next message** - no restart.
-If a key is needed, Gaia points you at where to create it and asks you to add it to `~/.gaia/.env`
-(secrets never pass through the model).
+third-party code), and wire it up. It attaches on your **next message** - no restart.
+
+If it needs an API key, Gaia just asks you to **paste it** - the value goes straight into
+`~/.gaia/.env` and never passes through the model or the logs (it only sees a "saved" confirmation).
+So the whole thing is one conversation:
+
+> **you:** add ticktick mcp so I can manage my todos
+> **gaia:** Found TickTick's official server. It needs a token - paste it here 👇
+> **you:** *(paste)*
+> **gaia:** Saved and wired. Ask me about your tasks anytime.
 
 ## Manage them manually
 

@@ -21,6 +21,11 @@ ASK_USER_TOOL = "ask_user"
 #: a long-running pause on this tool as a *soul* asking the user (P2), via :class:`SoulPending`.
 DELEGATE_TOOL = "delegate_to_soul"
 
+#: The ``save_secret`` tool id (mirrors ``gaia.tools.save_secret.NAME``). A long-running pause on it
+#: collects a secret; the handler writes the reply straight to ``.env`` and never feeds it to the
+#: model (see :attr:`Pending.save_env`).
+SAVE_SECRET_TOOL = "save_secret"
+
 
 @dataclass
 class SoulPending:
@@ -83,6 +88,9 @@ class Pending:
     options: tuple[str, ...] = ()
     secret: bool = False
     soul: SoulPending | None = None
+    #: When set, this pause is a ``save_secret``: the reply is written to ``.env`` under this env
+    #: var name and only a "saved" confirmation goes back to the model (the value never does).
+    save_env: str = ""
 
 
 def resolve_answer(pending: Pending, text: str) -> str:
