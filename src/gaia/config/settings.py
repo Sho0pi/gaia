@@ -134,6 +134,20 @@ _TELEMETRY_OFF = {
 }
 
 
+def _dotenv_pairs(path: Path) -> dict[str, str]:
+    """All ``KEY=VALUE`` pairs in an env file (quotes stripped, comments/blanks skipped)."""
+    pairs: dict[str, str] = {}
+    if not path.exists():
+        return pairs
+    for line in path.read_text().splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, _, value = stripped.partition("=")
+        pairs[key.strip()] = value.strip().strip("'\"")
+    return pairs
+
+
 def configure_adk_env(settings: Settings) -> None:
     """Bridge our keys into the env vars the model backends expect, and silence telemetry.
 
@@ -141,9 +155,15 @@ def configure_adk_env(settings: Settings) -> None:
     ``ANTHROPIC_API_KEY`` / ``OPENROUTER_API_KEY``. Each is exported only when present.
     Telemetry kill-switches (:data:`_TELEMETRY_OFF`) are set first so no dependency phones
     home; all via ``setdefault`` so an operator who explicitly sets one wins.
+
+    Every other key in ``~/.gaia/.env`` is also exported (``setdefault``) so operator secrets -
+    e.g. an MCP server's token used via ``env_passthrough`` or a ``${VAR}`` header - are visible to
+    the child processes, not just to the pydantic model's known fields.
     """
     for name, value in _TELEMETRY_OFF.items():
         os.environ.setdefault(name, value)
+    for key, value in _dotenv_pairs(constants.ENV_FILE).items():
+        os.environ.setdefault(key, value)
     if settings.google_api_key:
         os.environ.setdefault("GOOGLE_API_KEY", settings.google_api_key)
     if settings.openai_api_key:

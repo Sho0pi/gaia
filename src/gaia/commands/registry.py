@@ -14,6 +14,7 @@ from gaia.commands.effort import EffortCommand
 from gaia.commands.forget import ForgetCommand
 from gaia.commands.grow import GrowCommand
 from gaia.commands.help import HelpCommand
+from gaia.commands.mcp import MCPCommand
 from gaia.commands.memory import MemoryCommand
 from gaia.commands.model import ModelCommand
 from gaia.commands.permissions import (
@@ -56,6 +57,7 @@ _BUILTINS: tuple[Command, ...] = (
     RemoveCommand(),
     NameCommand(),
     LinkCommand(),
+    MCPCommand(),
     TaskCommand(),
     GrantCommand(),
     RevokeCommand(),

@@ -16,6 +16,7 @@ from __future__ import annotations
 import importlib.util
 import logging
 import os
+import re
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -65,6 +66,102 @@ def _stdio_env(server: MCPServerConfig) -> dict[str, str]:
     return {**server.env, **passed}
 
 
+_ENV_REF = re.compile(r"\$\{(\w+)\}")
+
+
+def _expand_env(value: str) -> str:
+    """Replace ``${VAR}`` in a string with its env value (empty if unset).
+
+    Lets a remote server carry ``Authorization: Bearer ${TICKTICK_TOKEN}`` in gaia.yaml while the
+    actual token lives in ``~/.gaia/.env`` — the secret never touches the config file.
+    """
+    return _ENV_REF.sub(lambda m: os.environ.get(m.group(1), ""), value)
+
+
+def _headers(server: MCPServerConfig) -> dict[str, str] | None:
+    """Request headers for an sse/http server, with ``${VAR}`` expanded from the env."""
+    if not server.headers:
+        return None
+    return {k: _expand_env(v) for k, v in server.headers.items()}
+
+
+# --- config CRUD (shared by the manage_mcp tool, the /mcp command, and `gaia mcp`) ------------
+
+
+def read_servers(cfg_path: Path) -> list[MCPServerConfig]:
+    """The configured MCP servers from gaia.yaml (validated)."""
+    from gaia.config import ConfigSupplier
+
+    return list(ConfigSupplier(cfg_path).current.mcp.servers)
+
+
+def _write_servers(cfg_path: Path, servers: list[dict[str, object]]) -> None:
+    from gaia.cli._yamledit import set_config_value
+
+    set_config_value(cfg_path, "mcp.servers", servers)
+
+
+def add_server(
+    cfg_path: Path,
+    *,
+    name: str,
+    transport: str = "stdio",
+    command: str | None = None,
+    args: list[str] | None = None,
+    url: str | None = None,
+    env: dict[str, str] | None = None,
+    env_passthrough: list[str] | None = None,
+    headers: dict[str, str] | None = None,
+    tool_filter: list[str] | None = None,
+    tool_prefix: str | None = None,
+) -> MCPServerConfig:
+    """Validate + append an MCP server to gaia.yaml. Raises ValueError on bad config / dup name."""
+    server = MCPServerConfig(
+        name=name,
+        transport=transport,  # type: ignore[arg-type]  # validated by the model
+        command=command or None,
+        args=args or [],
+        url=url or None,
+        env=env or {},
+        env_passthrough=env_passthrough or [],
+        headers=headers or {},
+        tool_filter=tool_filter or [],
+        tool_prefix=tool_prefix or None,
+    )
+    if server.transport == "stdio" and not server.command:
+        raise ValueError("stdio transport needs a command (e.g. 'uvx', 'npx', 'bunx')")
+    if server.transport in ("http", "sse") and not server.url:
+        raise ValueError(f"{server.transport} transport needs a url")
+    current = read_servers(cfg_path)
+    if any(s.name == server.name for s in current):
+        raise ValueError(f"an MCP server named {server.name!r} already exists")
+    dumps = [s.model_dump(exclude_defaults=True) for s in current]
+    dumps.append(server.model_dump(exclude_defaults=True))
+    _write_servers(cfg_path, dumps)
+    return server
+
+
+def env_refs(server: MCPServerConfig) -> list[str]:
+    """Env var names a server needs: ``env_passthrough`` + ``${VAR}`` refs in its headers.
+
+    Used to tell the user which keys to put in ``~/.gaia/.env`` for the server to authenticate.
+    """
+    names = list(server.env_passthrough)
+    for value in server.headers.values():
+        names += _ENV_REF.findall(value)
+    return list(dict.fromkeys(names))  # de-dup, keep order
+
+
+def remove_server(cfg_path: Path, name: str) -> bool:
+    """Drop the named server from gaia.yaml. Returns False if there was no such server."""
+    current = read_servers(cfg_path)
+    keep = [s for s in current if s.name != name]
+    if len(keep) == len(current):
+        return False
+    _write_servers(cfg_path, [s.model_dump(exclude_defaults=True) for s in keep])
+    return True
+
+
 def server_to_params(
     server: MCPServerConfig,
 ) -> StdioConnectionParams | SseConnectionParams | StreamableHTTPConnectionParams:
@@ -95,8 +192,8 @@ def server_to_params(
     if not server.url:
         raise ValueError(f"mcp server {server.name!r}: {server.transport} transport needs a 'url'")
     if server.transport == "sse":
-        return SseConnectionParams(url=server.url, headers=server.headers or None)
-    return StreamableHTTPConnectionParams(url=server.url, headers=server.headers or None)
+        return SseConnectionParams(url=server.url, headers=_headers(server))
+    return StreamableHTTPConnectionParams(url=server.url, headers=_headers(server))
 
 
 def _runtime_available(server: MCPServerConfig) -> bool:
