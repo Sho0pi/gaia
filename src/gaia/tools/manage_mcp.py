@@ -50,14 +50,19 @@ def make_manage_mcp(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any]]]:
     ) -> dict[str, Any]:
         """Add, list, or remove an external MCP server that gives Gaia new tools (admin only).
 
-        Adding an integration (e.g. "add ticktick mcp to update todos") is research-then-wire:
-        1. RESEARCH the server first — web_search the MCP registry or its GitHub to find how it's
-           launched and what auth it needs. A stdio server runs a local command: a Python one via
-           `uvx <package>`, a Node one via `npx -y <package>` or `bunx <package>`; a remote one
-           exposes a url (transport "http" or "sse").
-        2. Call action="add": stdio → command + args; remote → transport + url. Put any API-key env
-           var NAMES in env_passthrough (names only, e.g. ["TICKTICK_TOKEN"] — never the secret).
-        3. If it needs a key, tell the user to create it and add it to ~/.gaia/.env as that variable
+        Adding an integration (e.g. "add ticktick mcp to update todos") is research-confirm-wire:
+        1. RESEARCH — web_search for the server. There are usually MANY (forks, look-alikes); PREFER
+           the trusted one: the vendor's own, the official modelcontextprotocol/servers repo, or the
+           clearly most-starred, actively-maintained package. Find how it launches and what auth it
+           needs. A stdio server runs a local command: Python via `uvx <package>`, Node via
+           `npx -y <package>` / `bunx <package>`; a remote one exposes a url ("http"/"sse").
+        2. CONFIRM before adding — an MCP server is third-party code that runs on the user's machine.
+           Show the user exactly what you'll add: the name, the package/command, and the source URL
+           (GitHub/registry), and proceed only after they say yes (use ask_user). If several plausible
+           servers exist, ask the user which one rather than guessing.
+        3. action="add": stdio → command + args; remote → transport + url. Put any API-key env var
+           NAMES in env_passthrough (names only, e.g. ["TICKTICK_TOKEN"] — never the secret).
+        4. If it needs a key, tell the user to create it and add it to ~/.gaia/.env as that variable
            (e.g. TICKTICK_TOKEN=...). Do NOT ask for the raw secret here — it must not pass through
            you; the server reads it from the daemon env at launch.
         The server attaches on the user's NEXT message (no restart). action="list" shows what's
