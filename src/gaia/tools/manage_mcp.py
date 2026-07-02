@@ -61,9 +61,10 @@ def make_manage_mcp(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any]]]:
            key by ${NAME}, never inline the secret. (For stdio, use env_passthrough for the name.)
            A remote server that only supports interactive OAuth login (no token option) isn't wired
            yet — tell the user that.
-        4. KEYS — if it needs a key, tell the user to create it and add it to ~/.gaia/.env as that
-           variable (e.g. TICKTICK_TOKEN=...). Do NOT ask for the raw secret here — it must not pass
-           through you; the server reads it from the daemon env at launch.
+        4. KEYS — if it needs a key, call save_secret(env_var="TICKTICK_TOKEN") to collect it from
+           the user; it stores the value in ~/.gaia/.env and the live env, and you never see it,
+           and it's usable immediately (no restart). Then reference it as ${TICKTICK_TOKEN} in the
+           header above (or env_passthrough for stdio). Never ask for the raw secret in plain chat.
         The server attaches on the user's NEXT message (no restart). action="list" shows what's
         wired; action="remove" drops one by name.
 

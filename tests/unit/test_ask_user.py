@@ -18,6 +18,7 @@ from gaia.connectors.base import Inbound, Question, as_text
 from gaia.core.elicit import Pending, SoulPending, resolve_answer
 from gaia.core.handler import GaiaHandler
 from gaia.tools.ask_user import make_ask_user
+from gaia.tools.save_secret import make_save_secret
 
 # --- the tool: returns None to pause, turns off result summarization ----------------
 
@@ -192,7 +193,10 @@ async def test_secret_answer_is_not_buffered_to_memory() -> None:
 
     service = SimpleNamespace(add_events_to_memory=add_events_to_memory)
     memory = SimpleNamespace(auto_ingest=True, ingest_batch_size=1, ingest_interval_seconds=3600)
-    gaia = SimpleNamespace(memory_service=service, config=SimpleNamespace(memory=memory))
+    sessions = SimpleNamespace(idle_consolidate_minutes=30)
+    gaia = SimpleNamespace(
+        memory_service=service, config=SimpleNamespace(memory=memory, sessions=sessions)
+    )
     handler = GaiaHandler(gaia)
 
     handler._runner = _FakeRunner([_pause_event("fc1", "API key?", secret=True)])
@@ -203,6 +207,71 @@ async def test_secret_answer_is_not_buffered_to_memory() -> None:
     await _collect(handler, "sk-secret-123")  # the secret answer
 
     assert handler._buffer == []  # the secret-bearing turn never entered the ingest buffer
+
+
+# --- save_secret: collect a secret into .env without it passing through the model ------
+
+
+def test_save_secret_pauses_and_skips_summarization() -> None:
+    tool = make_save_secret()
+    assert tool.is_long_running is True
+    ctx = SimpleNamespace(actions=SimpleNamespace(skip_summarization=False))
+    result = tool.func(env_var="TICKTICK_TOKEN", reason="TickTick auth", tool_context=ctx)
+    assert result is None and ctx.actions.skip_summarization is True
+
+
+def _save_secret_pause_event(fc_id: str, env_var: str, reason: str = "") -> SimpleNamespace:
+    call = SimpleNamespace(
+        id=fc_id, name="save_secret", args={"env_var": env_var, "reason": reason}
+    )
+    return SimpleNamespace(
+        content=SimpleNamespace(parts=[SimpleNamespace(text=None, function_call=call)]),
+        is_final_response=lambda: True,
+        long_running_tool_ids={fc_id},
+    )
+
+
+async def test_save_secret_pause_surfaces_a_secret_prompt() -> None:
+    handler = GaiaHandler(SimpleNamespace(memory_service=None))
+    pause = _save_secret_pause_event("s1", "TICKTICK_TOKEN", "TickTick auth")
+    handler._runner = _FakeRunner([pause])
+
+    sent = await _collect(handler, "add ticktick")
+
+    question = next(r for r in sent if isinstance(r, Question))
+    assert question.secret is True and "TICKTICK_TOKEN" in question.text
+    assert "TickTick auth" in question.text  # the reason is shown
+    assert handler._pending is not None and handler._pending.save_env == "TICKTICK_TOKEN"
+
+
+async def test_save_secret_reply_writes_env_and_hides_value_from_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import os
+
+    from gaia import constants
+    from gaia.cli._envfile import get_env_var
+
+    handler = GaiaHandler(SimpleNamespace(memory_service=None))
+    handler._runner = _FakeRunner([_save_secret_pause_event("s1", "TICKTICK_TOKEN")])
+    await _collect(handler, "add ticktick")  # paused, awaiting the secret
+
+    monkeypatch.delenv("TICKTICK_TOKEN", raising=False)
+    resume = _CapturingRunner([_event("Saved — it's wired.")])
+    handler._runner = resume
+    try:
+        sent = await _collect(handler, "super-secret-token")
+
+        assert handler._pending is None and sent == ["Saved — it's wired."]
+        # written to the isolated .env and live in the process, usable now with no restart
+        assert get_env_var(constants.ENV_FILE, "TICKTICK_TOKEN") == "super-secret-token"
+        assert os.environ["TICKTICK_TOKEN"] == "super-secret-token"
+        # the model got only a confirmation — never the secret
+        fr = resume.captured["new_message"].parts[0].function_response
+        assert fr.name == "save_secret" and fr.response == {"saved": "TICKTICK_TOKEN"}
+        assert "super-secret-token" not in str(fr.response)
+    finally:
+        os.environ.pop("TICKTICK_TOKEN", None)
 
 
 class _CompletionTrackingRunner:
@@ -241,7 +310,7 @@ async def test_reset_clears_a_pending_question() -> None:
     handler = GaiaHandler(SimpleNamespace(memory_service=None))
     handler._pending = Pending(fc_id="fc1", options=("a",))
 
-    handler.reset_session()
+    await handler.reset_session()
 
     assert handler._pending is None
 
