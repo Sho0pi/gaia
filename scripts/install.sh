@@ -158,7 +158,7 @@ banner
 # pacing without touching the system (no downloads, no venv, no PATH edits). Same functions as the
 # real run, so what you see here is what an install shows.
 if [ "$DRY" = 1 ]; then
-	# shellcheck disable=SC2329  # invoked indirectly via run
+	# shellcheck disable=SC2317,SC2329  # defined + invoked indirectly via run (unreachable to SC)
 	_sim() { for line in "$@"; do printf '%s\n' "$line"; sleep 0.25; done; }
 	step "Checking uv + git"
 	run _sim "downloading uv installer" "installed uv to ~/.local/bin"
