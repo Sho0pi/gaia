@@ -31,12 +31,13 @@ class MCPCommand(Command):
         sub = parts[0].lower() if parts else "list"
 
         if sub == "list":
-            servers = mcp_cfg.read_servers(cfg)
+            # A caller sees only shared servers + their own private ones.
+            servers = [s for s in mcp_cfg.read_servers(cfg) if s.owner in ("", ctx.user_id)]
             if not servers:
                 return "No MCP servers wired. Add one with /mcp add, or just ask me to."
             lines = []
             for s in servers:
-                flags = ""
+                flags = " · shared" if not s.owner else " · yours"
                 if not s.enabled:
                     flags += " · off"
                 if not mcp_cfg._runtime_available(s):
@@ -50,25 +51,29 @@ class MCPCommand(Command):
             name = parts[1]
             if not mcp_cfg.remove_server(cfg, name):
                 return f"No MCP server named {name!r} (see /mcp)."
-            ctx.gaia.container.mcp_toolsets.reset()
+            await ctx.gaia.container.mcp_toolsets_manager().invalidate_all()
             return f"Removed {name!r}. Gone on the next message."
 
         if sub == "add":
             if len(parts) < 3:
                 return _USAGE
             name, target, *rest = parts[1:]
-            try:
+            try:  # private to you by default (ask Gaia or use `gaia mcp` for a shared one)
                 if target.startswith(("http://", "https://")):
-                    server = mcp_cfg.add_server(cfg, name=name, transport="http", url=target)
+                    server = mcp_cfg.add_server(
+                        cfg, name=name, transport="http", url=target, owner=ctx.user_id
+                    )
                 else:
-                    server = mcp_cfg.add_server(cfg, name=name, command=target, args=rest)
+                    server = mcp_cfg.add_server(
+                        cfg, name=name, command=target, args=rest, owner=ctx.user_id
+                    )
             except ValueError as exc:
                 return str(exc)
-            ctx.gaia.container.mcp_toolsets.reset()
+            await ctx.gaia.container.mcp_toolsets_manager().invalidate_all()
             needs = mcp_cfg.env_refs(server)
-            msg = f"Added {server.name!r}. Live on the next message."
+            msg = f"Added {server.name!r} (private to you). Live on the next message."
             if needs:
-                msg += f" Put {', '.join(needs)} in ~/.gaia/.env."
+                msg += f" Save the key: ask me, or set {', '.join(needs)} in your secrets."
             return msg
 
         return _USAGE

@@ -65,6 +65,50 @@ def test_env_refs_covers_passthrough_and_header_vars() -> None:
     assert mcp.env_refs(s) == ["OTHER", "TT_TOKEN"]
 
 
+def test_user_secrets_overlay_the_users_own_store_on_the_global_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from gaia.cli._envfile import set_env_var
+
+    monkeypatch.setenv("SHARED_KEY", "global")
+    set_env_var(mcp.user_secret_path("itay"), "TICKTICK_TOKEN", "itays-token")
+    secrets = mcp.user_secrets("itay")
+    assert secrets["TICKTICK_TOKEN"] == "itays-token"  # from the user's store
+    assert secrets["SHARED_KEY"] == "global"  # global env still visible
+    # a different user doesn't see itay's token
+    assert "TICKTICK_TOKEN" not in mcp.user_secrets("grace")
+
+
+def test_manager_scopes_servers_and_secrets_per_user(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from gaia.cli._envfile import set_env_var
+    from gaia.config import ConfigSupplier
+
+    cfg = _cfg(tmp_path)
+    mcp.add_server(cfg, name="pub", command="uvx")  # shared (owner="")
+    mcp.add_server(cfg, name="tick", command="uvx", env_passthrough=["TT"], owner="itay")  # private
+    set_env_var(mcp.user_secret_path("itay"), "TT", "itays-token")
+
+    captured: dict[str, object] = {}
+
+    def _spy(config: object, secrets: object = None) -> list:
+        captured["servers"] = [s.name for s in config.servers]  # type: ignore[attr-defined]
+        captured["secrets"] = secrets
+        return []
+
+    monkeypatch.setattr("gaia.mcp.build_mcp_toolsets", _spy)
+    manager = mcp.McpToolsetManager(lambda: ConfigSupplier(cfg).current)
+
+    manager.for_user("itay")
+    assert set(captured["servers"]) == {"pub", "tick"}  # shared + his own  # type: ignore[arg-type]
+    assert captured["secrets"]["TT"] == "itays-token"  # type: ignore[index]
+
+    manager.for_user("grace")
+    assert captured["servers"] == ["pub"]  # NOT itay's private tick
+    assert "TT" not in captured["secrets"]  # type: ignore[operator]  # and not his token
+
+
 def test_add_remote_with_secret_header_keeps_the_ref_in_config(tmp_path: Path) -> None:
     cfg = _cfg(tmp_path)
     server = mcp.add_server(

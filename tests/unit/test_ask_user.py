@@ -244,34 +244,38 @@ async def test_save_secret_pause_surfaces_a_secret_prompt() -> None:
     assert handler._pending is not None and handler._pending.save_env == "TICKTICK_TOKEN"
 
 
-async def test_save_secret_reply_writes_env_and_hides_value_from_model(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import os
+class _McpManager:
+    def __init__(self) -> None:
+        self.invalidations = 0
 
-    from gaia import constants
+    async def invalidate_all(self) -> None:
+        self.invalidations += 1
+
+
+async def test_save_secret_reply_writes_per_user_store_and_hides_value_from_model() -> None:
     from gaia.cli._envfile import get_env_var
+    from gaia.mcp import user_secret_path
 
-    handler = GaiaHandler(SimpleNamespace(memory_service=None))
+    manager = _McpManager()
+    gaia = SimpleNamespace(
+        memory_service=None, container=SimpleNamespace(mcp_toolsets_manager=lambda: manager)
+    )
+    handler = GaiaHandler(gaia, user_id="itay")  # writes to itay's private secret store
     handler._runner = _FakeRunner([_save_secret_pause_event("s1", "TICKTICK_TOKEN")])
     await _collect(handler, "add ticktick")  # paused, awaiting the secret
 
-    monkeypatch.delenv("TICKTICK_TOKEN", raising=False)
     resume = _CapturingRunner([_event("Saved — it's wired.")])
     handler._runner = resume
-    try:
-        sent = await _collect(handler, "super-secret-token")
+    sent = await _collect(handler, "super-secret-token")
 
-        assert handler._pending is None and sent == ["Saved — it's wired."]
-        # written to the isolated .env and live in the process, usable now with no restart
-        assert get_env_var(constants.ENV_FILE, "TICKTICK_TOKEN") == "super-secret-token"
-        assert os.environ["TICKTICK_TOKEN"] == "super-secret-token"
-        # the model got only a confirmation — never the secret
-        fr = resume.captured["new_message"].parts[0].function_response
-        assert fr.name == "save_secret" and fr.response == {"saved": "TICKTICK_TOKEN"}
-        assert "super-secret-token" not in str(fr.response)
-    finally:
-        os.environ.pop("TICKTICK_TOKEN", None)
+    assert handler._pending is None and sent == ["Saved — it's wired."]
+    # written to THIS user's secret store (not the global .env), and the cache was invalidated
+    assert get_env_var(user_secret_path("itay"), "TICKTICK_TOKEN") == "super-secret-token"
+    assert manager.invalidations == 1
+    # the model got only a confirmation — never the secret
+    fr = resume.captured["new_message"].parts[0].function_response
+    assert fr.name == "save_secret" and fr.response == {"saved": "TICKTICK_TOKEN"}
+    assert "super-secret-token" not in str(fr.response)
 
 
 class _CompletionTrackingRunner:
