@@ -476,10 +476,15 @@ class GaiaHandler:
             return None
         for part in event.content.parts:
             call = getattr(part, "function_call", None)
-            if call is not None and call.id in ids and call.name in (
-                ASK_USER_TOOL,
-                DELEGATE_TOOL,
-                SAVE_SECRET_TOOL,
+            if (
+                call is not None
+                and call.id in ids
+                and call.name
+                in (
+                    ASK_USER_TOOL,
+                    DELEGATE_TOOL,
+                    SAVE_SECRET_TOOL,
+                )
             ):
                 return call
         return None
