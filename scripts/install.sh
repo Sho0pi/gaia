@@ -50,6 +50,20 @@ warn() { printf '      %s!%s %s\n' "$GOLD" "$RST" "$*" >&2; }
 die() { printf '\n%s✗%s %s\n' "$GOLD" "$RST" "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# run <cmd...>: run a command under the current step, streaming its output live — dimmed and behind
+# a gutter — so a long install (uv resolve/download, Camoufox fetch) shows what it's doing instead
+# of a frozen screen. Returns the *command's* real exit status: a bare `cmd | while` would hand back
+# the reader's status, so the command's `$?` is stashed in a temp file and read back (POSIX-safe, no
+# `pipefail`). Piping also flips tools like uv into plain line output, which streams cleanly.
+run() {
+	rc_file=$(mktemp) || return 1
+	{ "$@"; printf '%s' "$?" >"$rc_file"; } 2>&1 | while IFS= read -r line; do
+		printf '      %s│%s %s%s%s\n' "$DIM" "$RST" "$DIM" "$line" "$RST"
+	done
+	rc=$(cat "$rc_file" 2>/dev/null); rm -f "$rc_file"
+	return "${rc:-1}"
+}
+
 # fetch_static <repo> <tag> <asset-basename> <bin>: download a GitHub release tarball and drop
 # <bin> into ~/.local/bin (no sudo, like the bun install). Best-effort — returns non-zero on any
 # failure so the caller can warn and move on (the dependent tool degrades gracefully).
@@ -104,15 +118,18 @@ WORDMARK
 
 STEP=0
 TOTAL=6
+BAR_WIDTH=28
+# step <label>: advance the overall progress and draw a wide 0-100% bar + label. The percent is
+# step-based (the honest granularity we have — within-step activity shows in the streamed logs).
 step() {
 	STEP=$((STEP + 1))
-	bar=""; i=0
-	while [ "$i" -lt "$TOTAL" ]; do
-		if [ "$i" -lt "$STEP" ]; then bar="${bar}█"; else bar="${bar}░"; fi
-		i=$((i + 1))
-	done
-	printf '%s[%d/%d]%s %s%s%s  %s%s%s\n' \
-		"$DIM" "$STEP" "$TOTAL" "$RST" "$GLOW" "$bar" "$RST" "$BOLD" "$1" "$RST"
+	pct=$((STEP * 100 / TOTAL))
+	fill=$((STEP * BAR_WIDTH / TOTAL))
+	filled=""; empty=""; i=0
+	while [ "$i" -lt "$fill" ]; do filled="${filled}█"; i=$((i + 1)); done
+	while [ "$i" -lt "$BAR_WIDTH" ]; do empty="${empty}░"; i=$((i + 1)); done
+	printf '\n%s%s%s%s%s %s%3d%%%s  %s%s%s\n' \
+		"$GLOW" "$filled" "$DIM" "$empty" "$RST" "$BOLD" "$pct" "$RST" "$BOLD" "$1" "$RST"
 }
 
 ensure_path() {
@@ -142,7 +159,7 @@ esac
 
 step "Checking uv + git"
 if ! have uv; then
-	curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null 2>&1 || die "could not install uv"
+	run sh -c 'curl -LsSf https://astral.sh/uv/install.sh | sh' || die "could not install uv"
 	export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 fi
 have uv || die "uv is not on PATH after install"
@@ -163,8 +180,8 @@ fi
 step "Installing gaia + all features (this pulls a fair bit — give it a minute)"
 spec="gaia[all] @ git+$REPO"
 [ -n "$REF" ] && spec="gaia[all] @ git+$REPO@$REF"
-uv venv "$VENV" --python "$PYTHON" >/dev/null 2>&1 || die "could not create the venv at $VENV"
-uv pip install --python "$VENV" "$spec" >/dev/null 2>&1 || die "could not install gaia"
+run uv venv "$VENV" --python "$PYTHON" || die "could not create the venv at $VENV"
+run uv pip install --python "$VENV" "$spec" || die "could not install gaia"
 ok "gaia → $VENV"
 
 step "Linking the gaia command"
@@ -182,7 +199,7 @@ ok "gaia → $BIN_DIR/gaia"
 # into ~/.local/bin (no sudo). All best-effort — the tools just degrade if this fails.
 step "Installing the file-search tools (fd, ripgrep)"
 if have brew; then
-	if brew install fd ripgrep >/dev/null 2>&1; then ok "fd + ripgrep (brew)"; else warn "brew install fd/ripgrep failed"; fi
+	if run brew install fd ripgrep; then ok "fd + ripgrep (brew)"; else warn "brew install fd/ripgrep failed"; fi
 else
 	fd_t=""; rg_t=""
 	case "$(uname -s)/$(uname -m)" in
@@ -207,7 +224,7 @@ if [ "$DO_BROWSER" -eq 1 ]; then
 	# Firefox, skipped if already present). Single source of truth: gaia.runtime.ensure_runtime_deps,
 	# the same path `gaia update` uses — no duplicated bun/chromium/mcp logic here. No gaia.yaml yet,
 	# so the config resolves to the defaults (native + camoufox).
-	"$VENV/bin/python" - <<-'PY' || warn "browser setup hit a snag — run 'gaia update' to retry"
+	run "$VENV/bin/python" - <<-'PY' || warn "browser setup hit a snag — run 'gaia update' to retry"
 		import sys
 		from pathlib import Path
 
@@ -216,7 +233,7 @@ if [ "$DO_BROWSER" -eq 1 ]; then
 
 		cfg = ConfigSupplier(get_settings().config_path).current.browser
 		for note in ensure_runtime_deps(Path(sys.executable), cfg):  # this interpreter == the venv
-		    print(f"  {note}")
+		    print(note, flush=True)
 	PY
 	ok "browser ready"
 else
