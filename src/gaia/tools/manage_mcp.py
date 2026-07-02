@@ -56,6 +56,10 @@ def make_manage_mcp(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any]]]:
            clearly most-starred, actively-maintained package. Find how it launches and what auth it
            needs. A stdio server runs a local command: Python via `uvx <package>`, Node via
            `npx -y <package>` / `bunx <package>`; a remote one exposes a url ("http"/"sse").
+           When the service needs an API key, strongly PREFER a stdio package that takes the token
+           via env_passthrough — the .env key flow (step 4) works for it. A remote http/sse endpoint
+           almost always needs auth (a Bearer header or OAuth) which isn't wired yet, so a bare url
+           will just fail with 401; only add a remote server if it's genuinely public/keyless.
         2. CONFIRM before adding — an MCP server is third-party code that runs on the user's box.
            Show exactly what you'll add: the name, the package/command, and the source URL
            (GitHub/registry), and proceed only after they say yes (use ask_user). If several
