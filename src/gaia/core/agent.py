@@ -165,6 +165,7 @@ class Gaia:
         from gaia.souls import make_delegate
         from gaia.tools.command import make_run_command
         from gaia.tools.list_projects import make_list_projects
+        from gaia.tools.manage_mcp import make_manage_mcp
         from gaia.tools.message import make_message_user
         from gaia.tools.permission import make_manage_permission
         from gaia.tools.registry import _is_enabled
@@ -208,6 +209,7 @@ class Gaia:
                 make_run_command(self, handler),
                 make_message_user(self.users, self.connectors, lambda: self.memory_service),
                 make_manage_permission(self),
+                make_manage_mcp(self),
                 make_list_projects(self),
                 make_send_file(),
                 *save_skill,
