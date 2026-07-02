@@ -158,6 +158,17 @@ CATALOG: dict[str, CommandInfo] = {
         "thinking budget. Admin only.",
         examples=("/effort", "/effort high"),
     ),
+    "mcp": CommandInfo(
+        "mcp",
+        "List, add, or remove external MCP servers (integrations).",
+        "Admin",
+        usage="[add <name> <command|url> [args…] | remove <name>]",
+        details="Manage MCP servers that give Gaia extra tools (TickTick, GitHub, …). With no "
+        "argument, lists them. Changes go live on the next message. For anything needing a token "
+        "or OAuth, just ask Gaia in plain language — it researches the server and wires the key. "
+        "Admin only.",
+        examples=("/mcp", "/mcp add time uvx mcp-server-time", "/mcp remove time"),
+    ),
     # --- Users & access (admin) --------------------------------------------------------------
     "user": CommandInfo(
         "user",

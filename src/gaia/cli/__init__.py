@@ -17,6 +17,7 @@ from gaia.cli import (
     grow,
     lifecycle,
     logs,
+    mcp,
     memory,
     monitor,
     report,
@@ -48,6 +49,7 @@ app.add_typer(user.app, name="user")
 app.add_typer(config.app, name="config")
 app.add_typer(acl.app, name="acl")
 app.add_typer(memory.app, name="memory")
+app.add_typer(mcp.app, name="mcp")
 app.add_typer(completion.app, name="completion")
 app.command(name="model")(setup.model)  # dedicated provider/auth/model picker (was `setup model`)
 app.command(name="tools")(tools.tools)  # configure browser / web_search / MCP (+ --all toggles)

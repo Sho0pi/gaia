@@ -86,3 +86,20 @@ def test_get_settings_reads_supplied_env_file(
     env.write_text(f"{constants.ENV_PREFIX}MEM0_COLLECTION=from-file\n")
 
     assert get_settings(env_file=env).mem0_collection == "from-file"
+
+
+def test_arbitrary_dotenv_secret_is_exported(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A key gaia doesn't model (e.g. an MCP server's token) must still reach the process env, so
+    # env_passthrough / ${VAR} headers can use it. constants.ENV_FILE is the isolated tmp home here.
+    constants.ENV_FILE.parent.mkdir(parents=True, exist_ok=True)
+    constants.ENV_FILE.write_text("TICKTICK_TOKEN=abc123\n# a comment\nEMPTY=\n")
+    monkeypatch.delenv("TICKTICK_TOKEN", raising=False)
+    import os
+
+    try:
+        configure_adk_env(Settings())
+        assert os.environ["TICKTICK_TOKEN"] == "abc123"
+        assert os.environ.get("EMPTY") == ""
+    finally:
+        os.environ.pop("TICKTICK_TOKEN", None)
+        os.environ.pop("EMPTY", None)

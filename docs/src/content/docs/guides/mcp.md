@@ -13,11 +13,26 @@ The easy path: tell Gaia what you want, in chat.
 
 > "Add the ticktick mcp so we can update my todos."
 
-Gaia (an admin only) will research the server, wire it up with the `manage_mcp` tool, and tell you if
-it needs an API key.
+Gaia (an admin only) will research the server, confirm the exact one with you before adding (it's
+third-party code), wire it up, and tell you if it needs an API key.
 It attaches on your **next message** - no restart.
 If a key is needed, Gaia points you at where to create it and asks you to add it to `~/.gaia/.env`
 (secrets never pass through the model).
+
+## Manage them manually
+
+`/mcp` in chat, or the `gaia mcp` CLI:
+
+```
+/mcp                                list servers
+/mcp add time uvx mcp-server-time   add a stdio server
+/mcp remove time                    remove one
+```
+```bash
+gaia mcp list
+gaia mcp add time uvx mcp-server-time
+gaia mcp remove time
+```
 
 ## Or edit the config yourself
 
@@ -36,16 +51,17 @@ mcp:
       # tool_filter: ["create_task", "list_tasks"]   # optional: only these tools
       # tool_prefix: "tt"                             # optional: avoid name collisions
 
-    # A remote server.
-    # - name: example
+    # A remote server that authenticates with a Bearer token.
+    # - name: ticktick
     #   transport: http
-    #   url: "https://mcp.example.com"
-    #   headers: { Authorization: "Bearer …" }
+    #   url: "https://mcp.ticktick.com"
+    #   headers: { Authorization: "Bearer ${TICKTICK_TOKEN}" }   # ${VAR} is read from .env
 ```
 
-Secrets stay out of `gaia.yaml`: list the env var **names** in `env_passthrough`, and put the values
-in `~/.gaia/.env` (e.g. `TICKTICK_TOKEN=…`).
-Gaia copies those vars into the server's process at launch.
+Secrets stay out of `gaia.yaml`: for stdio, list the env var **names** in `env_passthrough`; for a
+remote server, reference them as `${VAR}` inside `headers`. Either way the value lives in
+`~/.gaia/.env` (e.g. `TICKTICK_TOKEN=…`) - gaia reads it from the environment at launch, and any key
+you add to `.env` is available this way.
 
 You can also manage servers from the shell with `gaia tools`.
 
