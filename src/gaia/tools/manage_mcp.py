@@ -56,10 +56,10 @@ def make_manage_mcp(gaia: Gaia) -> Callable[..., Awaitable[dict[str, Any]]]:
            clearly most-starred, actively-maintained package. Find how it launches and what auth it
            needs. A stdio server runs a local command: Python via `uvx <package>`, Node via
            `npx -y <package>` / `bunx <package>`; a remote one exposes a url ("http"/"sse").
-        2. CONFIRM before adding — an MCP server is third-party code that runs on the user's machine.
-           Show the user exactly what you'll add: the name, the package/command, and the source URL
-           (GitHub/registry), and proceed only after they say yes (use ask_user). If several plausible
-           servers exist, ask the user which one rather than guessing.
+        2. CONFIRM before adding — an MCP server is third-party code that runs on the user's box.
+           Show exactly what you'll add: the name, the package/command, and the source URL
+           (GitHub/registry), and proceed only after they say yes (use ask_user). If several
+           plausible servers exist, ask which one rather than guessing.
         3. action="add": stdio → command + args; remote → transport + url. Put any API-key env var
            NAMES in env_passthrough (names only, e.g. ["TICKTICK_TOKEN"] — never the secret).
         4. If it needs a key, tell the user to create it and add it to ~/.gaia/.env as that variable
